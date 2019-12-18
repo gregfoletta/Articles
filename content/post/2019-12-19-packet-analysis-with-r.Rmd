@@ -1,0 +1,272 @@
+---
+title: Packet Analysis with R (Part 1)
+author: ~
+date: '2019-11-20'
+slug: packet-analysis-with-r-part-1
+categories: []
+tags: []
+description: ''
+---
+
+In this article I am going to be look at some of the ways you can analyse packet captures with R. It is broken in to three mainI am a network and security consultant by trade,
+but recently I have become enamoured with [R]() and the R community.  Network engineer, learning more about data science and statistical modeling.
+
+The joy of learning something that is outside your normal field is when you start to see intersections between it and what you've always been doing.
+For me this happened when reading the chapter of Hadley Wickham's [R for Data Science](https://vita.had.co.nz/papers/tidy-data.pdf) on [tidy data](https://vita.had.co.nz/papers/tidy-data.pdf).
+
+To summarise, tidy data has three key elements:
+
+1. Each variable must have its own column.
+1. Each observation must have its own row.
+1. Each value must have its own cell.
+
+What hit me was that this perfectly described a packet capture. Each captured packet is an observation in a row, and the values the dissectors return
+are the columns containin the variables. I started to imagine the kinds of data analysis and visualisations that could be performed on the packet data.
+
+In this article I want to show how valuable it is to perform packet analysis using the R language. It's broken into two sections: converting packet capture files
+into a format appropraite for ingestion into R (in this case it's comma separated values), and then performing some initial 
+[exploratory data analysis](https://en.wikipedia.org/wiki/Exploratory_data_analysis) on the capture to describe and visualise it's main characteristics.
+
+# Removing the False Dichotomy
+
+Before moving on, I want to be clear that I don't think that this is a replacement for packet analysis in Wireshark. Rather, I see it as a complimentary tool
+that with both strengths and weaknesses. I think of Wireshark as a bottom-up tool: you open a packet capture an immediately you're thrust amongst the packets,
+barraged with details. This is perfect if you know what you're looking for and can filter out the noise to concentrate on your problem. But if you don't have
+a clear view of what's in the packet capture or where the problem may lie, taking a step back and removing yourself from the details can be difficult.
+
+Analysing packet captures with R is a top-down aproach. You load your packet capture and you're presented with nothing. But what you have at your disposal is 
+a richer set of tools to summarise and visualise the packets and get a broader sense of what is happening across the entire capture, and at any point in the 
+protocol layers: data-link, network, transport, or application.
+
+# PCAP to CSV Transformation
+
+The first step is to convert the packet capture file into a format that R can ingest. I chose the comma separate values format (CSV) as it is human readable. [SQLLite](https://www.sqlite.org/index.html) and [Parquet](https://parquet.apache.org/) are other viable options. In this article the packet captures I am transoforming are < 100Mb, so CSV works fine. CSV may (read: will likely) have issues for packet capture files larger than this, but for the moment [good enough is good enough](https://en.wikipedia.org/wiki/Principle_of_good_enough).
+
+In the code below, we download a sample packet capture file and the PCAP to CSV conversion script.
+
+```{r download}
+packet_capture <- './sample.pcap'
+pcap_to_csv <- './pcap_to_csv.pl'
+
+# Download the sample packet capture
+if (!file.exists(packet_capture)) {
+    download.file(
+        url = 'https://s3.amazonaws.com/tcpreplay-pcap-files/smallFlows.pcap',
+        destfile = packet_capture
+    )
+}
+
+# Download the PCAP to CSV script to the CWD.
+download.file(
+    url = 'https://raw.githubusercontent.com/gregfoletta/PCAP_to_CSV/master/pcap_to_csv.pl',
+    destfile = pcap_to_csv
+)
+```
+
+We then run the script across the sample packet capture we've downloaded to convert it into a CSV. At a high level the script:
+
+- Takes a list of dissectors.
+    - The default dissectors are those beginning with frame|eth|ip|arp|tcp|udp|icmp|dns|ssl|http|smb.
+- Spawns a `tshark` process which runs over the packet catpure, outputting the specifed fields in JSON format to STDOUT.
+- Reads the JSON from STDOUT and flattens the data structure.
+    - e.g. `{ http.cookie_pair => [ 'a=1', 'b=2' ] }` becomes `{ http.cookie_pair.0 => 'a=1', http.cookie_pair.1 => 'b=2' }`
+- Outputs all of the fields as CSV.
+
+Spawning the tshark process and reading from STDOUT is not the cleanest of inplementations, but it does the job we need it to do.
+
+```{zsh}
+perl pcap_to_csv.pl sample.pcap
+
+# What's the size differential?
+ls -lh sample.pcap*
+```
+
+We see there's about a 10:1 size ratio between the CSV and the original packet capture.
+
+We now ingest the CSV file into R and perform some mutations to the data:
+
+1. We remove the '.0' from the end of variable names. This allows us to refer directly to variables that are only in a frame once, e.g. `pcap['tcp.dstport']` instead of `pcap['tcp.dstport.0']`.
+1. The `frame.time` field is changed to a `POSIXct` date-time class rather than a simple character string.
+
+We then take a look at the first 10 rows of some selected fields.
+
+```{r read_in, message = F}
+library(tidyverse)
+library(glue)
+library(kableExtra)
+
+# Ingest the packet capture
+pcap <- 
+    glue(packet_capture, ".csv") %>%
+    read_csv(guess_max = 100000)
+
+# Remove the ':0' from the column names
+names(pcap) <- names(pcap) %>% str_remove('\\.0$')
+
+# Update the frame.time column
+pcap <-
+    pcap %>%
+    mutate(frame.time = as.POSIXct(
+        frame.time_epoch,
+        tz = 'UTC',
+        origin = '1970-01-01 00:00.00 UTC'
+    ))
+
+# Take a look at some of the columns in the first 10 rows
+pcap %>%
+    select(
+        frame.time, frame.encap_type,
+        ip.src, ip.dst, 
+        tcp.dstport, tcp.stream,
+        http.host, http.request.version
+    ) %>%
+    slice(1:10) %>%
+    kable() %>%
+    kable_styling()
+```
+
+
+# Wireshark Analogies
+
+Now that we've got our data in to R, let's explore it. To start we're going to create some of the graphs and other analysis out puts you would find in Wireshark.
+
+## IO Graph
+
+This is the default graph you would find by going to [Statistics -> I/O Graph] in Wireshark.
+We round the each frame's time to the nearest second and group by this value. We then tally up
+the number of frames occurring within each of these seconds and graph is as a line graph.
+
+```{r packets_per_second}
+pcap %>%
+    group_by(t = round(frame.time_relative)) %>%
+    tally() %>%
+    ggplot() +
+    geom_line(aes(t, n)) +
+    labs(x = 'Seconds Since Start of Capture', y = 'Frame Count')
+```
+
+## IP Conversations
+
+This is similar to the output you would get by going to [Statistics -> Conversations -> IP]. We group by 
+each source and destination IP address and count the number of packets and the number of kiobytes in each
+of these unidirectional IP flows. 
+
+```{r ip_conversations}
+pcap %>%
+    group_by(ip.src, ip.dst) %>%
+    summarise(
+        packets = n(),
+        kbytes = sum(frame.len)/1000
+    ) %>%
+    arrange(desc(packets)) %>%
+    head() %>%
+    kable() %>%
+    kable_styling()
+```
+
+## Protocols
+
+In this graph we're trying to emulate [Statistics -> Protocol Hierarchy]. Not quite there, but does provide valuable information. The `frame.protocols` lists the dissectors used in the frame, each separated by a colon. We pull out the first four dissectors and create a new variable. We then group by this variable and count the number of frames for each one.
+
+We graph the output slightly differently, first flipping the coordinates to that the x-axis runs top to bottom and y-axis runs left to right, then scaling the x-axis logarithmically.
+
+No surprises that TCP traffic accounts for the most packets, followed by SSL (TLS) and HTTP.
+
+```{r protocols}
+pcap %>%
+    mutate(first_4_proto = str_extract(frame.protocols, '(\\w+)(:\\w+){0,4}')) %>%
+    count(first_4_proto) %>%
+    ggplot() +
+    geom_col(aes(fct_reorder(first_4_proto, n), n)) +
+    coord_flip() +
+    scale_y_log10() +
+    labs(x = 'First Four Dissectors', y = 'Total Frames (Log Scale)')
+```
+
+## Packet Lengths
+
+This graph is a visual representation of [Statistics -> Packet Lengths]. Here we see the distribution of packet sizes, with the majority of frames either 0 - 50 bytes long, or 1450-1500 bytes long, with 1500 being the standard Ethernet MTU size.
+
+```{r packet_lengths}
+pcap %>%
+    ggplot() +
+    geom_histogram(aes(frame.len, fill = !is.na(tcp.analysis.acks_frame)), binwidth = 50) +
+    labs(x = 'Number of Frames', y = 'Frame Size (Bytes)', fill = 'Is ACK Segment?')
+```
+
+
+# Eploratory
+
+We've emulated (to an extent) some of the Wireshark statistical information, let's dig a little deeper and see what else we can discover about this particular packet caputer.
+
+## HTTP Hosts
+
+It may be handy to know to hosts have the most HTTP requests directed to them. We use the http.host field, which contains the value of the [Host header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host), and count the number of occurences of each distinct value. We then represent this as a bar chart with flipped axes.
+
+We see an MSN address topping the list, however interestingly a broadcast address is second.
+
+```{r}
+pcap %>%
+    filter(!is.na(http.host)) %>%
+    count(http.host) %>%
+    top_n(20, n) %>%
+    ggplot() +
+    geom_col(aes(fct_reorder(http.host, n), n)) +
+    coord_flip() +
+    labs(x = 'Host', y = 'Number of HTTP requests')
+```
+
+Let's dive a little deeper on this - what are the protocols?
+
+```{r broadcast_host}
+pcap %>% 
+    filter(http.host == '239.255.255.250:1900') %>% 
+    select(frame.protocols) %>%
+    distinct()
+```
+
+We see that it's [SSDP](https://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol) broadcasting out.
+
+
+## TLS Ciphers
+
+```{r tls_cipher_scrape, message = F}
+library(rvest)
+
+cipher_mappings <-
+    xml2::read_html('http://realtimelogic.com/ba/doc/en/C/shark/group__SharkSslCiphers.html') %>%
+    html_nodes('.memItemRight') %>%
+    html_text() %>%
+    str_split_fixed("\\s+", n = 2) %>%
+    as_tibble(.name_repair = ~{ c('ciphersuite', 'hex_value') }) %>%
+    mutate(hex_value = as.hexmode(hex_value))
+
+head(cipher_mappings) %>%
+    kable() %>%
+    kable_styling()
+```
+
+```{r tls_ciphers}
+pcap %>%
+    filter(ssl.handshake.type == 2) %>%
+    count(ssl.handshake.ciphersuite) %>%
+    mutate(ssl.handshake.ciphersuite = as.hexmode(ssl.handshake.ciphersuite)) %>%
+    left_join(cipher_mappings, by = c('ssl.handshake.ciphersuite' = 'hex_value')) %>%
+    ggplot() +
+    geom_col(aes(ciphersuite, n)) +
+    coord_flip() +
+    labs(x = 'TLS Ciphersuite', y = 'Total TLS Sessions')
+```
+
+## DNS Response Times
+
+```{r}
+pcap %>%
+    filter(dns.flags.response == 1) %>%
+    group_by(dns.qry.name, dns.resp.type) %>%
+    summarise(mean_resp = mean(dns.time)) %>%
+    ggplot() +
+    geom_col(aes(fct_reorder(dns.qry.name, mean_resp), mean_resp, fill = as.factor(dns.resp.type))) +
+    coord_flip() +
+    labs(x = 'DNS Query Name', y = 'Mean Response Time (ms)', fill = 'DNS Response Type')
+```

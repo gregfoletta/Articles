@@ -1,0 +1,705 @@
+---
+title: Packet Analysis with R (Part 1)
+author: ~
+date: '2019-11-20'
+slug: packet-analysis-with-r-part-1
+categories: []
+tags: []
+description: ''
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+
+
+<p>In this article I am going to be look at some of the ways you can analyse packet captures with R. It is broken in to three mainI am a network and security consultant by trade,
+but recently I have become enamoured with <a href="">R</a> and the R community. Network engineer, learning more about data science and statistical modeling.</p>
+<p>The joy of learning something that is outside your normal field is when you start to see intersections between it and what you’ve always been doing.
+For me this happened when reading the chapter of Hadley Wickham’s <a href="https://vita.had.co.nz/papers/tidy-data.pdf">R for Data Science</a> on <a href="https://vita.had.co.nz/papers/tidy-data.pdf">tidy data</a>.</p>
+<p>To summarise, tidy data has three key elements:</p>
+<ol style="list-style-type: decimal">
+<li>Each variable must have its own column.</li>
+<li>Each observation must have its own row.</li>
+<li>Each value must have its own cell.</li>
+</ol>
+<p>What hit me was that this perfectly described a packet capture. Each captured packet is an observation in a row, and the values the dissectors return
+are the columns containin the variables. I started to imagine the kinds of data analysis and visualisations that could be performed on the packet data.</p>
+<p>In this article I want to show how valuable it is to perform packet analysis using the R language. It’s broken into two sections: converting packet capture files
+into a format appropraite for ingestion into R (in this case it’s comma separated values), and then performing some initial
+<a href="https://en.wikipedia.org/wiki/Exploratory_data_analysis">exploratory data analysis</a> on the capture to describe and visualise it’s main characteristics.</p>
+<div id="removing-the-false-dichotomy" class="section level1">
+<h1>Removing the False Dichotomy</h1>
+<p>Before moving on, I want to be clear that I don’t think that this is a replacement for packet analysis in Wireshark. Rather, I see it as a complimentary tool
+that with both strengths and weaknesses. I think of Wireshark as a bottom-up tool: you open a packet capture an immediately you’re thrust amongst the packets,
+barraged with details. This is perfect if you know what you’re looking for and can filter out the noise to concentrate on your problem. But if you don’t have
+a clear view of what’s in the packet capture or where the problem may lie, taking a step back and removing yourself from the details can be difficult.</p>
+<p>Analysing packet captures with R is a top-down aproach. You load your packet capture and you’re presented with nothing. But what you have at your disposal is
+a richer set of tools to summarise and visualise the packets and get a broader sense of what is happening across the entire capture, and at any point in the
+protocol layers: data-link, network, transport, or application.</p>
+</div>
+<div id="pcap-to-csv-transformation" class="section level1">
+<h1>PCAP to CSV Transformation</h1>
+<p>The first step is to convert the packet capture file into a format that R can ingest. I chose the comma separate values format (CSV) as it is human readable. <a href="https://www.sqlite.org/index.html">SQLLite</a> and <a href="https://parquet.apache.org/">Parquet</a> are other viable options. In this article the packet captures I am transoforming are &lt; 100Mb, so CSV works fine. CSV may (read: will likely) have issues for packet capture files larger than this, but for the moment <a href="https://en.wikipedia.org/wiki/Principle_of_good_enough">good enough is good enough</a>.</p>
+<p>In the code below, we download a sample packet capture file and the PCAP to CSV conversion script.</p>
+<pre class="r"><code>packet_capture &lt;- &#39;./sample.pcap&#39;
+pcap_to_csv &lt;- &#39;./pcap_to_csv.pl&#39;
+
+# Download the sample packet capture
+if (!file.exists(packet_capture)) {
+    download.file(
+        url = &#39;https://s3.amazonaws.com/tcpreplay-pcap-files/smallFlows.pcap&#39;,
+        destfile = packet_capture
+    )
+}
+
+# Download the PCAP to CSV script to the CWD.
+download.file(
+    url = &#39;https://raw.githubusercontent.com/gregfoletta/PCAP_to_CSV/master/pcap_to_csv.pl&#39;,
+    destfile = pcap_to_csv
+)</code></pre>
+<p>We then run the script across the sample packet capture we’ve downloaded to convert it into a CSV. At a high level the script:</p>
+<ul>
+<li>Takes a list of dissectors.
+<ul>
+<li>The default dissectors are those beginning with frame|eth|ip|arp|tcp|udp|icmp|dns|ssl|http|smb.</li>
+</ul></li>
+<li>Spawns a <code>tshark</code> process which runs over the packet catpure, outputting the specifed fields in JSON format to STDOUT.</li>
+<li>Reads the JSON from STDOUT and flattens the data structure.
+<ul>
+<li>e.g. <code>{ http.cookie_pair =&gt; [ 'a=1', 'b=2' ] }</code> becomes <code>{ http.cookie_pair.0 =&gt; 'a=1', http.cookie_pair.1 =&gt; 'b=2' }</code></li>
+</ul></li>
+<li>Outputs all of the fields as CSV.</li>
+</ul>
+<p>Spawning the tshark process and reading from STDOUT is not the cleanest of inplementations, but it does the job we need it to do.</p>
+<pre class="zsh"><code>perl pcap_to_csv.pl sample.pcap
+
+# What&#39;s the size differential?
+ls -lh sample.pcap*</code></pre>
+<pre><code>## Gathering dissectors...
+## Extracting packets...
+## Decoding JSON...
+## Flattening packets...
+## Creating sample.pcap.csv
+## -rw-rw-r-- 1 puglet puglet 9.1M Dec 19 09:37 sample.pcap
+## -rw-rw-r-- 1 puglet puglet 101M Dec 19 09:38 sample.pcap.csv</code></pre>
+<p>We see there’s about a 10:1 size ratio between the CSV and the original packet capture.</p>
+<p>We now ingest the CSV file into R and perform some mutations to the data:</p>
+<ol style="list-style-type: decimal">
+<li>We remove the ‘.0’ from the end of variable names. This allows us to refer directly to variables that are only in a frame once, e.g. <code>pcap['tcp.dstport']</code> instead of <code>pcap['tcp.dstport.0']</code>.</li>
+<li>The <code>frame.time</code> field is changed to a <code>POSIXct</code> date-time class rather than a simple character string.</li>
+</ol>
+<p>We then take a look at the first 10 rows of some selected fields.</p>
+<pre class="r"><code>library(tidyverse)
+library(glue)
+library(kableExtra)
+
+# Ingest the packet capture
+pcap &lt;- 
+    glue(packet_capture, &quot;.csv&quot;) %&gt;%
+    read_csv(guess_max = 100000)
+
+# Remove the &#39;:0&#39; from the column names
+names(pcap) &lt;- names(pcap) %&gt;% str_remove(&#39;\\.0$&#39;)
+
+# Update the frame.time column
+pcap &lt;-
+    pcap %&gt;%
+    mutate(frame.time = as.POSIXct(
+        frame.time_epoch,
+        tz = &#39;UTC&#39;,
+        origin = &#39;1970-01-01 00:00.00 UTC&#39;
+    ))
+
+# Take a look at some of the columns in the first 10 rows
+pcap %&gt;%
+    select(
+        frame.time, frame.encap_type,
+        ip.src, ip.dst, 
+        tcp.dstport, tcp.stream,
+        http.host, http.request.version
+    ) %&gt;%
+    slice(1:10) %&gt;%
+    kable() %&gt;%
+    kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+frame.time
+</th>
+<th style="text-align:right;">
+frame.encap_type
+</th>
+<th style="text-align:left;">
+ip.src
+</th>
+<th style="text-align:left;">
+ip.dst
+</th>
+<th style="text-align:right;">
+tcp.dstport
+</th>
+<th style="text-align:right;">
+tcp.stream
+</th>
+<th style="text-align:left;">
+http.host
+</th>
+<th style="text-align:left;">
+http.request.version
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+72.14.213.138
+</td>
+<td style="text-align:right;">
+80
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:left;">
+clients1.google.ca
+</td>
+<td style="text-align:left;">
+HTTP/1.1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+72.14.213.138
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+57011
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+72.14.213.102
+</td>
+<td style="text-align:right;">
+80
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+72.14.213.138
+</td>
+<td style="text-align:right;">
+80
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+72.14.213.102
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+55950
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+72.14.213.102
+</td>
+<td style="text-align:right;">
+80
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+72.14.213.102
+</td>
+<td style="text-align:right;">
+80
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+clients1.google.ca
+</td>
+<td style="text-align:left;">
+HTTP/1.1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+72.14.213.102
+</td>
+<td style="text-align:right;">
+80
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+72.14.213.102
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+55950
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+2011-01-25 18:52:22
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+72.14.213.102
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+55950
+</td>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+NA
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="wireshark-analogies" class="section level1">
+<h1>Wireshark Analogies</h1>
+<p>Now that we’ve got our data in to R, let’s explore it. To start we’re going to create some of the graphs and other analysis out puts you would find in Wireshark.</p>
+<div id="io-graph" class="section level2">
+<h2>IO Graph</h2>
+<p>This is the default graph you would find by going to [Statistics -&gt; I/O Graph] in Wireshark.
+We round the each frame’s time to the nearest second and group by this value. We then tally up
+the number of frames occurring within each of these seconds and graph is as a line graph.</p>
+<pre class="r"><code>pcap %&gt;%
+    group_by(t = round(frame.time_relative)) %&gt;%
+    tally() %&gt;%
+    ggplot() +
+    geom_line(aes(t, n)) +
+    labs(x = &#39;Seconds Since Start of Capture&#39;, y = &#39;Frame Count&#39;)</code></pre>
+<p><img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/packets_per_second-1.png" width="672" /></p>
+</div>
+<div id="ip-conversations" class="section level2">
+<h2>IP Conversations</h2>
+<p>This is similar to the output you would get by going to [Statistics -&gt; Conversations -&gt; IP]. We group by
+each source and destination IP address and count the number of packets and the number of kiobytes in each
+of these unidirectional IP flows.</p>
+<pre class="r"><code>pcap %&gt;%
+    group_by(ip.src, ip.dst) %&gt;%
+    summarise(
+        packets = n(),
+        kbytes = sum(frame.len)/1000
+    ) %&gt;%
+    arrange(desc(packets)) %&gt;%
+    head() %&gt;%
+    kable() %&gt;%
+    kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+ip.src
+</th>
+<th style="text-align:left;">
+ip.dst
+</th>
+<th style="text-align:right;">
+packets
+</th>
+<th style="text-align:right;">
+kbytes
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+65.54.95.68
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+1275
+</td>
+<td style="text-align:right;">
+1718.702
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+204.14.234.85
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+1036
+</td>
+<td style="text-align:right;">
+956.946
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+65.54.95.75
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+766
+</td>
+<td style="text-align:right;">
+878.941
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+204.14.234.85
+</td>
+<td style="text-align:right;">
+740
+</td>
+<td style="text-align:right;">
+478.420
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:left;">
+65.54.95.68
+</td>
+<td style="text-align:right;">
+664
+</td>
+<td style="text-align:right;">
+66.932
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+65.54.95.140
+</td>
+<td style="text-align:left;">
+192.168.3.131
+</td>
+<td style="text-align:right;">
+658
+</td>
+<td style="text-align:right;">
+762.505
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="protocols" class="section level2">
+<h2>Protocols</h2>
+<p>In this graph we’re trying to emulate [Statistics -&gt; Protocol Hierarchy]. Not quite there, but does provide valuable information. The <code>frame.protocols</code> lists the dissectors used in the frame, each separated by a colon. We pull out the first four dissectors and create a new variable. We then group by this variable and count the number of frames for each one.</p>
+<p>We graph the output slightly differently, first flipping the coordinates to that the x-axis runs top to bottom and y-axis runs left to right, then scaling the x-axis logarithmically.</p>
+<p>No surprises that TCP traffic accounts for the most packets, followed by SSL (TLS) and HTTP.</p>
+<pre class="r"><code>pcap %&gt;%
+    mutate(first_4_proto = str_extract(frame.protocols, &#39;(\\w+)(:\\w+){0,4}&#39;)) %&gt;%
+    count(first_4_proto) %&gt;%
+    ggplot() +
+    geom_col(aes(fct_reorder(first_4_proto, n), n)) +
+    coord_flip() +
+    scale_y_log10() +
+    labs(x = &#39;First Four Dissectors&#39;, y = &#39;Total Frames (Log Scale)&#39;)</code></pre>
+<p><img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/protocols-1.png" width="672" /></p>
+</div>
+<div id="packet-lengths" class="section level2">
+<h2>Packet Lengths</h2>
+<p>This graph is a visual representation of [Statistics -&gt; Packet Lengths]. Here we see the distribution of packet sizes, with the majority of frames either 0 - 50 bytes long, or 1450-1500 bytes long, with 1500 being the standard Ethernet MTU size.</p>
+<pre class="r"><code>pcap %&gt;%
+    ggplot() +
+    geom_histogram(aes(frame.len, fill = !is.na(tcp.analysis.acks_frame)), binwidth = 50) +
+    labs(x = &#39;Number of Frames&#39;, y = &#39;Frame Size (Bytes)&#39;, fill = &#39;Is ACK Segment?&#39;)</code></pre>
+<p><img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/packet_lengths-1.png" width="672" /></p>
+</div>
+</div>
+<div id="eploratory" class="section level1">
+<h1>Eploratory</h1>
+<p>We’ve emulated (to an extent) some of the Wireshark statistical information, let’s dig a little deeper and see what else we can discover about this particular packet caputer.</p>
+<div id="http-hosts" class="section level2">
+<h2>HTTP Hosts</h2>
+<p>It may be handy to know to hosts have the most HTTP requests directed to them. We use the http.host field, which contains the value of the <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host">Host header</a>, and count the number of occurences of each distinct value. We then represent this as a bar chart with flipped axes.</p>
+<p>We see an MSN address topping the list, however interestingly a broadcast address is second.</p>
+<pre class="r"><code>pcap %&gt;%
+    filter(!is.na(http.host)) %&gt;%
+    count(http.host) %&gt;%
+    top_n(20, n) %&gt;%
+    ggplot() +
+    geom_col(aes(fct_reorder(http.host, n), n)) +
+    coord_flip() +
+    labs(x = &#39;Host&#39;, y = &#39;Number of HTTP requests&#39;)</code></pre>
+<p><img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-2-1.png" width="672" /></p>
+<p>Let’s dive a little deeper on this - what are the protocols?</p>
+<pre class="r"><code>pcap %&gt;% 
+    filter(http.host == &#39;239.255.255.250:1900&#39;) %&gt;% 
+    select(frame.protocols) %&gt;%
+    distinct()</code></pre>
+<pre><code>## # A tibble: 2 x 1
+##   frame.protocols                  
+##   &lt;chr&gt;                            
+## 1 eth:ethertype:ip:udp:ssdp        
+## 2 eth:ethertype:ip:icmp:ip:udp:ssdp</code></pre>
+<p>We see that it’s <a href="https://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol">SSDP</a> broadcasting out.</p>
+</div>
+<div id="tls-ciphers" class="section level2">
+<h2>TLS Ciphers</h2>
+<pre class="r"><code>library(rvest)
+
+cipher_mappings &lt;-
+    xml2::read_html(&#39;http://realtimelogic.com/ba/doc/en/C/shark/group__SharkSslCiphers.html&#39;) %&gt;%
+    html_nodes(&#39;.memItemRight&#39;) %&gt;%
+    html_text() %&gt;%
+    str_split_fixed(&quot;\\s+&quot;, n = 2) %&gt;%
+    as_tibble(.name_repair = ~{ c(&#39;ciphersuite&#39;, &#39;hex_value&#39;) }) %&gt;%
+    mutate(hex_value = as.hexmode(hex_value))
+
+head(cipher_mappings) %&gt;%
+    kable() %&gt;%
+    kable_styling()</code></pre>
+<table class="table" style="margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+ciphersuite
+</th>
+<th style="text-align:right;">
+hex_value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+TLS_NULL_WITH_NULL_NULL
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TLS_RSA_WITH_NULL_MD5
+</td>
+<td style="text-align:right;">
+1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TLS_RSA_WITH_NULL_SHA
+</td>
+<td style="text-align:right;">
+2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TLS_RSA_WITH_RC4_128_MD5
+</td>
+<td style="text-align:right;">
+4
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TLS_RSA_WITH_RC4_128_SHA
+</td>
+<td style="text-align:right;">
+5
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+TLS_RSA_WITH_DES_CBC_SHA
+</td>
+<td style="text-align:right;">
+9
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>pcap %&gt;%
+    filter(ssl.handshake.type == 2) %&gt;%
+    count(ssl.handshake.ciphersuite) %&gt;%
+    mutate(ssl.handshake.ciphersuite = as.hexmode(ssl.handshake.ciphersuite)) %&gt;%
+    left_join(cipher_mappings, by = c(&#39;ssl.handshake.ciphersuite&#39; = &#39;hex_value&#39;)) %&gt;%
+    ggplot() +
+    geom_col(aes(ciphersuite, n)) +
+    coord_flip() +
+    labs(x = &#39;TLS Ciphersuite&#39;, y = &#39;Total TLS Sessions&#39;)</code></pre>
+<p><img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/tls_ciphers-1.png" width="672" /></p>
+</div>
+<div id="dns-response-times" class="section level2">
+<h2>DNS Response Times</h2>
+<pre class="r"><code>pcap %&gt;%
+    filter(dns.flags.response == 1) %&gt;%
+    group_by(dns.qry.name, dns.resp.type) %&gt;%
+    summarise(mean_resp = mean(dns.time)) %&gt;%
+    ggplot() +
+    geom_col(aes(fct_reorder(dns.qry.name, mean_resp), mean_resp, fill = as.factor(dns.resp.type))) +
+    coord_flip() +
+    labs(x = &#39;DNS Query Name&#39;, y = &#39;Mean Response Time (ms)&#39;, fill = &#39;DNS Response Type&#39;)</code></pre>
+<p><img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-3-1.png" width="672" /></p>
+</div>
+</div>
