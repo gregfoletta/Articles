@@ -94,8 +94,8 @@ ls -lh sample.pcap*
 ## Decoding JSON...
 ## Flattening packets...
 ## Creating sample.pcap.csv
-## -rw-rw-r-- 1 puglet puglet 9.1M Feb 19 08:37 sample.pcap
-## -rw-rw-r-- 1 puglet puglet 101M Feb 19 08:51 sample.pcap.csv
+## -rw-rw-r-- 1 puglet puglet 9.1M Feb 19 08:59 sample.pcap
+## -rw-rw-r-- 1 puglet puglet 101M Feb 19 09:00 sample.pcap.csv
 ```
 
 We see there's about a 10:1 size ratio between the CSV and the original packet capture.
