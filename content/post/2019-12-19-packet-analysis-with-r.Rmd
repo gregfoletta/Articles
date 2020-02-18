@@ -3,9 +3,11 @@ title: Packet Analysis with R (Part 1)
 author: ~
 date: '2019-11-20'
 slug: packet-analysis-with-r-part-1
-categories: []
-tags: []
+categories: [R, Perl]
+tags: [R Perl PCAP Networking]
 description: ''
+output: md_document
+always_allow_html: yes
 ---
 
 In this article I am going to be look at some of the ways you can analyse packet captures with R. It is broken in to three mainI am a network and security consultant by trade,
@@ -44,10 +46,12 @@ The first step is to convert the packet capture file into a format that R can in
 
 In the code below, we download a sample packet capture file and the PCAP to CSV conversion script.
 
-```{r download}
+```{r variables}
 packet_capture <- './sample.pcap'
 pcap_to_csv <- './pcap_to_csv.pl'
+```
 
+```{r download}
 # Download the sample packet capture
 if (!file.exists(packet_capture)) {
     download.file(
@@ -91,8 +95,8 @@ We now ingest the CSV file into R and perform some mutations to the data:
 We then take a look at the first 10 rows of some selected fields.
 
 ```{r read_in, message = F}
-library(tidyverse)
 library(glue)
+library(tidyverse)
 library(kableExtra)
 
 # Ingest the packet capture
@@ -115,14 +119,11 @@ pcap <-
 # Take a look at some of the columns in the first 10 rows
 pcap %>%
     select(
-        frame.time, frame.encap_type,
+        frame.time,
         ip.src, ip.dst, 
-        tcp.dstport, tcp.stream,
-        http.host, http.request.version
+        tcp.dstport, tcp.stream
     ) %>%
-    slice(1:10) %>%
-    kable() %>%
-    kable_styling()
+    slice(1:5)
 ```
 
 
@@ -149,7 +150,7 @@ pcap %>%
 
 This is similar to the output you would get by going to [Statistics -> Conversations -> IP]. We group by 
 each source and destination IP address and count the number of packets and the number of kiobytes in each
-of these unidirectional IP flows. 
+of these *unidirectional* IP conversations. 
 
 ```{r ip_conversations}
 pcap %>%
@@ -166,7 +167,7 @@ pcap %>%
 
 ## Protocols
 
-In this graph we're trying to emulate [Statistics -> Protocol Hierarchy]. Not quite there, but does provide valuable information. The `frame.protocols` lists the dissectors used in the frame, each separated by a colon. We pull out the first four dissectors and create a new variable. We then group by this variable and count the number of frames for each one.
+In this graph we're trying to emulate [Statistics -> Protocol Hierarchy]. The `frame.protocols` field lists the dissectors used in the frame separated by a colon. A regex is used to extract out the first four dissectors and create a new variable. This variable is grouped variable and count the number of frames for each one.
 
 We graph the output slightly differently, first flipping the coordinates to that the x-axis runs top to bottom and y-axis runs left to right, then scaling the x-axis logarithmically.
 
@@ -185,29 +186,30 @@ pcap %>%
 
 ## Packet Lengths
 
-This graph is a visual representation of [Statistics -> Packet Lengths]. Here we see the distribution of packet sizes, with the majority of frames either 0 - 50 bytes long, or 1450-1500 bytes long, with 1500 being the standard Ethernet MTU size.
+This graph is a visual representation of [Statistics -> Packet Lengths]. The axis is broken up into bins of 50 bytes, and the height of each bar represents the log of the number of packets seen with a size within that range. The bars are also colourised based on whether the packet is a TCP acknowledgement or not.
 
 ```{r packet_lengths}
 pcap %>%
     ggplot() +
     geom_histogram(aes(frame.len, fill = !is.na(tcp.analysis.acks_frame)), binwidth = 50) +
-    labs(x = 'Number of Frames', y = 'Frame Size (Bytes)', fill = 'Is ACK Segment?')
+    labs(x = 'Number of Frames', y = 'Frame Size - Log(Bytes)', fill = 'Is ACK Segment?') +
+    scale_y_log10()
 ```
 
 
 # Eploratory
 
-We've emulated (to an extent) some of the Wireshark statistical information, let's dig a little deeper and see what else we can discover about this particular packet caputer.
+We've emulated (to an extent) some of the Wireshark statistical information, let's dig a little deeper and see what else we can discover about this particular packet capture.
 
 ## HTTP Hosts
 
-It may be handy to know to hosts have the most HTTP requests directed to them. We use the http.host field, which contains the value of the [Host header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host), and count the number of occurences of each distinct value. We then represent this as a bar chart with flipped axes.
+Let's explore what HTTP hosts requests are being made to. We filter out all packets without the `http.host` field, which contains the value of the [Host header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host), and count the number of occurences of each distinct value. This could is represented as a column
 
 We see an MSN address topping the list, however interestingly a broadcast address is second.
 
 ```{r}
-pcap %>%
-    filter(!is.na(http.host)) %>%
+    pcap %>%
+    dplyr::filter(!is.na(http.host)) %>%
     count(http.host) %>%
     top_n(20, n) %>%
     ggplot() +
@@ -216,19 +218,52 @@ pcap %>%
     labs(x = 'Host', y = 'Number of HTTP requests')
 ```
 
-Let's dive a little deeper on this - what are the protocols?
+Let's dive a little deeper on this - what are the protocols of these multicast HTTP packets?
 
 ```{r broadcast_host}
 pcap %>% 
-    filter(http.host == '239.255.255.250:1900') %>% 
+    dplyr::filter(http.host == '239.255.255.250:1900') %>% 
     select(frame.protocols) %>%
     distinct()
 ```
 
-We see that it's [SSDP](https://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol) broadcasting out.
+We see that it's [SSDP](https://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol) broadcasting out, as well as other hosts responding with ICMP messgaes. What are the ICMP messages?
 
+```{r ssdp_icmp}
+pcap %>%
+    dplyr::filter(frame.protocols == 'eth:ethertype:ip:icmp:ip:udp:ssdp') %>%
+    select(icmp.type, icmp.code)
+```
 
-## TLS Ciphers
+Type 11 (time exceeded) code 0 (time to tive exceeded in transit) messages.
+
+## TLS Versions and Ciphers
+
+Taking more of a security bent on our analysis, we'll take a look at the SSL/TLS versions and ciphers being used.
+
+During the TLS handshake, the ClientHello message has two versions: the record version which indicates which version of the ClientHello is being sent, and the handshake version which indicates the version of the protocol the client/server wishes to communicate on during the session. We're concerned with the handshake version:
+
+```{r tls_handshake_version}
+pcap %>%
+    dplyr::filter(!is.na(ssl.handshake.version)) %>%
+    count(ssl.handshake.version)
+```
+
+The predominant verison is TLS 1.1 (0x0301), with some TLS 1.0 (0x0300).
+
+What about the ciphers being used? By filtering out
+
+```{r tls_cipher_no_translation}
+pcap %>%
+    dplyr::filter(!is.na(ssl.handshake.ciphersuite)) %>%
+    select(ssl.handshake.ciphersuite)
+```
+
+We don't get the ciphersuite in a human readable format, instead we get the the decimal version of the two-byte identification number. This makes it's difficult to make a security judgement on these ciphers.
+
+Let's translate these into a human readable format. The [website](http://realtimelogic.com/ba/doc/en/C/shark/group__SharkSslCiphers.html) that has a translation table and also - thankfully - has a CSS element that we can use to pull out the values.
+
+The `rvest` library is used to download the page, pull out the table entries, and convert them to text. Each entry is a string with the ciphersuite name and hex separated by spaces, so those are split, and finally the columns are given sensible names.
 
 ```{r tls_cipher_scrape, message = F}
 library(rvest)
@@ -241,14 +276,17 @@ cipher_mappings <-
     as_tibble(.name_repair = ~{ c('ciphersuite', 'hex_value') }) %>%
     mutate(hex_value = as.hexmode(hex_value))
 
-head(cipher_mappings) %>%
-    kable() %>%
-    kable_styling()
+head(cipher_mappings)
 ```
+
+We're only concerned with the ciphersuite the ServerHello responds with, because this is the one that is ultimately used. Thus other records are filtered out, the number of discrete ciphersuites is counted, and the values converted to hex.
+
+A left join by the hex values is performed which adds the `ciphersuite` column to the data. The data is presented as a bar graph, the height of the bar representing the number of times each ciphersuite was used in an TLS connection.
+
 
 ```{r tls_ciphers}
 pcap %>%
-    filter(ssl.handshake.type == 2) %>%
+    dplyr::filter(ssl.handshake.type == 2) %>%
     count(ssl.handshake.ciphersuite) %>%
     mutate(ssl.handshake.ciphersuite = as.hexmode(ssl.handshake.ciphersuite)) %>%
     left_join(cipher_mappings, by = c('ssl.handshake.ciphersuite' = 'hex_value')) %>%
@@ -260,13 +298,22 @@ pcap %>%
 
 ## DNS Response Times
 
+In this section we'll be looking at DNS response times. First off let's find out what DNS servers hosts are using, and what the average response times are:
+
+```{r 
+
 ```{r}
 pcap %>%
-    filter(dns.flags.response == 1) %>%
+    dplyr::filter(dns.flags.response == 1) %>%
     group_by(dns.qry.name, dns.resp.type) %>%
     summarise(mean_resp = mean(dns.time)) %>%
     ggplot() +
     geom_col(aes(fct_reorder(dns.qry.name, mean_resp), mean_resp, fill = as.factor(dns.resp.type))) +
     coord_flip() +
     labs(x = 'DNS Query Name', y = 'Mean Response Time (ms)', fill = 'DNS Response Type')
+```
+
+
+```{r cleanup, include=F, message=F}
+file.remove('pcap_to_csv.pl', 'sample.pcap', 'sample.pcap.csv')
 ```
