@@ -46,12 +46,14 @@ The first step is to convert the packet capture file into a format that R can in
 
 In the code below, we download a sample packet capture file and the PCAP to CSV conversion script.
 
-```{r variables}
+
+```r
 packet_capture <- './sample.pcap'
-pcap_to_csv <- './pcap_to_csv.pl'
+pcap_to_csv <- './pcap_to_csv'
 ```
 
-```{r download}
+
+```r
 # Download the sample packet capture
 if (!file.exists(packet_capture)) {
     download.file(
@@ -78,11 +80,22 @@ We then run the script across the sample packet capture we've downloaded to conv
 
 Spawning the tshark process and reading from STDOUT is not the cleanest of inplementations, but it does the job we need it to do.
 
-```{zsh}
-perl pcap_to_csv.pl sample.pcap
+
+```zsh
+perl pcap_to_csv sample.pcap
 
 # What's the size differential?
 ls -lh sample.pcap*
+```
+
+```
+## Gathering dissectors...
+## Extracting packets...
+## Decoding JSON...
+## Flattening packets...
+## Creating sample.pcap.csv
+## -rw-rw-r-- 1 puglet puglet 9.1M Feb 19 12:39 sample.pcap
+## -rw-rw-r-- 1 puglet puglet 101M Feb 19 12:39 sample.pcap.csv
 ```
 
 We see there's about a 10:1 size ratio between the CSV and the original packet capture.
@@ -94,7 +107,8 @@ We now ingest the CSV file into R and perform some mutations to the data:
 
 We then take a look at the first 10 rows of some selected fields.
 
-```{r read_in, message = F}
+
+```r
 library(glue)
 library(tidyverse)
 library(kableExtra)
@@ -126,6 +140,17 @@ pcap %>%
     slice(1:5)
 ```
 
+```
+## # A tibble: 5 x 5
+##   frame.time          ip.src        ip.dst        tcp.dstport tcp.stream
+##   <dttm>              <chr>         <chr>               <dbl>      <dbl>
+## 1 2011-01-25 18:52:22 192.168.3.131 72.14.213.138          80          0
+## 2 2011-01-25 18:52:22 72.14.213.138 192.168.3.131       57011          0
+## 3 2011-01-25 18:52:22 192.168.3.131 72.14.213.102          80          1
+## 4 2011-01-25 18:52:22 192.168.3.131 72.14.213.138          80          0
+## 5 2011-01-25 18:52:22 72.14.213.102 192.168.3.131       55950          1
+```
+
 
 # Wireshark Analogies
 
@@ -137,7 +162,8 @@ This is the default graph you would find by going to [Statistics -> I/O Graph] i
 We round the each frame's time to the nearest second and group by this value. We then tally up
 the number of frames occurring within each of these seconds and graph is as a line graph.
 
-```{r packets_per_second}
+
+```r
 pcap %>%
     group_by(t = round(frame.time_relative)) %>%
     tally() %>%
@@ -146,13 +172,16 @@ pcap %>%
     labs(x = 'Seconds Since Start of Capture', y = 'Frame Count')
 ```
 
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/packets_per_second-1.png" width="672" />
+
 ## IP Conversations
 
 This is similar to the output you would get by going to [Statistics -> Conversations -> IP]. We group by 
 each source and destination IP address and count the number of packets and the number of kiobytes in each
 of these *unidirectional* IP conversations. 
 
-```{r ip_conversations}
+
+```r
 pcap %>%
     group_by(ip.src, ip.dst) %>%
     summarise(
@@ -165,6 +194,55 @@ pcap %>%
     kable_styling()
 ```
 
+<table class="table" style="margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> ip.src </th>
+   <th style="text-align:left;"> ip.dst </th>
+   <th style="text-align:right;"> packets </th>
+   <th style="text-align:right;"> kbytes </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> 65.54.95.68 </td>
+   <td style="text-align:left;"> 192.168.3.131 </td>
+   <td style="text-align:right;"> 1275 </td>
+   <td style="text-align:right;"> 1718.702 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 204.14.234.85 </td>
+   <td style="text-align:left;"> 192.168.3.131 </td>
+   <td style="text-align:right;"> 1036 </td>
+   <td style="text-align:right;"> 956.946 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 65.54.95.75 </td>
+   <td style="text-align:left;"> 192.168.3.131 </td>
+   <td style="text-align:right;"> 766 </td>
+   <td style="text-align:right;"> 878.941 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 192.168.3.131 </td>
+   <td style="text-align:left;"> 204.14.234.85 </td>
+   <td style="text-align:right;"> 740 </td>
+   <td style="text-align:right;"> 478.420 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 192.168.3.131 </td>
+   <td style="text-align:left;"> 65.54.95.68 </td>
+   <td style="text-align:right;"> 664 </td>
+   <td style="text-align:right;"> 66.932 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 65.54.95.140 </td>
+   <td style="text-align:left;"> 192.168.3.131 </td>
+   <td style="text-align:right;"> 658 </td>
+   <td style="text-align:right;"> 762.505 </td>
+  </tr>
+</tbody>
+</table>
+
 ## Protocols
 
 In this graph we're trying to emulate [Statistics -> Protocol Hierarchy]. The `frame.protocols` field lists the dissectors used in the frame separated by a colon. A regex is used to extract out the first four dissectors and create a new variable. This variable is grouped variable and count the number of frames for each one.
@@ -173,7 +251,8 @@ We graph the output slightly differently, first flipping the coordinates to that
 
 No surprises that TCP traffic accounts for the most packets, followed by SSL (TLS) and HTTP.
 
-```{r protocols}
+
+```r
 pcap %>%
     mutate(first_4_proto = str_extract(frame.protocols, '(\\w+)(:\\w+){0,4}')) %>%
     count(first_4_proto) %>%
@@ -184,17 +263,22 @@ pcap %>%
     labs(x = 'First Four Dissectors', y = 'Total Frames (Log Scale)')
 ```
 
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/protocols-1.png" width="672" />
+
 ## Packet Lengths
 
 This graph is a visual representation of [Statistics -> Packet Lengths]. The axis is broken up into bins of 50 bytes, and the height of each bar represents the log of the number of packets seen with a size within that range. The bars are also colourised based on whether the packet is a TCP acknowledgement or not.
 
-```{r packet_lengths}
+
+```r
 pcap %>%
     ggplot() +
     geom_histogram(aes(frame.len, fill = !is.na(tcp.analysis.acks_frame)), binwidth = 50) +
     labs(x = 'Number of Frames', y = 'Frame Size - Log(Bytes)', fill = 'Is ACK Segment?') +
     scale_y_log10()
 ```
+
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/packet_lengths-1.png" width="672" />
 
 
 # Eploratory
@@ -207,7 +291,8 @@ Let's explore what HTTP hosts requests are being made to. We filter out all pack
 
 We see an MSN address topping the list, however interestingly a broadcast address is second.
 
-```{r}
+
+```r
     pcap %>%
     dplyr::filter(!is.na(http.host)) %>%
     count(http.host) %>%
@@ -218,21 +303,59 @@ We see an MSN address topping the list, however interestingly a broadcast addres
     labs(x = 'Host', y = 'Number of HTTP requests')
 ```
 
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-2-1.png" width="672" />
+
 Let's dive a little deeper on this - what are the protocols of these multicast HTTP packets?
 
-```{r broadcast_host}
+
+```r
 pcap %>% 
     dplyr::filter(http.host == '239.255.255.250:1900') %>% 
     select(frame.protocols) %>%
     distinct()
 ```
 
+```
+## # A tibble: 2 x 1
+##   frame.protocols                  
+##   <chr>                            
+## 1 eth:ethertype:ip:udp:ssdp        
+## 2 eth:ethertype:ip:icmp:ip:udp:ssdp
+```
+
 We see that it's [SSDP](https://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol) broadcasting out, as well as other hosts responding with ICMP messgaes. What are the ICMP messages?
 
-```{r ssdp_icmp}
+
+```r
 pcap %>%
     dplyr::filter(frame.protocols == 'eth:ethertype:ip:icmp:ip:udp:ssdp') %>%
     select(icmp.type, icmp.code)
+```
+
+```
+## # A tibble: 20 x 2
+##    icmp.type icmp.code
+##        <dbl>     <dbl>
+##  1        11         0
+##  2        11         0
+##  3        11         0
+##  4        11         0
+##  5        11         0
+##  6        11         0
+##  7        11         0
+##  8        11         0
+##  9        11         0
+## 10        11         0
+## 11        11         0
+## 12        11         0
+## 13        11         0
+## 14        11         0
+## 15        11         0
+## 16        11         0
+## 17        11         0
+## 18        11         0
+## 19        11         0
+## 20        11         0
 ```
 
 Type 11 (time exceeded) code 0 (time to tive exceeded in transit) messages.
@@ -243,20 +366,47 @@ Taking more of a security bent on our analysis, we'll take a look at the SSL/TLS
 
 During the TLS handshake, the ClientHello message has two versions: the record version which indicates which version of the ClientHello is being sent, and the handshake version which indicates the version of the protocol the client/server wishes to communicate on during the session. We're concerned with the handshake version:
 
-```{r tls_handshake_version}
+
+```r
 pcap %>%
     dplyr::filter(!is.na(ssl.handshake.version)) %>%
     count(ssl.handshake.version)
+```
+
+```
+## # A tibble: 2 x 2
+##   ssl.handshake.version     n
+##   <chr>                 <int>
+## 1 0x00000300               10
+## 2 0x00000301              126
 ```
 
 The predominant verison is TLS 1.1 (0x0301), with some TLS 1.0 (0x0300).
 
 What about the ciphers being used? By filtering out
 
-```{r tls_cipher_no_translation}
+
+```r
 pcap %>%
     dplyr::filter(!is.na(ssl.handshake.ciphersuite)) %>%
     select(ssl.handshake.ciphersuite)
+```
+
+```
+## # A tibble: 122 x 1
+##    ssl.handshake.ciphersuite
+##                        <dbl>
+##  1                     49162
+##  2                         5
+##  3                     49162
+##  4                     49162
+##  5                     49162
+##  6                     49162
+##  7                     49162
+##  8                     49162
+##  9                         5
+## 10                         5
+## # … with 112 more rows
 ```
 
 We don't get the ciphersuite in a human readable format, instead we get the the decimal version of the two-byte identification number. This makes it's difficult to make a security judgement on these ciphers.
@@ -265,7 +415,8 @@ Let's translate these into a human readable format. The [website](http://realtim
 
 The `rvest` library is used to download the page, pull out the table entries, and convert them to text. Each entry is a string with the ciphersuite name and hex separated by spaces, so those are split, and finally the columns are given sensible names.
 
-```{r tls_cipher_scrape, message = F}
+
+```r
 library(rvest)
 
 cipher_mappings <-
@@ -279,12 +430,25 @@ cipher_mappings <-
 head(cipher_mappings)
 ```
 
+```
+## # A tibble: 6 x 2
+##   ciphersuite              hex_value
+##   <chr>                    <hexmode>
+## 1 TLS_NULL_WITH_NULL_NULL  0        
+## 2 TLS_RSA_WITH_NULL_MD5    1        
+## 3 TLS_RSA_WITH_NULL_SHA    2        
+## 4 TLS_RSA_WITH_RC4_128_MD5 4        
+## 5 TLS_RSA_WITH_RC4_128_SHA 5        
+## 6 TLS_RSA_WITH_DES_CBC_SHA 9
+```
+
 We're only concerned with the ciphersuite the ServerHello responds with, because this is the one that is ultimately used. Thus other records are filtered out, the number of discrete ciphersuites is counted, and the values converted to hex.
 
 A left join by the hex values is performed which adds the `ciphersuite` column to the data. The data is presented as a bar graph, the height of the bar representing the number of times each ciphersuite was used in an TLS connection.
 
 
-```{r tls_ciphers}
+
+```r
 pcap %>%
     dplyr::filter(ssl.handshake.type == 2) %>%
     count(ssl.handshake.ciphersuite) %>%
@@ -296,13 +460,16 @@ pcap %>%
     labs(x = 'TLS Ciphersuite', y = 'Total TLS Sessions')
 ```
 
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/tls_ciphers-1.png" width="672" />
+
 ## DNS Response Times
 
 In this section we'll be looking at DNS response times. First off let's find out what DNS servers hosts are using, and what the average response times are:
 
 ```{r 
 
-```{r}
+
+```r
 pcap %>%
     dplyr::filter(dns.flags.response == 1) %>%
     group_by(dns.qry.name, dns.resp.type) %>%
@@ -313,7 +480,7 @@ pcap %>%
     labs(x = 'DNS Query Name', y = 'Mean Response Time (ms)', fill = 'DNS Response Type')
 ```
 
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-3-1.png" width="672" />
 
-```{r cleanup, include=F, message=F}
-file.remove('pcap_to_csv.pl', 'sample.pcap', 'sample.pcap.csv')
-```
+
+
