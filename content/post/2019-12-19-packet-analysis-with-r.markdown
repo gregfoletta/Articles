@@ -1,20 +1,18 @@
 ---
 title: Packet Analysis with R (Part 1)
-author: ~
-date: '2019-11-20'
+author: Greg Foletta
+date: '2020-02-21'
 slug: packet-analysis-with-r-part-1
 categories: [R, Perl]
 tags: [R Perl PCAP Networking]
-description: ''
+description: 'Analysing packet captures with R and Perl'
 output: md_document
 always_allow_html: yes
 ---
 
-In this article I am going to be look at some of the ways you can analyse packet captures with R. It is broken in to three mainI am a network and security consultant by trade,
-but recently I have become enamoured with [R]() and the R community.  Network engineer, learning more about data science and statistical modeling.
+I am a network security consultant by trade, but over the past year my studies have been focused on statistics, statistical modelling, and data science. The joy of learning outside of your core competencies is when you see intersections and interactions between the old and the new.
 
-The joy of learning something that is outside your normal field is when you start to see intersections between it and what you've always been doing.
-For me this happened when reading the chapter of Hadley Wickham's [R for Data Science](https://vita.had.co.nz/papers/tidy-data.pdf) on [tidy data](https://vita.had.co.nz/papers/tidy-data.pdf).
+For me this ocurred while reading the chapter of Hadley Wickham's [R for Data Science](https://vita.had.co.nz/papers/tidy-data.pdf) on [tidy data](https://vita.had.co.nz/papers/tidy-data.pdf).
 
 To summarise, tidy data has three key elements:
 
@@ -22,29 +20,31 @@ To summarise, tidy data has three key elements:
 1. Each observation must have its own row.
 1. Each value must have its own cell.
 
-What hit me was that this perfectly described a packet capture. Each captured packet is an observation in a row, and the values the dissectors return
-are the columns containin the variables. I started to imagine the kinds of data analysis and visualisations that could be performed on the packet data.
+What I realised is that this also described network packet captures, with each captured packet being and observation and the values of the dissectors the variables. I started to imagine the kinds of data analysis and visualisations that could be performed on the packet data.
 
-In this article I want to show how valuable it is to perform packet analysis using the R language. It's broken into two sections: converting packet capture files
-into a format appropraite for ingestion into R (in this case it's comma separated values), and then performing some initial 
-[exploratory data analysis](https://en.wikipedia.org/wiki/Exploratory_data_analysis) on the capture to describe and visualise it's main characteristics.
+In this article I want to show how valuable it can be to perform packet analysis using the R language. It's broken into three sections:
 
-# Removing the False Dichotomy
+- Conversion of packet captures.
+- Creation of Wireshark analogies in R.
+- Deeper dive into the packet captures.
 
-Before moving on, I want to be clear that I don't think that this is a replacement for packet analysis in Wireshark. Rather, I see it as a complimentary tool
-that with both strengths and weaknesses. I think of Wireshark as a bottom-up tool: you open a packet capture an immediately you're thrust amongst the packets,
+There's nothing too complicated in here, no regressions, no categorisation, no machine learning. It's predominantly about filtering, countingm summarising and visualising. But what I hope you'll see there is that there is power in even these simple actions.
+
+# Avoiding a False Dichotomy
+
+Before moving on, I want to be clear that I don't think that this is a replacement for packetanalysis in Wireshark. Rather, I see it as a complimentary tool
+that with both strengths and weaknesses. I see Wireshark as a bottom-up tool: you open a packet capture an immediately you're thrust amongst the packets,
 barraged with details. This is perfect if you know what you're looking for and can filter out the noise to concentrate on your problem. But if you don't have
 a clear view of what's in the packet capture or where the problem may lie, taking a step back and removing yourself from the details can be difficult.
 
 Analysing packet captures with R is a top-down aproach. You load your packet capture and you're presented with nothing. But what you have at your disposal is 
-a richer set of tools to summarise and visualise the packets and get a broader sense of what is happening across the entire capture, and at any point in the 
-protocol layers: data-link, network, transport, or application.
+a richer set of tools to summarise and visualise the packets and get a broader sense of what is happening across the entire capture before then diving in to the details.
 
 # PCAP to CSV Transformation
 
-The first step is to convert the packet capture file into a format that R can ingest. I chose the comma separate values format (CSV) as it is human readable. [SQLLite](https://www.sqlite.org/index.html) and [Parquet](https://parquet.apache.org/) are other viable options. In this article the packet captures I am transoforming are < 100Mb, so CSV works fine. CSV may (read: will likely) have issues for packet capture files larger than this, but for the moment [good enough is good enough](https://en.wikipedia.org/wiki/Principle_of_good_enough).
+The first step is to convert the packet capture file into a format that R can ingest. I chose the comma separate values format (CSV) for its simplicity and human readability, however [SQLLite](https://www.sqlite.org/index.html) and [Parquet](https://parquet.apache.org/) are other viable options.
 
-In the code below, we download a sample packet capture file and the PCAP to CSV conversion script.
+We download a sample packet capture file and the PCAP to CSV conversion script:
 
 
 ```r
@@ -69,13 +69,10 @@ download.file(
 )
 ```
 
-We then run the script across the sample packet capture we've downloaded to convert it into a CSV. At a high level the script:
+The conversion script is then run across the sample packet capture we've downloaded and converts it into a CSV. At a high level the script:
 
-- Takes a list of dissectors.
-    - The default dissectors are those beginning with frame|eth|ip|arp|tcp|udp|icmp|dns|ssl|http|smb.
 - Spawns a `tshark` process which runs over the packet catpure, outputting the specifed fields in JSON format to STDOUT.
 - Reads the JSON from STDOUT and flattens the data structure.
-    - e.g. `{ http.cookie_pair => [ 'a=1', 'b=2' ] }` becomes `{ http.cookie_pair.0 => 'a=1', http.cookie_pair.1 => 'b=2' }`
 - Outputs all of the fields as CSV.
 
 Spawning the tshark process and reading from STDOUT is not the cleanest of inplementations, but it does the job we need it to do.
@@ -83,9 +80,6 @@ Spawning the tshark process and reading from STDOUT is not the cleanest of inple
 
 ```zsh
 perl pcap_to_csv sample.pcap
-
-# What's the size differential?
-ls -lh sample.pcap*
 ```
 
 ```
@@ -94,18 +88,26 @@ ls -lh sample.pcap*
 ## Decoding JSON...
 ## Flattening packets...
 ## Creating sample.pcap.csv
-## -rw-rw-r-- 1 puglet puglet 9.1M Feb 19 12:39 sample.pcap
-## -rw-rw-r-- 1 puglet puglet 101M Feb 19 12:39 sample.pcap.csv
+```
+
+What's the size differential?
+
+
+```zsh
+ls -lh sample.* | awk '{ print $5, $9 }'
+```
+
+```
+## 9.1M sample.pcap
+## 101M sample.pcap.csv
 ```
 
 We see there's about a 10:1 size ratio between the CSV and the original packet capture.
 
-We now ingest the CSV file into R and perform some mutations to the data:
+This CSV file is then ingested into R and some mutations are performed:
 
 1. We remove the '.0' from the end of variable names. This allows us to refer directly to variables that are only in a frame once, e.g. `pcap['tcp.dstport']` instead of `pcap['tcp.dstport.0']`.
 1. The `frame.time` field is changed to a `POSIXct` date-time class rather than a simple character string.
-
-We then take a look at the first 10 rows of some selected fields.
 
 
 ```r
@@ -129,8 +131,13 @@ pcap <-
         tz = 'UTC',
         origin = '1970-01-01 00:00.00 UTC'
     ))
+```
 
-# Take a look at some of the columns in the first 10 rows
+Taking a look at some of the key variables in the first 10 rows:
+
+
+```r
+# First peek
 pcap %>%
     select(
         frame.time,
@@ -151,16 +158,13 @@ pcap %>%
 ## 5 2011-01-25 18:52:22 72.14.213.102 192.168.3.131       55950          1
 ```
 
-
 # Wireshark Analogies
 
-Now that we've got our data in to R, let's explore it. To start we're going to create some of the graphs and other analysis out puts you would find in Wireshark.
+Now that we've got our data in to R, let's explore it. To start with we'll emulate some of the native outputs of Wireshark.
 
-## IO Graph
+## I/O Graph
 
-This is the default graph you would find by going to [Statistics -> I/O Graph] in Wireshark.
-We round the each frame's time to the nearest second and group by this value. We then tally up
-the number of frames occurring within each of these seconds and graph is as a line graph.
+This is the default graph you would find by going to [Statistics -> I/O Graph] in Wireshark. We round the each frame's time to the nearest second and tally up the number of frames occurring within each of these seconds.
 
 
 ```r
@@ -169,16 +173,18 @@ pcap %>%
     tally() %>%
     ggplot() +
     geom_line(aes(t, n)) +
-    labs(x = 'Seconds Since Start of Capture', y = 'Frame Count')
+    labs(
+        title = 'Total Input/Output',
+        x = 'Seconds Since Start of Capture',
+        y = 'Frame Count'
+    )
 ```
 
 <img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/packets_per_second-1.png" width="672" />
 
 ## IP Conversations
 
-This is similar to the output you would get by going to [Statistics -> Conversations -> IP]. We group by 
-each source and destination IP address and count the number of packets and the number of kiobytes in each
-of these *unidirectional* IP conversations. 
+This is similar to the output you would get by going to [Statistics -> Conversations -> IP]. We group by source and destination IP address and count the number of packets and the number of kiobytes in each of these *unidirectional* IP conversations. 
 
 
 ```r
@@ -189,59 +195,21 @@ pcap %>%
         kbytes = sum(frame.len)/1000
     ) %>%
     arrange(desc(packets)) %>%
-    head() %>%
-    kable() %>%
-    kable_styling()
+    head()
 ```
 
-<table class="table" style="margin-left: auto; margin-right: auto;">
- <thead>
-  <tr>
-   <th style="text-align:left;"> ip.src </th>
-   <th style="text-align:left;"> ip.dst </th>
-   <th style="text-align:right;"> packets </th>
-   <th style="text-align:right;"> kbytes </th>
-  </tr>
- </thead>
-<tbody>
-  <tr>
-   <td style="text-align:left;"> 65.54.95.68 </td>
-   <td style="text-align:left;"> 192.168.3.131 </td>
-   <td style="text-align:right;"> 1275 </td>
-   <td style="text-align:right;"> 1718.702 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> 204.14.234.85 </td>
-   <td style="text-align:left;"> 192.168.3.131 </td>
-   <td style="text-align:right;"> 1036 </td>
-   <td style="text-align:right;"> 956.946 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> 65.54.95.75 </td>
-   <td style="text-align:left;"> 192.168.3.131 </td>
-   <td style="text-align:right;"> 766 </td>
-   <td style="text-align:right;"> 878.941 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> 192.168.3.131 </td>
-   <td style="text-align:left;"> 204.14.234.85 </td>
-   <td style="text-align:right;"> 740 </td>
-   <td style="text-align:right;"> 478.420 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> 192.168.3.131 </td>
-   <td style="text-align:left;"> 65.54.95.68 </td>
-   <td style="text-align:right;"> 664 </td>
-   <td style="text-align:right;"> 66.932 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> 65.54.95.140 </td>
-   <td style="text-align:left;"> 192.168.3.131 </td>
-   <td style="text-align:right;"> 658 </td>
-   <td style="text-align:right;"> 762.505 </td>
-  </tr>
-</tbody>
-</table>
+```
+## # A tibble: 6 x 4
+## # Groups:   ip.src [5]
+##   ip.src        ip.dst        packets kbytes
+##   <chr>         <chr>           <int>  <dbl>
+## 1 65.54.95.68   192.168.3.131    1275 1719. 
+## 2 204.14.234.85 192.168.3.131    1036  957. 
+## 3 65.54.95.75   192.168.3.131     766  879. 
+## 4 192.168.3.131 204.14.234.85     740  478. 
+## 5 192.168.3.131 65.54.95.68       664   66.9
+## 6 65.54.95.140  192.168.3.131     658  763.
+```
 
 ## Protocols
 
@@ -260,7 +228,11 @@ pcap %>%
     geom_col(aes(fct_reorder(first_4_proto, n), n)) +
     coord_flip() +
     scale_y_log10() +
-    labs(x = 'First Four Dissectors', y = 'Total Frames (Log Scale)')
+    labs(
+        title = 'Packet Capture Protocols',
+        x = 'First Four Dissectors',
+        y = 'Total Frames (Log Scale)'
+    )
 ```
 
 <img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/protocols-1.png" width="672" />
@@ -272,8 +244,9 @@ This graph is a visual representation of [Statistics -> Packet Lengths]. The axi
 
 ```r
 pcap %>%
+    mutate(is_ack = !is.na(tcp.analysis.acks_frame)) %>%
     ggplot() +
-    geom_histogram(aes(frame.len, fill = !is.na(tcp.analysis.acks_frame)), binwidth = 50) +
+    geom_histogram(aes(frame.len, fill = is_ack), binwidth = 50) +
     labs(x = 'Number of Frames', y = 'Frame Size - Log(Bytes)', fill = 'Is ACK Segment?') +
     scale_y_log10()
 ```
@@ -300,10 +273,14 @@ We see an MSN address topping the list, however interestingly a broadcast addres
     ggplot() +
     geom_col(aes(fct_reorder(http.host, n), n)) +
     coord_flip() +
-    labs(x = 'Host', y = 'Number of HTTP requests')
+    labs(
+        title = 'Requests per HTTP Host Header',
+        x = 'Host',
+        y = 'Number of HTTP requests'
+    )
 ```
 
-<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-2-1.png" width="672" />
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-1-1.png" width="672" />
 
 Let's dive a little deeper on this - what are the protocols of these multicast HTTP packets?
 
@@ -362,7 +339,7 @@ Type 11 (time exceeded) code 0 (time to tive exceeded in transit) messages.
 
 ## TLS Versions and Ciphers
 
-Taking more of a security bent on our analysis, we'll take a look at the SSL/TLS versions and ciphers being used.
+Taking more of a security perspective, let's take a look at the SSL/TLS versions and ciphers being used.
 
 During the TLS handshake, the ClientHello message has two versions: the record version which indicates which version of the ClientHello is being sent, and the handshake version which indicates the version of the protocol the client/server wishes to communicate on during the session. We're concerned with the handshake version:
 
@@ -383,7 +360,7 @@ pcap %>%
 
 The predominant verison is TLS 1.1 (0x0301), with some TLS 1.0 (0x0300).
 
-What about the ciphers being used? By filtering out
+What about the ciphers being used? By filtering out packets that aren't part of the handshake and selecting the ciphersuite variable we can get an idea.
 
 
 ```r
@@ -409,7 +386,7 @@ pcap %>%
 ## # … with 112 more rows
 ```
 
-We don't get the ciphersuite in a human readable format, instead we get the the decimal version of the two-byte identification number. This makes it's difficult to make a security judgement on these ciphers.
+Unfortunately we don't get the ciphersuite in a human readable format. Instead we get the the decimal version of the two-byte identification number. This makes it's difficult to make a security judgement on these ciphers.
 
 Let's translate these into a human readable format. The [website](http://realtimelogic.com/ba/doc/en/C/shark/group__SharkSslCiphers.html) that has a translation table and also - thankfully - has a CSS element that we can use to pull out the values.
 
@@ -419,28 +396,56 @@ The `rvest` library is used to download the page, pull out the table entries, an
 ```r
 library(rvest)
 
-cipher_mappings <-
-    xml2::read_html('http://realtimelogic.com/ba/doc/en/C/shark/group__SharkSslCiphers.html') %>%
+s <- 'http://realtimelogic.com/ba/doc/en/C/shark/group__SharkSslCiphers.html'
+
+s %>%
+    xml2::read_html() %>%
     html_nodes('.memItemRight') %>%
     html_text() %>%
     str_split_fixed("\\s+", n = 2) %>%
     as_tibble(.name_repair = ~{ c('ciphersuite', 'hex_value') }) %>%
-    mutate(hex_value = as.hexmode(hex_value))
+    mutate(hex_value = as.hexmode(hex_value)) ->
+    cipher_mappings
 
-head(cipher_mappings)
+head(cipher_mappings) %>%
+    kable() %>%
+    kable_styling()
 ```
 
-```
-## # A tibble: 6 x 2
-##   ciphersuite              hex_value
-##   <chr>                    <hexmode>
-## 1 TLS_NULL_WITH_NULL_NULL  0        
-## 2 TLS_RSA_WITH_NULL_MD5    1        
-## 3 TLS_RSA_WITH_NULL_SHA    2        
-## 4 TLS_RSA_WITH_RC4_128_MD5 4        
-## 5 TLS_RSA_WITH_RC4_128_SHA 5        
-## 6 TLS_RSA_WITH_DES_CBC_SHA 9
-```
+<table class="table" style="margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> ciphersuite </th>
+   <th style="text-align:right;"> hex_value </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> TLS_NULL_WITH_NULL_NULL </td>
+   <td style="text-align:right;"> 0 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> TLS_RSA_WITH_NULL_MD5 </td>
+   <td style="text-align:right;"> 1 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> TLS_RSA_WITH_NULL_SHA </td>
+   <td style="text-align:right;"> 2 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> TLS_RSA_WITH_RC4_128_MD5 </td>
+   <td style="text-align:right;"> 4 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> TLS_RSA_WITH_RC4_128_SHA </td>
+   <td style="text-align:right;"> 5 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> TLS_RSA_WITH_DES_CBC_SHA </td>
+   <td style="text-align:right;"> 9 </td>
+  </tr>
+</tbody>
+</table>
 
 We're only concerned with the ciphersuite the ServerHello responds with, because this is the one that is ultimately used. Thus other records are filtered out, the number of discrete ciphersuites is counted, and the values converted to hex.
 
@@ -464,9 +469,7 @@ pcap %>%
 
 ## DNS Response Times
 
-In this section we'll be looking at DNS response times. First off let's find out what DNS servers hosts are using, and what the average response times are:
-
-```{r 
+Finally, let's take a look at DNS response times. We filter for DNS responses, group by the query and the response type, calculate the mean response time for each of these groups an plot it.
 
 
 ```r
@@ -477,10 +480,17 @@ pcap %>%
     ggplot() +
     geom_col(aes(fct_reorder(dns.qry.name, mean_resp), mean_resp, fill = as.factor(dns.resp.type))) +
     coord_flip() +
-    labs(x = 'DNS Query Name', y = 'Mean Response Time (ms)', fill = 'DNS Response Type')
+    labs(x = 'DNS Query Name', y = 'Mean Response Time (seconds)', fill = 'DNS Response Type')
 ```
 
-<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-3-1.png" width="672" />
+<img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/unnamed-chunk-2-1.png" width="672" />
+
+What we see that response time for some domains differs. The shorter response times have a low variance, indicating they likely came from the resolver's cache. Other responses have a higher variance, either because of network latency to authoritative DNS servers, or because other DNS resolvers in the chain (opaque to us) have the entry cached as well.
+
+# Summary
+
+In this article I've discussed the conversion of packet capture files to CSV, and exploratory data analysis of these packet captures using the R language. I hope I've shown the value of this method and how standard packet capture analysis with Wireshark could be comlimented with this method.
+
 
 
 
