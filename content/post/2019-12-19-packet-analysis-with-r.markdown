@@ -4,7 +4,7 @@ author: Greg Foletta
 date: '2020-02-22'
 slug: packet-analysis-with-r-part-1
 categories: [R, Perl]
-tags: [R Perl PCAP Networking]
+tags: [R, Perl, PCAP, Networking]
 description: 'Analysing packet captures with R and Perl'
 output: md_document
 always_allow_html: yes
@@ -76,7 +76,7 @@ time perl pcap_to_csv sample.pcap
 ## Decoding JSON...
 ## Flattening packets...
 ## Creating sample.pcap.csv
-## perl pcap_to_csv sample.pcap  19.65s user 0.85s system 102% cpu 20.032 total
+## perl pcap_to_csv sample.pcap  17.96s user 0.78s system 101% cpu 18.392 total
 ```
 
 What's the size differential?
@@ -430,20 +430,16 @@ pcap %>%
     dplyr::filter(ssl.handshake.type == 2) %>%
     count(ssl.handshake.ciphersuite) %>%
     mutate(
-        ciphersuite = as.hexmode(ssl.handshake.ciphersuite)
+        cs = as.hexmode(ssl.handshake.ciphersuite)
     ) %>%
     left_join(
         cipher_mappings,
-        by = c('ciphersuite' = 'hex_value')
+        by = c('cs' = 'hex_value')
     ) %>%
     ggplot() +
     geom_col(aes(ciphersuite, n)) +
     coord_flip() +
     labs(x = 'TLS Ciphersuite', y = 'Total TLS Sessions')
-```
-
-```
-## Don't know how to automatically pick scale for object of type hexmode. Defaulting to continuous.
 ```
 
 <img src="/post/2019-12-19-packet-analysis-with-r_files/figure-html/tls_ciphers-1.png" width="672" />
