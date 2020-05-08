@@ -1,9 +1,8 @@
-baseurl = "https://stage.articles.foletta.org"
-title = "Greg Foletta - Technical Articles"
-copyright = "Copyright &copy; 2019 - Greg Foletta"
+baseurl = "https://www.example.org/"
+title = "Kiera"
+copyright = "Copyright &copy; 2019 - Author Name"
 canonifyurls = true
 theme = "hugo-kiera"
-
 
 paginate = 3
 
@@ -15,21 +14,21 @@ pygmentsCodeFences = true
 
 # Note: to disable a social network icon delete or comment out the corresponding line
 [author]
-    name = "Greg Foletta"
-    github = "gregfoletta"
+    name = "Example"
+    github = "funkydan2"
     #gitlab = "username"
-    linkedin = "gregfoletta"
+    #linkedin = "username"
     #facebook = "username"
-    twitter = "gregfoletta"
+    twitter = "ds_says"
     #instagram = "username"
     #stackoverflow = "username"
     #youtube = "user/username" # or channel/channelname
 
 [params]
-    tagline = "A melange of networking, data science and programming."
-    #description = "Kiera: A Hugo theme for creative and technical writing."
+    tagline = "A Hugo theme for creative and technical writing"
+    description = "Kiera: A Hugo theme for creative and technical writing."
     #images = [""] #This is used for opengraph/twitter cards.
-    #customCSS = []  #Optional Customised CSS
+    customCSS = []  #Optional Customised CSS
     #favicon = ""
     #utterancesRepo = "username/repository"
     #utterancesIssueTerm = "pathname"
@@ -44,11 +43,8 @@ pygmentsCodeFences = true
 #    weight = 1
 
 # uncomment to enable the Categories link on the main toolbar
-  [[menu.main]]
-    identifier = "categories"
-    name = "Categories"
-    url = "/categories"
-    weight = 1
-
-[markup.goldmark.renderer]
-    unsafe= true
+#  [[menu.main]]
+#    identifier = "categories"
+#    name = "Categories"
+#    url = "/categories"
+#    weight = 1

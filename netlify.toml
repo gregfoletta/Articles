@@ -1,6 +1,9 @@
 [build]
 publish = "public"
-command = "hugo -b $DEPLOY_PRIME_URL --gc --minify"
+command = "hugo --gc --minify" 
+
+[build.environment]
+TZ = 'Australia/Melbourne'
 
 [context.production.environment]
 HUGO_VERSION = "0.69.2"
