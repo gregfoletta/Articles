@@ -1,47 +1,50 @@
-baseURL = "https://articles.foletta.org/"
-languageCode = "en-us"
-title = "Greg Foletta"
-theme = "ezhil"
-paginate = 5
+baseurl = "https://test.articles.foletta.org"
+title = "Greg Foletta - Technical Articles"
+copyright = "Copyright &copy; 2019 - Greg Foletta"
+canonifyurls = true
+theme = "hugo-kiera"
 
-copyright = "© Copyright notice"
+paginate = 3
 
-ignoreFiles = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
+summaryLength = 30
+enableEmoji = true
+pygmentsCodeFences = true
 
-pygmentsstyle = "solarized-dark"
-pygmentscodefences = true
-pygmentscodefencesguesssyntax = true
+#disqusShortname = "myShortName"
 
-summaryLength = 20
+# Note: to disable a social network icon delete or comment out the corresponding line
+[author]
+    name = "Greg Foletta"
+    github = "gregfoletta"
+    #gitlab = "username"
+    linkedin = "gregfoletta"
+    #facebook = "username"
+    twitter = "gregfoletta"
+    #instagram = "username"
+    #stackoverflow = "username"
+    #youtube = "user/username" # or channel/channelname
 
 [params]
-	subtitle = "Technical Articles"
-	disableDisqusTypes = ["page"]
-	featherIconsCDN = true
-	mode = "dark" # "dark", "auto", "light"
-	# customCSS = "css/custom.css"  # Custom CSS applied to default styles.
-	# customDarkCSS = "css/custom-dark.css"  # Custom styles applied to dark mode css.
-	# customJS = ["https://code.jquery.com/jquery-3.4.1.js", "js/custom1.js"]  # Custom JS scripts.
+    tagline = "A selection of technical articles."
+    description = "Kiera: A Hugo theme for creative and technical writing."
+    #images = [""] #This is used for opengraph/twitter cards.
+    customCSS = []  #Optional Customised CSS
+    #favicon = ""
+    #utterancesRepo = "username/repository"
+    #utterancesIssueTerm = "pathname"
+    #homepageLength = 10
+    #commentAutoload = true  #This mean reader don't need click, disqus comment autoload
 
-[[menu.main]]
-name = "Home"
-url = "/"
-weight = 1
+# uncomment to enable the Tags link on the main toolbar
+  [[menu.main]]
+    identifier = "tags"
+    name = "Tags"
+    url = "/tags"
+    weight = 1
 
-[[menu.main]]
-name = "Tags"
-url = "/tags"
-weight = 4
-
-[[params.social]]
-name = "Github"
-icon = "github"
-url = "https://github.com/gregfoletta"
-
-[[params.social]]
-name = "RSS"
-icon = "rss"
-url = "/index.xml"
-
-[taxonomies]
-   tag = "tags"
+# uncomment to enable the Categories link on the main toolbar
+  [[menu.main]]
+    identifier = "categories"
+    name = "Categories"
+    url = "/categories"
+    weight = 1
