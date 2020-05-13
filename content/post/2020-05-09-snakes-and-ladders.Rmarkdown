@@ -91,7 +91,7 @@ snl_game <- function(board, finish = 'exact') {
 
 # Answering the Specific Question
 
-Now that we have our 
+Now that we have our board and a game, let's answer my specific question.
 
 ```{r}
 my_board_sim <- 
