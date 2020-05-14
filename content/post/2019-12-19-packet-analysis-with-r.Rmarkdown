@@ -1,12 +1,11 @@
 ---
 title: Packet Analysis with R (Part 1)
 author: Greg Foletta
-date: '`r Sys.Date()`'
+date: '22-02-2020'
 slug: packet-analysis-with-r-part-1
 categories: [R, Perl]
 tags: [R, Perl, PCAP, Networking]
 description: 'Analysing packet captures with R and Perl'
-output: md_document
 always_allow_html: yes
 ---
 

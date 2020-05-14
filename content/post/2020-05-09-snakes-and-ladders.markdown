@@ -28,7 +28,8 @@ We can represent a snakes and ladders board with as vector, with one element per
 
 The board my son and I use is represented below. To make it easier I've let R do the calculations for me, entering values as *destination - source* for ladders, and *source - destinaton* for snakes.
 
-```{r}
+
+```r
 my_board = c(
     38-1, 0, 0, 14-4, 0, 0, 0, 0, 31-9, 0,
     0, 0, 0, 0, 0, 6-16, 0, 0, 0, 0,
@@ -51,7 +52,8 @@ The `snl_game()` function takes a vector defining a board, and a finish type, an
 
 A game can be finished in one of two ways: with an exact roll that takes you to off the board, or with any roll. For example: you're on spot 98 on a 100 spot board. With an 'exact' game type, you would need to roll a 3 to take you to 101 to win. If you rolled [4,5,6], you wouldn't move your piece. With an 'over' game type, you can roll [3,4,5,6] to win.
     
-```{r}
+
+```r
 snl_game <- function(board, finish = 'exact') {
     if (!finish %in% c('exact', 'over')) {
         stop("Argument 'finish' must be either 'exact' or 'over")
@@ -89,16 +91,36 @@ snl_game <- function(board, finish = 'exact') {
         pos <- next_pos + board[next_pos]
     }
 }
-```    
+```
 
 
 # Answering the Specific Question
 
 Now that we have our board and a game, let's answer my specific question.
 
-```{r}
-library(tidyverse)
 
+```r
+library(tidyverse)
+```
+
+```
+## ── Attaching packages ──────────────────────────────────────────────────────────────────────────────────────── tidyverse 1.2.1 ──
+```
+
+```
+## ✓ ggplot2 3.3.0     ✓ purrr   0.3.3
+## ✓ tibble  2.1.3     ✓ dplyr   0.8.5
+## ✓ tidyr   0.8.3     ✓ stringr 1.4.0
+## ✓ readr   1.3.1     ✓ forcats 0.4.0
+```
+
+```
+## ── Conflicts ─────────────────────────────────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
+## x dplyr::filter() masks stats::filter()
+## x dplyr::lag()    masks stats::lag()
+```
+
+```r
 my_board_sim <- 
     crossing(finish_type = c('exact', 'over'), n = 1:10000) %>% 
     mutate(rolls = map_dbl(finish_type, ~snl_game(my_board, finish = .x)))
@@ -129,9 +151,12 @@ my_board_sim %>%
     )
 ```
 
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-3-1.png" width="672" />
+
 # Answering the General Question
 
-```{r}
+
+```r
 spot_alloc <- function(spot, board_size, mean) {
     r <- trunc(rnorm(1, mean, board_size / 3))
    
@@ -154,14 +179,18 @@ snl_board <- function(board_size, proportion, mean) {
 }
 ```
 
-```{r}
+
+```r
 crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
     mutate(board_mean = map_dbl(mean, ~mean(snl_board(100, .2, .x)))) %>% 
     ggplot() +
     geom_point(aes(mean, board_mean))
 ```
 
-```{r}
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-5-1.png" width="672" />
+
+
+```r
 crossing(
     n = 1:200,
     mean = -5:200,
@@ -177,3 +206,5 @@ crossing(
     geom_point(aes(mean, roll_mean, colour = finish_type)) +
     geom_line(aes(mean, roll_mean, colour = finish_type))
 ```
+
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-6-1.png" width="672" />
