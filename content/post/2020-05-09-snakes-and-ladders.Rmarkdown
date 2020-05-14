@@ -3,9 +3,12 @@ title: Snakes and Ladders
 author: Greg Foletta
 date: '2020-05-09'
 slug: snakes-and-ladders
-categories: []
-tags: []
-images: []
+categories: [R]
+tags: [R]
+description: 'Simulating Snakes and Ladders with R'
+output: md_document
+always_allow_html: yes
+
 ---
 
 For the past 8 weeks I, like most people, have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so I've been spending a lot of time doing this with him,
@@ -94,6 +97,8 @@ snl_game <- function(board, finish = 'exact') {
 Now that we have our board and a game, let's answer my specific question.
 
 ```{r}
+library(tidyverse)
+
 my_board_sim <- 
     crossing(finish_type = c('exact', 'over'), n = 1:10000) %>% 
     mutate(rolls = map_dbl(finish_type, ~snl_game(my_board, finish = .x)))

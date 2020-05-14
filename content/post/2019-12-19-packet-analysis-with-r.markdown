@@ -1,7 +1,7 @@
 ---
 title: Packet Analysis with R (Part 1)
 author: Greg Foletta
-date: '2020-02-22'
+date: '2020-05-14'
 slug: packet-analysis-with-r-part-1
 categories: [R, Perl]
 tags: [R, Perl, PCAP, Networking]
@@ -76,7 +76,7 @@ time perl pcap_to_csv sample.pcap
 ## Decoding JSON...
 ## Flattening packets...
 ## Creating sample.pcap.csv
-## perl pcap_to_csv sample.pcap  17.96s user 0.78s system 101% cpu 18.392 total
+## perl pcap_to_csv sample.pcap  17.62s user 0.93s system 99% cpu 18.552 total
 ```
 
 What's the size differential?

@@ -1,0 +1,196 @@
+For the past 8 weeks I, like most people, have been in isolation thanks
+to the coronavirus. My eldest son is 5 years old and is really into
+games and puzzles at moment, so I’ve been spending a lot of time doing
+this with him,
+
+The board game he’s must enamoured with is snakes and ladders. While
+sitting on the floor and playing for the umpteenth time, I wondered
+*“what is the average number of turns it takes to finish a game of
+snakes and ladders?”*.
+
+In this article I’ll be looking at snakes and ladders from different
+perspectives:
+
+1.  Using R to simulate the specific to answer the question for our
+    snakes and ladders board.
+2.  Using R to simulate the general to answer for generic snakes and
+    ladders boards.
+3.  Deriving general formulas for snakes and ladders.
+
+The Board
+=========
+
+We can represent a snakes and ladders board with as vector, with one
+element per ‘spot’. The value of each spot is how many spaces you should
+be shifted if you land on the sport. For a ladder, this is a positive
+value, for a snake its negative. If the spot has neither a snake nor a
+ladder, it has a value of 0.
+
+The board my son and I use is represented below. To make it easier I’ve
+let R do the calculations for me, entering values as *destination -
+source* for ladders, and *source - destinaton* for snakes.
+
+    my_board = c(
+        38-1, 0, 0, 14-4, 0, 0, 0, 0, 31-9, 0,
+        0, 0, 0, 0, 0, 6-16, 0, 0, 0, 0,
+        42-21, 0, 0, 0, 0, 0, 0, 84-28, 0, 0,
+        0, 0, 0, 0, 0, 44-36, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 26-47, 0, 11-49, 0,
+        67-51, 0, 0, 0, 0, 53-56, 0, 0, 0, 0,
+        0, 19-62, 0, 60-64, 0, 0, 0, 0, 0, 0,
+        91-71, 0, 0, 0, 0, 0, 0, 0, 0, 100-80,
+        0, 0, 0, 0, 0, 0, 24-87, 0, 0, 0,
+        0, 0, 73-93, 0, 75-95, 0, 0, 78-98, 0, 0
+    )
+
+The Game
+========
+
+We have a data structure that represents the board, now we need an
+algorithm that represents the game.
+
+The `snl_game()` function takes a vector defining a board, and a finish
+type, and runs through a single player game until the game is complete,
+returning the number of rolls it took to finish the game.
+
+A game can be finished in one of two ways: with an exact roll that takes
+you to off the board, or with any roll. For example: you’re on spot 98
+on a 100 spot board. With an ‘exact’ game type, you would need to roll a
+3 to take you to 101 to win. If you rolled \[4,5,6\], you wouldn’t move
+your piece. With an ‘over’ game type, you can roll \[3,4,5,6\] to win.
+
+    snl_game <- function(board, finish = 'exact') {
+        if (!finish %in% c('exact', 'over')) {
+            stop("Argument 'finish' must be either 'exact' or 'over")
+        }
+        # We sart on 0, which is off the board. First space is 1
+        pos <- 0
+        # We finish one past the end of the board
+        fin_pos <- length(board) + 1
+        # Our roll counter
+        n <- 0
+        
+        while (n <- n + 1) {
+            # Roll the dice
+            roll <- sample(6, 1)
+            # Update the position
+            next_pos <- pos + roll
+            
+            # Two types of finish:
+            # a) We need an exact roll to win
+            # b) We need any roll to win
+            if (next_pos > fin_pos) { 
+                if (finish == 'exact') {
+                    next
+                } else {
+                    return(n)
+                }
+            }
+            
+            # Did we win?
+            if (next_pos == fin_pos) {
+                return(n)
+            }
+            
+            # Take into account any snakes/ladders  
+            pos <- next_pos + board[next_pos]
+        }
+    }
+
+Answering the Specific Question
+===============================
+
+Now that we have our board and a game, let’s answer my specific
+question.
+
+    library(tidyverse)
+
+    ## ── Attaching packages ────────────────────────────────────────────────────────────────────── tidyverse 1.2.1 ──
+
+    ## ✓ ggplot2 3.3.0     ✓ purrr   0.3.3
+    ## ✓ tibble  2.1.3     ✓ dplyr   0.8.5
+    ## ✓ tidyr   0.8.3     ✓ stringr 1.4.0
+    ## ✓ readr   1.3.1     ✓ forcats 0.4.0
+
+    ## ── Conflicts ───────────────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
+    ## x dplyr::filter() masks stats::filter()
+    ## x dplyr::lag()    masks stats::lag()
+
+    my_board_sim <- 
+        crossing(finish_type = c('exact', 'over'), n = 1:10000) %>% 
+        mutate(rolls = map_dbl(finish_type, ~snl_game(my_board, finish = .x)))
+
+    my_board_summary <-
+        my_board_sim %>% 
+        group_by(finish_type) %>% 
+        summarise(
+            mean = mean(rolls),
+            sd = sd(rolls)
+        )
+
+    my_board_sim %>% 
+        ggplot() +
+        geom_histogram(aes(rolls), binwidth = 1) +
+        geom_vline(
+            aes(xintercept = mean), 
+            linetype = 'dashed', 
+            colour = 'red', 
+            my_board_summary
+        ) +
+        geom_label(aes(label = mean, x = mean, y = 0), my_board_summary) +
+        facet_wrap(~finish_type, scales = 'free') +
+        labs(
+            x = 'Number of Dice Rolls',
+            y = 'Number of Games',
+            title = 'Snakes and Ladders - Dice Roll Histogram'
+        )
+
+![](2020-05-09-snakes-and-ladders_files/figure-markdown_strict/unnamed-chunk-3-1.png)
+
+Answering the General Question
+==============================
+
+    spot_alloc <- function(spot, board_size, mean) {
+        r <- trunc(rnorm(1, mean, board_size / 3))
+       
+        # Bound the snake or ladder by the bottom
+        # and top of the board
+        max(-(spot -1), min(board_size - spot, r))
+    }
+                   
+
+    snl_board <- function(board_size, proportion, mean) {
+        # Allocate the board
+        board <- rep(0, board_size)
+       
+        # Set the proportion of snakes and ladders 
+        spots <- trunc(runif(proportion * board_size, 1, board_size))
+            
+        # Assign to these spots either a snake or a ladder
+        board[spots] <- map_dbl(spots, ~spot_alloc(.x, board_size, mean))
+        return(board)
+    }
+
+    crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
+        mutate(board_mean = map_dbl(mean, ~mean(snl_board(100, .2, .x)))) %>% 
+        ggplot() +
+        geom_point(aes(mean, board_mean))
+
+![](2020-05-09-snakes-and-ladders_files/figure-markdown_strict/unnamed-chunk-5-1.png)
+
+    crossing(
+        n = 1:200,
+        mean = -5:200,
+        finish_type = c('exact', 'over')
+    ) %>% 
+        mutate(
+            board = map(mean, ~snl_board(100, .2, .x)),
+            rolls = map2_dbl(board, finish_type, ~snl_game(.x, .y))
+        ) %>% 
+        group_by(mean, finish_type) %>% 
+        summarise(roll_mean = mean(rolls)) %>% 
+        ggplot() +
+        geom_point(aes(mean, roll_mean, colour = finish_type)) +
+        geom_line(aes(mean, roll_mean, colour = finish_type))
+
+![](2020-05-09-snakes-and-ladders_files/figure-markdown_strict/unnamed-chunk-6-1.png)
