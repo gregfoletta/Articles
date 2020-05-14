@@ -1,5 +1,5 @@
 ---
-title: Snakes and Ladders
+title: Simulating Snakes and Ladders
 author: Greg Foletta
 date: '2020-05-05'
 slug: snakes-and-ladders

@@ -4,6 +4,7 @@ copyright = "Copyright &copy; 2019 - Greg Foletta"
 canonifyurls = true
 theme = "hugo-kiera"
 
+
 paginate = 3
 
 summaryLength = 30
@@ -48,3 +49,6 @@ pygmentsCodeFences = true
     name = "Categories"
     url = "/categories"
     weight = 1
+
+[markup.goldmark.renderer]
+    unsafe= true
