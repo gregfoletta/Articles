@@ -4,9 +4,7 @@ author: Greg Foletta
 date: '22-02-2020'
 slug: packet-analysis-with-r-part-1
 categories: [R, Perl]
-tags: [R, Perl, PCAP, Networking]
 description: 'Analysing packet captures with R and Perl'
-always_allow_html: yes
 ---
 
 As a network security consultant I've spent a my fair share of time trawling through packet captures, looking for that clue or piece of evidence I hope will lead me to the root cause of a problem. Wireshark is the the tool par excellence for interpreting and investigating packet captures, however I've always found that it's best suited to bottom-up rather than top-down analysis. Opening a packet capture you're bombarded with information, the minutiae from each packet instantly available. This is perfect if you know what you're looking for and can filter out the noise to concentrate on your problem. But if you don't have a clear view of what's in the capture, or where the problem may lie, taking a step back and removing yourself from the details in Wireshark can be difficult.
@@ -75,7 +73,7 @@ time perl pcap_to_csv sample.pcap
 ## Decoding JSON...
 ## Flattening packets...
 ## Creating sample.pcap.csv
-## perl pcap_to_csv sample.pcap  22.48s user 0.92s system 100% cpu 23.345 total
+## perl pcap_to_csv sample.pcap  19.73s user 0.89s system 101% cpu 20.241 total
 ```
 
 What's the size differential?

@@ -1,14 +1,10 @@
 ---
 title: Snakes and Ladders
 author: Greg Foletta
-date: '09-05-2020'
+date: '2020-05-05'
 slug: snakes-and-ladders
 categories: [R]
-tags: [R]
 description: 'Simulating Snakes and Ladders with R'
-output: md_document
-always_allow_html: yes
-
 ---
 
 For the past 8 weeks I, like most people, have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so I've been spending a lot of time doing this with him,
