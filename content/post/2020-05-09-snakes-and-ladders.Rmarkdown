@@ -92,9 +92,11 @@ snl_game <- function(board, finish = 'exact') {
 
 Now that we have our board and a game, let's answer my specific question.
 
-```{r}
+```{r message=FALSE}
 library(tidyverse)
+```
 
+```{r}
 my_board_sim <- 
     crossing(finish_type = c('exact', 'over'), n = 1:10000) %>% 
     mutate(rolls = map_dbl(finish_type, ~snl_game(my_board, finish = .x)))
