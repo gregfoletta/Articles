@@ -1,7 +1,7 @@
 ---
 title: Packet Analysis with R (Part 1)
 author: Greg Foletta
-date: '22-02-2020'
+date: '2020-02-22'
 slug: packet-analysis-with-r-part-1
 categories: [R, Perl]
 description: 'Analysing packet captures with R and Perl'
