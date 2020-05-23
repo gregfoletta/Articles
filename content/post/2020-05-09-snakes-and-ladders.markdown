@@ -8,30 +8,38 @@ description: 'Simulating Snakes and Ladders with R'
 allow_html: yes
 ---
 
+
+```r
+knitr::opts_chunk$set(dev.args = list(png = list(type = "cairo")))
+```
+
+
 For the past 8 weeks I, like most people, have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so I've been spending a lot of time doing this with him,
 
-The board game he's must enamoured with is snakes and ladders. While sitting on the floor and playing for the umpteenth time, I wondered *"what is the average number of turns it takes to finish our games of snakes and ladders?"*.
+The board game he really enjoys is snakes and ladders. While sitting on the floor and playing for the umpteenth time, I started to wonder about some of the game's statistical properties. That's normal right?
 
-In this article I'll be looking at snakes and ladders from different perspectives:
+In this article I want to try and answer two questions. The first is:
 
-1. Using R to simulate the specific to answer the question for our snakes and ladders board.
-1. Using R to simulate the general to answer for generic snakes and ladders boards.
-1. Deriving general formulas for snakes and ladders.
+> For my son's board, what is the average amount of dice rolls it takes to finish a game?
+
+And the second is:
+
+> What is the average amount of dice rolls it takes to finish a game for a generalised board?
 
 
-# The Board
+# Defining the Board
 
-This is the board we play on:
+This is the board we play on - it's large sheet of plastic, hence the crinkles:
 
 ![Our Snakes and Ladders Board](/post/snakes_and_ladders/board.jpg)
 
-We can represent a snakes and ladders board with as vector, with one element per 'spot'. The value of each spot is how many spaces you should be shifted if you land on the sport. For a ladder, this is a positive value, for a snake its negative. If the spot has neither a snake nor a ladder, it has a value of 0.
+We'll represent this board (and other boards) as a vector with one element per 'spot' on the board. Each element holds the value of the shift that occurs when you land on it: negative for snakes, positive for ladders, or zero for neither.
 
-The board my son and I use is represented below. To make it easier I've let R do the calculations for me, entering values as *destination - source* for ladders, and *source - destinaton* for snakes.
+The vector below is a representation of my son's board. I've let R do the calculations for me, entering values as *destination - source* for ladders and *source - destinaton* for snakes.
 
 
 ```r
-my_board = c(
+our_board = c(
     38-1, 0, 0, 14-4, 0, 0, 0, 0, 31-9, 0,
     0, 0, 0, 0, 0, 6-16, 0, 0, 0, 0,
     42-21, 0, 0, 0, 0, 0, 0, 84-28, 0, 0,
@@ -45,13 +53,15 @@ my_board = c(
 )
 ```
 
-# The Game
+# Playing the Game
 
 We have a data structure that represents the board, now we need an algorithm that represents the game.
 
 The `snl_game()` function takes a vector defining a board, and a finish type, and runs through a single player game until the game is complete, returning the number of rolls it took to finish the game.
 
-A game can be finished in one of two ways: with an exact roll that takes you to off the board, or with any roll. For example: you're on spot 98 on a 100 spot board. With an 'exact' game type, you would need to roll a 3 to take you to 101 to win. If you rolled [4,5,6], you wouldn't move your piece. With an 'over' game type, you can roll [3,4,5,6] to win.
+The finish type specfies one of the two different ways a game can be finished. My son and I play an 'over' finish type, where any dice roll that takes you over the board length results in a win.
+
+The other finish is the 'exact' type, where you need to land exactly on the board length + 1 to win. If you go over, you remain in your current place.
     
 
 ```r
@@ -59,6 +69,7 @@ library(tidyverse)
 library(magrittr)
 library(glue)
 library(knitr)
+library(kableExtra)
 ```
 
 
@@ -71,10 +82,10 @@ snl_game <- function(board, finish = 'exact') {
     pos <- 0
     # We finish one past the end of the board
     fin_pos <- length(board) + 1
-    # Our roll counter
-    n <- 0
+    # roll counter
+    rolls <- 0
     
-    while (n <- n + 1) {
+    while (rolls <- rolls + 1) {
         # Roll the dice
         roll <- sample(1:6, 1)
         # Update the position
@@ -84,20 +95,14 @@ snl_game <- function(board, finish = 'exact') {
         # a) We need an exact roll to win
         # b) We need any roll to win
         if (next_pos > fin_pos) { 
-            if (finish == 'exact') {
-                next
-            } else {
-                return(n)
-            }
+            if (finish == 'exact')  { next }
+            else                    { return(rolls) }
         }
         
         # Did we win?
-        if (next_pos == fin_pos) {
-            return(n)
-        }
+        if (next_pos == fin_pos) { return(rolls) }
         
-        # Somehow did we move off the board in the negative direction?
-        # Warn and reset to 0
+        # Did we somehow move off the board in the negative direction?
         if (next_pos < 1) {
             warning(glue("Went into negative board position: {next_pos}"))
             return(NA_integer_)
@@ -112,22 +117,18 @@ snl_game <- function(board, finish = 'exact') {
 
 # Answering the Specific Question
 
-Now that we have our board and a game, let's answer my specific question. Using my new favourite function `crossing()`, we simulate a snakes and ladders game 200,000 times for each of the finish types and calculate the mean number of rolls.
-
-The number of rolls is then visualised as a histogram, with the red line showing the calculated mean.
-
+Now that we have a board and a game, let's answer the specifuc queston about the average number of rolls to win on my son's board. Using my new favourite function `crossing()`, we simulate 200,000 games times for each of the finish types and calculate the mean number of rolls. We visualise this as a histogram:
 
 
 ```r
 # Simulate 200,000 games of each finish type 
-# using my board
-my_board_sim <- 
+our_board_sim <- 
     crossing(finish_type = c('exact', 'over'), n = 1:200000) %>% 
-    mutate(rolls = map_dbl(finish_type, ~snl_game(my_board, finish = .x)))
+    mutate(rolls = map_dbl(finish_type, ~snl_game(our_board, finish = .x)))
 
 # Summarise the results
-my_board_summary <-
-    my_board_sim %>% 
+our_board_summary <-
+    our_board_sim %>% 
     group_by(finish_type) %>% 
     summarise(
         min = min(rolls),
@@ -138,16 +139,16 @@ my_board_summary <-
     )
 
 # Plot the histograms
-my_board_sim %>% 
+our_board_sim %>% 
     ggplot() +
     geom_histogram(aes(rolls), binwidth = 1) +
     geom_vline(
         aes(xintercept = mean), 
         linetype = 'dashed', 
         colour = 'red', 
-        my_board_summary
+        our_board_summary
     ) +
-    geom_label(aes(label = mean, x = mean, y = 0), my_board_summary) +
+    geom_label(aes(label = mean, x = mean, y = 0), our_board_summary) +
     facet_wrap(~finish_type, scales = 'free') +
     labs(
         x = 'Number of Dice Rolls',
@@ -158,28 +159,54 @@ my_board_sim %>%
 
 <img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/my_board_simulation-1.png" width="672" />
 
-So we can see that it takes on average 7 rolls to finish an 'exact' game type, and 7 rolls to finish an 'over' game type.
-
-For simplicity, my son and I play the 'over' finish type, and I estimate a dice roll and move to take around 10 seconds. Our games should on average take around 12 minutes, with 95% of games finishing in less than 28 minutes.
-
-
 ```r
-print(my_board_summary)
+our_board_summary %>% 
+    kable() %>%
+    kable_styling()
 ```
 
-```
-## # A tibble: 2 x 6
-##   finish_type   min   max  mean quantile_95 quantile_5
-##   <chr>       <dbl> <dbl> <dbl>       <dbl>      <dbl>
-## 1 exact           7   381  41.7          90         15
-## 2 over            7   268  36.4          83         12
-```
+<table class="table" style="margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> finish_type </th>
+   <th style="text-align:right;"> min </th>
+   <th style="text-align:right;"> max </th>
+   <th style="text-align:right;"> mean </th>
+   <th style="text-align:right;"> quantile_95 </th>
+   <th style="text-align:right;"> quantile_5 </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> exact </td>
+   <td style="text-align:right;"> 7 </td>
+   <td style="text-align:right;"> 311 </td>
+   <td style="text-align:right;"> 41.66154 </td>
+   <td style="text-align:right;"> 90 </td>
+   <td style="text-align:right;"> 15 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> over </td>
+   <td style="text-align:right;"> 7 </td>
+   <td style="text-align:right;"> 331 </td>
+   <td style="text-align:right;"> 36.47135 </td>
+   <td style="text-align:right;"> 82 </td>
+   <td style="text-align:right;"> 12 </td>
+  </tr>
+</tbody>
+</table>
+
+So we can see that it takes on average 41.661535 rolls to finish an 'exact' game type, and 36.47135 rolls to finish an 'over' game type.
+
+For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around14  minutes, with 95% of games finishing in less than 28 minutes.
 
 # Answering the General Question
 
-We've answered the specific question of how many rolls the games between my son and I have given our board, but now let's generalise this futher. We now ask how many rolls it take for a general snakes and ladders board.
+We've answered the specific question, but can we generalise this to any board? 
 
-To do this, we need to generate snakes and ladders boards based on a statistic. The statistic I've chosen is what I'm calling the 'shift mean': summing the number of snake shifts backwards and ladder shifts forwards, and divding by the total number of snakes and ladders.
+There are two random elements that we need to generate: which spots on the board will have a snake or a ladder, and the shift value for each of these spots.
+
+For the latter we use the `spot_alloc()` function below. It takes a board 
 
 The first step is to define the the shift - either forwards or backwards - of a single spot. This is done with the `spot_alloc()` function. The shift is taken from a normal distribution (truncated to an integer) and `min()`/`max()` clamped so that we don't shift ourselves off the bottom or the top of the board.
 
@@ -187,7 +214,7 @@ The first step is to define the the shift - either forwards or backwards - of a 
 ```r
 spot_alloc <- function(spot, board_size, mean) {
     # Integer portion of a random normal variable
-    r <- trunc(rnorm(1, mean, board_size / 3))
+    r <- floor(rnorm(1, mean, board_size / 3))
    
     # Bound the snake or ladder by the bottom
     # and top of the board
@@ -218,7 +245,7 @@ Due to the clamping, the mean we speciify in our argument to `snl_board()` doesn
 
 ```r
 crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
-    mutate(board_mean = map_dbl(mean, ~mean(snl_board(100, .2, .x)))) %>% 
+    mutate(board_mean = map_dbl(mean, ~mean(snl_board(100, .19, .x)))) %>% 
     ggplot() +
     geom_point(aes(mean, board_mean)) +
     labs(
@@ -238,11 +265,11 @@ set.seed(1)
 general_snl_sim <-
     crossing(
         n = 1:1000,
-        mean = 0:50,
+        mean = -2:50,
         finish_type = c('exact', 'over')
     ) %>% 
     mutate(
-        board = map(mean, ~snl_board(100, .2, .x)),
+        board = map(mean, ~snl_board(100, .19, .x)),
         board_mean = map_dbl(board, ~mean(.x)),
         rolls = map2_dbl(board, finish_type, ~snl_game(.x, .y))
     )
@@ -250,7 +277,7 @@ general_snl_sim <-
 
 general_snl_sim %>%
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type)) +
+    geom_point(aes(board_mean, rolls, colour = finish_type), size = .3) +
     facet_wrap(~finish_type) +
     theme(legend.position = 'none') +
     labs(
@@ -277,14 +304,52 @@ general_models %>%
     kable()
 ```
 
-
-
-|finish_type |term        |  estimate| std.error| statistic| p.value|
-|:-----------|:-----------|---------:|---------:|---------:|-------:|
-|exact       |(Intercept) | 32.813937| 0.1063747|  308.4751|       0|
-|exact       |board_mean  | -3.372416| 0.0284432| -118.5668|       0|
-|over        |(Intercept) | 28.015160| 0.0947942|  295.5367|       0|
-|over        |board_mean  | -3.356716| 0.0253134| -132.6061|       0|
+<table>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> finish_type </th>
+   <th style="text-align:left;"> term </th>
+   <th style="text-align:right;"> estimate </th>
+   <th style="text-align:right;"> std.error </th>
+   <th style="text-align:right;"> statistic </th>
+   <th style="text-align:right;"> p.value </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> exact </td>
+   <td style="text-align:left;"> (Intercept) </td>
+   <td style="text-align:right;"> 34.299353 </td>
+   <td style="text-align:right;"> 0.1074317 </td>
+   <td style="text-align:right;"> 319.2665 </td>
+   <td style="text-align:right;"> 0 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> exact </td>
+   <td style="text-align:left;"> board_mean </td>
+   <td style="text-align:right;"> -3.867195 </td>
+   <td style="text-align:right;"> 0.0307197 </td>
+   <td style="text-align:right;"> -125.8865 </td>
+   <td style="text-align:right;"> 0 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> over </td>
+   <td style="text-align:left;"> (Intercept) </td>
+   <td style="text-align:right;"> 29.371388 </td>
+   <td style="text-align:right;"> 0.0998783 </td>
+   <td style="text-align:right;"> 294.0718 </td>
+   <td style="text-align:right;"> 0 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> over </td>
+   <td style="text-align:left;"> board_mean </td>
+   <td style="text-align:right;"> -3.805481 </td>
+   <td style="text-align:right;"> 0.0285452 </td>
+   <td style="text-align:right;"> -133.3144 </td>
+   <td style="text-align:right;"> 0 </td>
+  </tr>
+</tbody>
+</table>
 
 ```r
 general_models %>% 
@@ -292,12 +357,54 @@ general_models %>%
     kable()
 ```
 
-
-
-|finish_type | r.squared| adj.r.squared|    sigma| statistic| p.value| df|    logLik|      AIC|      BIC| deviance| df.residual|
-|:-----------|---------:|-------------:|--------:|---------:|-------:|--:|---------:|--------:|--------:|--------:|-----------:|
-|exact       | 0.2160918|     0.2160764| 13.22837|  14058.09|       0|  2| -204065.4| 408136.8| 408163.3|  8924126|       50998|
-|over        | 0.2563978|     0.2563832| 11.78823|  17584.37|       0|  2| -198187.1| 396380.1| 396406.6|  7086806|       50998|
+<table>
+ <thead>
+  <tr>
+   <th style="text-align:left;"> finish_type </th>
+   <th style="text-align:right;"> r.squared </th>
+   <th style="text-align:right;"> adj.r.squared </th>
+   <th style="text-align:right;"> sigma </th>
+   <th style="text-align:right;"> statistic </th>
+   <th style="text-align:right;"> p.value </th>
+   <th style="text-align:right;"> df </th>
+   <th style="text-align:right;"> logLik </th>
+   <th style="text-align:right;"> AIC </th>
+   <th style="text-align:right;"> BIC </th>
+   <th style="text-align:right;"> deviance </th>
+   <th style="text-align:right;"> df.residual </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> exact </td>
+   <td style="text-align:right;"> 0.2301883 </td>
+   <td style="text-align:right;"> 0.2301737 </td>
+   <td style="text-align:right;"> 14.57935 </td>
+   <td style="text-align:right;"> 15847.40 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2 </td>
+   <td style="text-align:right;"> -217221.9 </td>
+   <td style="text-align:right;"> 434449.8 </td>
+   <td style="text-align:right;"> 434476.4 </td>
+   <td style="text-align:right;"> 11265125 </td>
+   <td style="text-align:right;"> 52998 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> over </td>
+   <td style="text-align:right;"> 0.2511311 </td>
+   <td style="text-align:right;"> 0.2511169 </td>
+   <td style="text-align:right;"> 13.50504 </td>
+   <td style="text-align:right;"> 17772.73 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2 </td>
+   <td style="text-align:right;"> -213165.1 </td>
+   <td style="text-align:right;"> 426336.1 </td>
+   <td style="text-align:right;"> 426362.8 </td>
+   <td style="text-align:right;"> 9666094 </td>
+   <td style="text-align:right;"> 52998 </td>
+  </tr>
+</tbody>
+</table>
 
 ```r
 general_models_aug <-
@@ -306,15 +413,10 @@ general_models_aug <-
 
 general_snl_sim %>%
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type), size = .01) +
+    geom_point(aes(board_mean, rolls, colour = finish_type), size = 1, alpha = .02) +
     geom_smooth(aes(board_mean, rolls), method = 'lm', formula = 'y ~ x', ) +
     facet_wrap(~finish_type) +
     theme(legend.position = 'none')
-```
-
-```
-## Warning in grid.Call.graphics(C_polygon, x$x, x$y, index): semi-
-## transparency is not supported on this device: reported only once per page
 ```
 
 <img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-9-1.png" width="672" />
@@ -327,7 +429,7 @@ general_snl_sim %>%
 # Fitted vs Residual
 general_models_aug %>% 
     ggplot() +
-    geom_point(aes(.fitted, .resid)) +
+    geom_point(aes(.fitted, .resid), size = .3) +
     facet_wrap(~finish_type)
 ```
 
