@@ -73,7 +73,7 @@ time perl pcap_to_csv sample.pcap
 ## Decoding JSON...
 ## Flattening packets...
 ## Creating sample.pcap.csv
-## perl pcap_to_csv sample.pcap  17.56s user 0.60s system 102% cpu 17.765 total
+## perl pcap_to_csv sample.pcap  17.40s user 0.62s system 102% cpu 17.653 total
 ```
 
 What's the size differential?

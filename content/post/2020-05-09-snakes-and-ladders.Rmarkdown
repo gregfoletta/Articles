@@ -5,7 +5,7 @@ date: '2020-05-05'
 slug: snakes-and-ladders
 categories: [R]
 description: 'Simulating Snakes and Ladders with R'
-allow_html: yes
+always_allow_html: yes
 ---
 
 ```{r message=FALSE, warning=FALSE}
@@ -242,6 +242,10 @@ general_snl_sim %>%
     )
 ```
 
+# Modeling
+
+
+
 ```{r}
 library(broom)
 
@@ -252,11 +256,13 @@ general_snl_sim %>%
 
 general_models %>% 
     tidy(model) %>% 
-    kable()
+    kable() %>% 
+    kable_styling()
 
 general_models %>% 
     glance(model) %>% 
-    kable()
+    kable() %>% 
+    kable_styling()
 
 general_models_aug <-
     general_models %>% 

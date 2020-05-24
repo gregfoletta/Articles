@@ -5,7 +5,7 @@ date: '2020-05-05'
 slug: snakes-and-ladders
 categories: [R]
 description: 'Simulating Snakes and Ladders with R'
-allow_html: yes
+always_allow_html: yes
 ---
 
 
@@ -180,23 +180,23 @@ our_board_summary %>%
   <tr>
    <td style="text-align:left;"> exact </td>
    <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 311 </td>
-   <td style="text-align:right;"> 41.66154 </td>
+   <td style="text-align:right;"> 322 </td>
+   <td style="text-align:right;"> 41.70215 </td>
    <td style="text-align:right;"> 90 </td>
    <td style="text-align:right;"> 15 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
    <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 331 </td>
-   <td style="text-align:right;"> 36.47135 </td>
-   <td style="text-align:right;"> 82 </td>
+   <td style="text-align:right;"> 303 </td>
+   <td style="text-align:right;"> 36.41257 </td>
+   <td style="text-align:right;"> 83 </td>
    <td style="text-align:right;"> 12 </td>
   </tr>
 </tbody>
 </table>
 
-So we can see that it takes on average 41.661535 rolls to finish an 'exact' game type, and 36.47135 rolls to finish an 'over' game type.
+So we can see that it takes on average 41.702155 rolls to finish an 'exact' game type, and 36.412565 rolls to finish an 'over' game type.
 
 For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around14  minutes, with 95% of games finishing in less than 28 minutes.
 
@@ -290,6 +290,10 @@ general_snl_sim %>%
 
 <img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
+# Modeling
+
+
+
 
 ```r
 library(broom)
@@ -301,10 +305,11 @@ general_snl_sim %>%
 
 general_models %>% 
     tidy(model) %>% 
-    kable()
+    kable() %>% 
+    kable_styling()
 ```
 
-<table>
+<table class="table" style="margin-left: auto; margin-right: auto;">
  <thead>
   <tr>
    <th style="text-align:left;"> finish_type </th>
@@ -354,10 +359,11 @@ general_models %>%
 ```r
 general_models %>% 
     glance(model) %>% 
-    kable()
+    kable() %>% 
+    kable_styling()
 ```
 
-<table>
+<table class="table" style="margin-left: auto; margin-right: auto;">
  <thead>
   <tr>
    <th style="text-align:left;"> finish_type </th>
