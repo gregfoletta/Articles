@@ -9,16 +9,13 @@ always_allow_html: yes
 ---
 
 
-```r
-knitr::opts_chunk$set(dev.args = list(png = list(type = "cairo")))
-```
 
 
-For the past 8 weeks I, like most people, have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so I've been spending a lot of time doing this with him,
+For the past couple of months my family and I - like most people - have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so these have been a key tool in reducing the boredom of lockdown. 
 
-The board game he really enjoys is snakes and ladders. While sitting on the floor and playing for the umpteenth time, I started to wonder about some of the game's statistical properties. That's normal right?
+The board game he has really gotten into is 'snakes and ladders'. While sitting on the floor and playing a game for the umpteenth time, I started to wonder about some of the game's statistical properties. That's normal right?
 
-In this article I want to try and answer two questions. The first is:
+In this article I want to try and answer two questions about these statistical properties. The first is:
 
 > For my son's board, what is the average amount of dice rolls it takes to finish a game?
 
@@ -180,23 +177,23 @@ our_board_summary %>%
   <tr>
    <td style="text-align:left;"> exact </td>
    <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 322 </td>
-   <td style="text-align:right;"> 41.70215 </td>
+   <td style="text-align:right;"> 316 </td>
+   <td style="text-align:right;"> 41.68566 </td>
    <td style="text-align:right;"> 90 </td>
    <td style="text-align:right;"> 15 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
    <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 303 </td>
-   <td style="text-align:right;"> 36.41257 </td>
-   <td style="text-align:right;"> 83 </td>
+   <td style="text-align:right;"> 290 </td>
+   <td style="text-align:right;"> 36.33927 </td>
+   <td style="text-align:right;"> 82 </td>
    <td style="text-align:right;"> 12 </td>
   </tr>
 </tbody>
 </table>
 
-So we can see that it takes on average 41.702155 rolls to finish an 'exact' game type, and 36.412565 rolls to finish an 'over' game type.
+So we can see that it takes on average 41.68566 rolls to finish an 'exact' game type, and 36.33927 rolls to finish an 'over' game type.
 
 For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around14  minutes, with 95% of games finishing in less than 28 minutes.
 
@@ -257,14 +254,14 @@ crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
 
 <img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-7-1.png" width="672" />
 
-We've got a board and a game, let's play some snakes and ladders. We'll simulate 50 games of each finish type for mean values between 0 and 50, generating a unique board for each simulation.
+We've got a board and a game, let's play some snakes and ladders. We'll simulate 500 games of each finish type for mean values between 0 and 50, generating a unique board for each simulation.
     
 
 ```r
 set.seed(1)
 general_snl_sim <-
     crossing(
-        n = 1:1000,
+        n = 1:500,
         mean = -2:50,
         finish_type = c('exact', 'over')
     ) %>% 
@@ -275,9 +272,11 @@ general_snl_sim <-
     )
 
 
+
+
 general_snl_sim %>%
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type), size = .3) +
+    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .1) +
     facet_wrap(~finish_type) +
     theme(legend.position = 'none') +
     labs(
@@ -292,18 +291,41 @@ general_snl_sim %>%
 
 # Modeling
 
-
+We'll keep it simple and apply an ordinary least squares to each of the finish types separately.
 
 
 ```r
 library(broom)
 
-general_models <-
+ols_models <-
 general_snl_sim %>%
     group_by(finish_type) %>% 
     do(model = lm(rolls ~ board_mean, data = .) )
 
-general_models %>% 
+
+general_snl_sim %>%
+    ggplot() +
+    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .1) +
+    geom_smooth(aes(board_mean, rolls), method = 'lm', formula = 'y ~ x', ) +
+    facet_wrap(~finish_type) +
+    theme(legend.position = 'none') +
+    labs(
+        x = 'Board Mean',
+        y = 'Dice Rolls',
+        title = 'Number of Dice Rolls vs Board Mean',
+        subtitle = 'Split by Finish Type with OLS Best Fit'
+    )
+```
+
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+
+From this we can see that the intercepts, representing a board mean of 0, are 34.9 rolls for the exact finish type, and 29.2 rolls for the over finish type.
+
+In both of the finish types, the number of rolls required to finsh the game changes by `round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == 'board_mean'))[['estimate']], 1)` - the negative specifying a decrease - for every increase of the board mean by one.
+
+
+```r
+ols_models %>% 
     tidy(model) %>% 
     kable() %>% 
     kable_styling()
@@ -324,41 +346,45 @@ general_models %>%
   <tr>
    <td style="text-align:left;"> exact </td>
    <td style="text-align:left;"> (Intercept) </td>
-   <td style="text-align:right;"> 34.299353 </td>
-   <td style="text-align:right;"> 0.1074317 </td>
-   <td style="text-align:right;"> 319.2665 </td>
+   <td style="text-align:right;"> 34.914510 </td>
+   <td style="text-align:right;"> 0.1705443 </td>
+   <td style="text-align:right;"> 204.72402 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> exact </td>
    <td style="text-align:left;"> board_mean </td>
-   <td style="text-align:right;"> -3.867195 </td>
-   <td style="text-align:right;"> 0.0307197 </td>
-   <td style="text-align:right;"> -125.8865 </td>
+   <td style="text-align:right;"> -4.049970 </td>
+   <td style="text-align:right;"> 0.0488341 </td>
+   <td style="text-align:right;"> -82.93323 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
    <td style="text-align:left;"> (Intercept) </td>
-   <td style="text-align:right;"> 29.371388 </td>
-   <td style="text-align:right;"> 0.0998783 </td>
-   <td style="text-align:right;"> 294.0718 </td>
+   <td style="text-align:right;"> 29.200586 </td>
+   <td style="text-align:right;"> 0.1338574 </td>
+   <td style="text-align:right;"> 218.14705 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
    <td style="text-align:left;"> board_mean </td>
-   <td style="text-align:right;"> -3.805481 </td>
-   <td style="text-align:right;"> 0.0285452 </td>
-   <td style="text-align:right;"> -133.3144 </td>
+   <td style="text-align:right;"> -3.767098 </td>
+   <td style="text-align:right;"> 0.0382978 </td>
+   <td style="text-align:right;"> -98.36318 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
 </tbody>
 </table>
 
+How well does the least squares model the number of roles in terms of the mean of the board? The `\(R^2\)` value tells us that it explains around a fifth to a quarter of the variance. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders, and may be close to an upper bound on the variance that can be explained.
+
+
 ```r
-general_models %>% 
+ols_models %>% 
     glance(model) %>% 
+    select(finish_type, r.squared) %>% 
     kable() %>% 
     kable_styling()
 ```
@@ -368,77 +394,59 @@ general_models %>%
   <tr>
    <th style="text-align:left;"> finish_type </th>
    <th style="text-align:right;"> r.squared </th>
-   <th style="text-align:right;"> adj.r.squared </th>
-   <th style="text-align:right;"> sigma </th>
-   <th style="text-align:right;"> statistic </th>
-   <th style="text-align:right;"> p.value </th>
-   <th style="text-align:right;"> df </th>
-   <th style="text-align:right;"> logLik </th>
-   <th style="text-align:right;"> AIC </th>
-   <th style="text-align:right;"> BIC </th>
-   <th style="text-align:right;"> deviance </th>
-   <th style="text-align:right;"> df.residual </th>
   </tr>
  </thead>
 <tbody>
   <tr>
    <td style="text-align:left;"> exact </td>
-   <td style="text-align:right;"> 0.2301883 </td>
-   <td style="text-align:right;"> 0.2301737 </td>
-   <td style="text-align:right;"> 14.57935 </td>
-   <td style="text-align:right;"> 15847.40 </td>
-   <td style="text-align:right;"> 0 </td>
-   <td style="text-align:right;"> 2 </td>
-   <td style="text-align:right;"> -217221.9 </td>
-   <td style="text-align:right;"> 434449.8 </td>
-   <td style="text-align:right;"> 434476.4 </td>
-   <td style="text-align:right;"> 11265125 </td>
-   <td style="text-align:right;"> 52998 </td>
+   <td style="text-align:right;"> 0.2060743 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
-   <td style="text-align:right;"> 0.2511311 </td>
-   <td style="text-align:right;"> 0.2511169 </td>
-   <td style="text-align:right;"> 13.50504 </td>
-   <td style="text-align:right;"> 17772.73 </td>
-   <td style="text-align:right;"> 0 </td>
-   <td style="text-align:right;"> 2 </td>
-   <td style="text-align:right;"> -213165.1 </td>
-   <td style="text-align:right;"> 426336.1 </td>
-   <td style="text-align:right;"> 426362.8 </td>
-   <td style="text-align:right;"> 9666094 </td>
-   <td style="text-align:right;"> 52998 </td>
+   <td style="text-align:right;"> 0.2674711 </td>
   </tr>
 </tbody>
 </table>
+The next step is to perform some diagnostics on these models. The first thing to look at is a graph of the residuals versus the response variable. There are two things that stand out: 
+
 
 ```r
-general_models_aug <-
-    general_models %>% 
-    augment(model)
-
-general_snl_sim %>%
+ols_models %>% 
+    augment(model) %>% 
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type), size = 1, alpha = .02) +
-    geom_smooth(aes(board_mean, rolls), method = 'lm', formula = 'y ~ x', ) +
+    geom_point(aes(.fitted, .resid, colour = finish_type), alpha = .1) +
+    geom_smooth(aes(.fitted, .resid), method = 'loess') +
     facet_wrap(~finish_type) +
-    theme(legend.position = 'none')
+    labs(
+        x = 'Fitted Value',
+        y = 'Residuals',
+        title = 'Residual Diagnostic Plot'
+    )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-9-1.png" width="672" />
-
-## Analysis/
-
-
-
-```r
-# Fitted vs Residual
-general_models_aug %>% 
-    ggplot() +
-    geom_point(aes(.fitted, .resid), size = .3) +
-    facet_wrap(~finish_type)
+```
+## `geom_smooth()` using formula 'y ~ x'
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+
+## Non-Linearity
+
+The first is that between the fitted values of 0 and about 30 rolls, we don't see a discernable pattern in the residual plot. In this space this use of a linear model is reasonable. However as we get above 30 rolls we start to see a curve, indicating that our linear model starts to break down.
+
+
+## Homoscedasticity
+
+The second thing to notice is the variance of the residuals increasing as the fitted values increase, appearing as a funnel shape in the plot. This implies that our residuals are **heteroscedastic**, whereas one of the assumptions of a linear regression is that the residuals are **homoscedastic**.
+
+Breaking this assumption doesn't affect our estimated coefficients, but it does affect the bias of the standard errors, meaning our confidence intervals are inaccurate.
+
+# Conclusion
+
+At the outet of this article I wanted to answer two questions: what is the mean number of rolls it takes to finish a snakes and ladders game on a specific board, and what is the mean number of rolls to finish a game on a general board.
+
+In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
+
+In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. The next steps in this instance would be to consider transforming the data, or trying different models.
 
 

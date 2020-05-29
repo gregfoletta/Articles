@@ -8,16 +8,17 @@ description: 'Simulating Snakes and Ladders with R'
 always_allow_html: yes
 ---
 
-```{r message=FALSE, warning=FALSE}
+```{r include=FALSE}
+# Switch devices to allow for transparency..
 knitr::opts_chunk$set(dev.args = list(png = list(type = "cairo")))
 ```
 
 
-For the past 8 weeks I, like most people, have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so I've been spending a lot of time doing this with him,
+For the past couple of months my family and I - like most people - have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so these have been a key tool in reducing the boredom of lockdown. 
 
-The board game he really enjoys is snakes and ladders. While sitting on the floor and playing for the umpteenth time, I started to wonder about some of the game's statistical properties. That's normal right?
+The board game he has really gotten into is 'snakes and ladders'. While sitting on the floor and playing a game for the umpteenth time, I started to wonder about some of the game's statistical properties. That's normal right?
 
-In this article I want to try and answer two questions. The first is:
+In this article I want to try and answer two questions about these statistical properties. The first is:
 
 > For my son's board, what is the average amount of dice rolls it takes to finish a game?
 
@@ -212,13 +213,13 @@ crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
     )
 ```
 
-We've got a board and a game, let's play some snakes and ladders. We'll simulate 50 games of each finish type for mean values between 0 and 50, generating a unique board for each simulation.
+We've got a board and a game, let's play some snakes and ladders. We'll simulate 500 games of each finish type for mean values between 0 and 50, generating a unique board for each simulation.
     
 ```{r}
 set.seed(1)
 general_snl_sim <-
     crossing(
-        n = 1:1000,
+        n = 1:500,
         mean = -2:50,
         finish_type = c('exact', 'over')
     ) %>% 
@@ -229,9 +230,11 @@ general_snl_sim <-
     )
 
 
+
+
 general_snl_sim %>%
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type), size = .3) +
+    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .1) +
     facet_wrap(~finish_type) +
     theme(legend.position = 'none') +
     labs(
@@ -244,47 +247,84 @@ general_snl_sim %>%
 
 # Modeling
 
-
+We'll keep it simple and apply an ordinary least squares to each of the finish types separately.
 
 ```{r}
 library(broom)
 
-general_models <-
+ols_models <-
 general_snl_sim %>%
     group_by(finish_type) %>% 
     do(model = lm(rolls ~ board_mean, data = .) )
 
-general_models %>% 
-    tidy(model) %>% 
-    kable() %>% 
-    kable_styling()
-
-general_models %>% 
-    glance(model) %>% 
-    kable() %>% 
-    kable_styling()
-
-general_models_aug <-
-    general_models %>% 
-    augment(model)
 
 general_snl_sim %>%
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type), size = 1, alpha = .02) +
+    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .1) +
     geom_smooth(aes(board_mean, rolls), method = 'lm', formula = 'y ~ x', ) +
     facet_wrap(~finish_type) +
-    theme(legend.position = 'none')
+    theme(legend.position = 'none') +
+    labs(
+        x = 'Board Mean',
+        y = 'Dice Rolls',
+        title = 'Number of Dice Rolls vs Board Mean',
+        subtitle = 'Split by Finish Type with OLS Best Fit'
+    )
 ```
 
-## Analysis/
+From this we can see that the intercepts, representing a board mean of 0, are `r round(dplyr::filter(tidy(ols_models, model), (finish_type == 'exact' & term == '(Intercept)'))[['estimate']], 1)` rolls for the exact finish type, and `r round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == '(Intercept)'))[['estimate']], 1)` rolls for the over finish type.
 
+In both of the finish types, the number of rolls required to finsh the game changes by `round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == 'board_mean'))[['estimate']], 1)` - the negative specifying a decrease - for every increase of the board mean by one.
 
 ```{r}
-# Fitted vs Residual
-general_models_aug %>% 
-    ggplot() +
-    geom_point(aes(.fitted, .resid), size = .3) +
-    facet_wrap(~finish_type)
+ols_models %>% 
+    tidy(model) %>% 
+    kable() %>% 
+    kable_styling()
 ```
+
+How well does the least squares model the number of roles in terms of the mean of the board? The $R^2$ value tells us that it explains around a fifth to a quarter of the variance. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders, and may be close to an upper bound on the variance that can be explained.
+
+```{r}
+ols_models %>% 
+    glance(model) %>% 
+    select(finish_type, r.squared) %>% 
+    kable() %>% 
+    kable_styling()
+```
+The next step is to perform some diagnostics on these models. The first thing to look at is a graph of the residuals versus the response variable. There are two things that stand out: 
+
+```{r}
+ols_models %>% 
+    augment(model) %>% 
+    ggplot() +
+    geom_point(aes(.fitted, .resid, colour = finish_type), alpha = .1) +
+    geom_smooth(aes(.fitted, .resid), method = 'loess') +
+    facet_wrap(~finish_type) +
+    labs(
+        x = 'Fitted Value',
+        y = 'Residuals',
+        title = 'Residual Diagnostic Plot'
+    )
+```
+
+## Non-Linearity
+
+The first is that between the fitted values of 0 and about 30 rolls, we don't see a discernable pattern in the residual plot. In this space this use of a linear model is reasonable. However as we get above 30 rolls we start to see a curve, indicating that our linear model starts to break down.
+
+
+## Homoscedasticity
+
+The second thing to notice is the variance of the residuals increasing as the fitted values increase, appearing as a funnel shape in the plot. This implies that our residuals are **heteroscedastic**, whereas one of the assumptions of a linear regression is that the residuals are **homoscedastic**.
+
+Breaking this assumption doesn't affect our estimated coefficients, but it does affect the bias of the standard errors, meaning our confidence intervals are inaccurate.
+
+# Conclusion
+
+At the outet of this article I wanted to answer two questions: what is the mean number of rolls it takes to finish a snakes and ladders game on a specific board, and what is the mean number of rolls to finish a game on a general board.
+
+In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
+
+In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. The next steps in this instance would be to consider transforming the data, or trying different models.
 
 
