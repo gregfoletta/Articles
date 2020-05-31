@@ -154,9 +154,7 @@ neds_board_sim %>%
         title = 'Snakes and Ladders - Dice Roll Histogram'
     )
 
-neds_board_summary %>% 
-    kable() %>%
-    kable_styling()
+print(neds_board_summary)
 ```
 
 ```{r include = FALSE}
@@ -209,7 +207,7 @@ snl_board <- function(board_size, proportion, mean, sd) {
 
 Due to the clamping, the mean we speciify in our argument to `snl_board()` doesn't have a purely linear relationship to the evential mean of the entire board. We can see below that it actually resembles a logistic function.
 
-```{r}
+```{r specified_vs_board_mean}
 # Our board generation with only one variable.
 board_generator <- function(mean) {
     # Constant arguments across off of the simulations
@@ -234,13 +232,13 @@ crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
 
 With a board and a game we can now run our simulations for the general case. For each game type and mean we'll run 200 simulations.
     
-```{r}
+```{r snl_simulation}
 set.seed(1)
 # Simulate our snakes and ladders games for different means and finish types.
 general_snl_sim <-
     crossing(
         n = 1:200,
-        mean = -2:20,
+        mean = -2:100,
         finish_type = c('exact', 'over')
     ) %>% 
     mutate(
@@ -269,7 +267,7 @@ With the data in hand, we can now attempt to model the number of dice rolls vers
 
 We'll keep it simple and apply an ordinary least squares to each of the finish types separately.
 
-```{r}
+```{r ols_regression}
 library(broom)
 
 # Perform a regression against each group separately
@@ -293,18 +291,28 @@ general_snl_sim %>%
     )
 ```
 
-From this we can see that the intercepts, representing a board mean of 0, are `r round(dplyr::filter(tidy(ols_models, model), (finish_type == 'exact' & term == '(Intercept)'))[['estimate']], 1)` rolls for the exact finish type, and `r round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == '(Intercept)'))[['estimate']], 1)` rolls for the over finish type.
+```{r include = FALSE}
+# Paragraph includes
+exact_intercept <- round(dplyr::filter(tidy(ols_models, model), (finish_type == 'exact' & term == '(Intercept)'))[['estimate']], 1)
+over_intercept <- round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == '(Intercept)'))[['estimate']], 1)
 
-In both of the finish types, the number of rolls required to finsh the game changes by `round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == 'board_mean'))[['estimate']], 1)` - the negative specifying a decrease - for every increase of the board mean by one.
+exact_slope <- round(dplyr::filter(tidy(ols_models, model), (finish_type == 'exact' & term == 'board_mean'))[['estimate']], 1)
+over_slope <- round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == 'board_mean'))[['estimate']], 1)
+
+```
+
+The intercepts, which represent a board mean of 0, are `r exact_intercept` rolls for the exact finish type, and `r over_intercept`rolls for the over finish type.
+
+The coefficient of the board mean variable is very similar for both finish types, `r exact_slope` and `r over_slope` for the exact and over types respectively. This tells us that for every one unit increase in the board mean, the number of rolls to finish a game decreases by these amounts.
+
+Of course with a coefficient comes a standard error for that coefficient, but I'll leave disucssion of this for later when look at the diagnostic plots.
 
 ```{r}
-ols_models %>% 
-    tidy(model) %>% 
-    kable() %>% 
-    kable_styling()
+ols_models %>% tidy(model)
 ```
 
 ```{r include = FALSE}
+# Paragraph variables
 ols_glance <- ols_models %>% glance(model)
 exact_rsq_percent <- round(ols_glance[['r.squared']][1] * 100)
 over_rsq_percent <- round(ols_glance[['r.squared']][2] * 100)
@@ -315,13 +323,12 @@ How well does the least squares model the number of roles in terms of the mean o
 ```{r}
 ols_models %>% 
     glance(model) %>% 
-    select(finish_type, r.squared) %>% 
-    kable() %>% 
-    kable_styling()
+    select(finish_type, r.squared)
 ```
+
 The next step is to perform some diagnostics on these models. The first thing to look at is a graph of the residuals versus the response variable. 
 
-```{r}
+```{r residual_plot}
 ols_models %>% 
     augment(model) %>% 
     ggplot() +
@@ -348,7 +355,7 @@ The next steps from here would be to either transform the data before applying t
 
 The second thing to notice is the variance of the residuals increasing as the fitted values increase, appearing as a funnel shape in the plot. This implies that our residuals are **heteroscedastic**, whereas one of the assumptions of a linear regression is that the residuals are **homoscedastic**.
 
-Breaking this assumption doesn't affect our estimated coefficients, but it does affect the bias of the standard errors, meaning our confidence intervals are inaccurate.
+Breaking this assumption doesn't affect our estimated coefficients, but it does affect the bias of the standard errors, meaning our confidence intervals are inaccurate. This is the reason that we didn't look at the standard error after performing our regression: given the variability of the residuals, the standard error is not liklely to be providing us with accurate information. 
 
 # Conclusion
 
@@ -356,7 +363,7 @@ At the outet of this article I wanted to answer two questions: what is the mean 
 
 In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
 
-In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. 
+In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals.
 
 
 

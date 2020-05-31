@@ -159,45 +159,20 @@ neds_board_sim %>%
 <img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/my_board_simulation-1.png" width="672" />
 
 ```r
-neds_board_summary %>% 
-    kable() %>%
-    kable_styling()
+print(neds_board_summary)
 ```
 
-<table class="table" style="margin-left: auto; margin-right: auto;">
- <thead>
-  <tr>
-   <th style="text-align:left;"> finish_type </th>
-   <th style="text-align:right;"> min </th>
-   <th style="text-align:right;"> max </th>
-   <th style="text-align:right;"> mean </th>
-   <th style="text-align:right;"> quantile_95 </th>
-   <th style="text-align:right;"> quantile_5 </th>
-  </tr>
- </thead>
-<tbody>
-  <tr>
-   <td style="text-align:left;"> exact </td>
-   <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 292 </td>
-   <td style="text-align:right;"> 41.78000 </td>
-   <td style="text-align:right;"> 90 </td>
-   <td style="text-align:right;"> 15 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> over </td>
-   <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 321 </td>
-   <td style="text-align:right;"> 36.50445 </td>
-   <td style="text-align:right;"> 83 </td>
-   <td style="text-align:right;"> 12 </td>
-  </tr>
-</tbody>
-</table>
+```
+## # A tibble: 2 x 6
+##   finish_type   min   max  mean quantile_95 quantile_5
+##   <chr>       <dbl> <dbl> <dbl>       <dbl>      <dbl>
+## 1 exact           7   323  41.7          90         15
+## 2 over            7   269  36.4          83         12
+```
 
 
 
-From this simulated data we've determined that it takes on average 41.78 rolls to finish an 'exact' game type, and 36.5 rolls to finish an 'over' game type.
+From this simulated data we've determined that it takes on average 41.65 rolls to finish an 'exact' game type, and 36.42 rolls to finish an 'over' game type.
 
 For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around13 minutes, with 95% of games finishing in less than 28 minutes.
 
@@ -264,7 +239,7 @@ crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
     )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-8-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/specified_vs_board_mean-1.png" width="672" />
 
 With a board and a game we can now run our simulations for the general case. For each game type and mean we'll run 200 simulations.
     
@@ -275,7 +250,7 @@ set.seed(1)
 general_snl_sim <-
     crossing(
         n = 1:200,
-        mean = -2:20,
+        mean = -2:100,
         finish_type = c('exact', 'over')
     ) %>% 
     mutate(
@@ -298,7 +273,7 @@ general_snl_sim %>%
     )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/snl_simulation-1.png" width="672" />
 
 With the data in hand, we can now attempt to model the number of dice rolls versus the board mean to answer our question.
 
@@ -331,98 +306,52 @@ general_snl_sim %>%
     )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/ols_regression-1.png" width="672" />
 
-From this we can see that the intercepts, representing a board mean of 0, are 38.3 rolls for the exact finish type, and 33.9 rolls for the over finish type.
 
-In both of the finish types, the number of rolls required to finsh the game changes by `round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == 'board_mean'))[['estimate']], 1)` - the negative specifying a decrease - for every increase of the board mean by one.
+
+The intercepts, which represent a board mean of 0, are 31.9 rolls for the exact finish type, and 27.5rolls for the over finish type.
+
+The coefficient of the board mean variable is very similar for both finish types, -2.6 and -2.7 for the exact and over types respectively. This tells us that for every one unit increase in the board mean, the number of rolls to finish a game decreases by these amounts.
+
+Of course with a coefficient comes a standard error for that coefficient, but I'll leave disucssion of this for later when look at the diagnostic plots.
 
 
 ```r
-ols_models %>% 
-    tidy(model) %>% 
-    kable() %>% 
-    kable_styling()
+ols_models %>% tidy(model)
 ```
 
-<table class="table" style="margin-left: auto; margin-right: auto;">
- <thead>
-  <tr>
-   <th style="text-align:left;"> finish_type </th>
-   <th style="text-align:left;"> term </th>
-   <th style="text-align:right;"> estimate </th>
-   <th style="text-align:right;"> std.error </th>
-   <th style="text-align:right;"> statistic </th>
-   <th style="text-align:right;"> p.value </th>
-  </tr>
- </thead>
-<tbody>
-  <tr>
-   <td style="text-align:left;"> exact </td>
-   <td style="text-align:left;"> (Intercept) </td>
-   <td style="text-align:right;"> 38.261272 </td>
-   <td style="text-align:right;"> 0.3733695 </td>
-   <td style="text-align:right;"> 102.47561 </td>
-   <td style="text-align:right;"> 0 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> exact </td>
-   <td style="text-align:left;"> board_mean </td>
-   <td style="text-align:right;"> -7.307529 </td>
-   <td style="text-align:right;"> 0.2138514 </td>
-   <td style="text-align:right;"> -34.17106 </td>
-   <td style="text-align:right;"> 0 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> over </td>
-   <td style="text-align:left;"> (Intercept) </td>
-   <td style="text-align:right;"> 33.899530 </td>
-   <td style="text-align:right;"> 0.4209242 </td>
-   <td style="text-align:right;"> 80.53596 </td>
-   <td style="text-align:right;"> 0 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> over </td>
-   <td style="text-align:left;"> board_mean </td>
-   <td style="text-align:right;"> -7.371848 </td>
-   <td style="text-align:right;"> 0.2413380 </td>
-   <td style="text-align:right;"> -30.54574 </td>
-   <td style="text-align:right;"> 0 </td>
-  </tr>
-</tbody>
-</table>
+```
+## # A tibble: 4 x 6
+## # Groups:   finish_type [2]
+##   finish_type term        estimate std.error statistic p.value
+##   <chr>       <chr>          <dbl>     <dbl>     <dbl>   <dbl>
+## 1 exact       (Intercept)    31.9     0.181      176.        0
+## 2 exact       board_mean     -2.64    0.0318     -82.9       0
+## 3 over        (Intercept)    27.5     0.172      160.        0
+## 4 over        board_mean     -2.72    0.0302     -90.1       0
+```
 
 
 
-How well does the least squares model the number of roles in terms of the mean of the board? The `\(R^2\)` value tells us that the linear regression explains around 20% for the exact finish type, and 17% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
+How well does the least squares model the number of roles in terms of the mean of the board? The `\(R^2\)` value tells us that the linear regression explains around 25% for the exact finish type, and 28% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
 
 
 ```r
 ols_models %>% 
     glance(model) %>% 
-    select(finish_type, r.squared) %>% 
-    kable() %>% 
-    kable_styling()
+    select(finish_type, r.squared)
 ```
 
-<table class="table" style="margin-left: auto; margin-right: auto;">
- <thead>
-  <tr>
-   <th style="text-align:left;"> finish_type </th>
-   <th style="text-align:right;"> r.squared </th>
-  </tr>
- </thead>
-<tbody>
-  <tr>
-   <td style="text-align:left;"> exact </td>
-   <td style="text-align:right;"> 0.2025199 </td>
-  </tr>
-  <tr>
-   <td style="text-align:left;"> over </td>
-   <td style="text-align:right;"> 0.1686919 </td>
-  </tr>
-</tbody>
-</table>
+```
+## # A tibble: 2 x 2
+## # Groups:   finish_type [2]
+##   finish_type r.squared
+##   <chr>           <dbl>
+## 1 exact           0.250
+## 2 over            0.283
+```
+
 The next step is to perform some diagnostics on these models. The first thing to look at is a graph of the residuals versus the response variable. 
 
 
@@ -441,7 +370,7 @@ ols_models %>%
     )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-14-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/residual_plot-1.png" width="672" />
 
 There are two things that immediately stand out in this plot - potential non-linearity of the data, the heteroscedacticity of the residuals.
 
@@ -455,7 +384,7 @@ The next steps from here would be to either transform the data before applying t
 
 The second thing to notice is the variance of the residuals increasing as the fitted values increase, appearing as a funnel shape in the plot. This implies that our residuals are **heteroscedastic**, whereas one of the assumptions of a linear regression is that the residuals are **homoscedastic**.
 
-Breaking this assumption doesn't affect our estimated coefficients, but it does affect the bias of the standard errors, meaning our confidence intervals are inaccurate.
+Breaking this assumption doesn't affect our estimated coefficients, but it does affect the bias of the standard errors, meaning our confidence intervals are inaccurate. This is the reason that we didn't look at the standard error after performing our regression: given the variability of the residuals, the standard error is not liklely to be providing us with accurate information. 
 
 # Conclusion
 
@@ -463,7 +392,7 @@ At the outet of this article I wanted to answer two questions: what is the mean 
 
 In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
 
-In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. 
+In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals.
 
 
 
