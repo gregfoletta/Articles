@@ -340,7 +340,9 @@ There are two things that immediately stand out in this plot - potential non-lin
 
 ## Non-Linearity
 
-In the residual graph, there's a noticable 'U' shape to. This tells us that there is likely a non-linear relationship between the response and predictor. 
+In the residual graph, there's a noticable 'U' shape to. This tells us that there is likely a non-linear relationship between the response and predictor.
+
+The next steps from here would be to either transform the data before applying the linear regression, or finding a more flexible model to fit the data on.
 
 ## Heterocedasticity
 
