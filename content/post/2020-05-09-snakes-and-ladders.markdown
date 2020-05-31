@@ -11,11 +11,11 @@ always_allow_html: yes
 
 
 
-For the past couple of months my family and I - like most people - have been in isolation thanks to the coronavirus. My eldest son is 5 years old and is really into games and puzzles at moment, so these have been a key tool in reducing the boredom of lockdown. 
+For the past couple of months my family and I - like the rest of the world - have been in isolation due to the coronavirus. My eldest son Ned is 5 years old and is interested in games and puzzles at moment, so these have been a key tool in reducing the boredom of lockdown. 
 
-The board game he has really gotten into is 'snakes and ladders'. While sitting on the floor and playing a game for the umpteenth time, I started to wonder about some of the game's statistical properties. That's normal right?
+Snakes and ladders is one of the games that's caught his attenton. While sitting on the floor and playing a game for the umpteenth time, I started to wonder about some of the game's statistical properties. That's normal, right?
 
-In this article I want to try and answer two questions about these statistical properties. The first is:
+In this article I want to try and answer two questions about snakes and ladders. The first is:
 
 > For my son's board, what is the average amount of dice rolls it takes to finish a game?
 
@@ -23,20 +23,19 @@ And the second is:
 
 > What is the average amount of dice rolls it takes to finish a game for a generalised board?
 
-
 # Defining the Board
 
 This is the board we play on - it's large sheet of plastic, hence the crinkles:
 
 ![Our Snakes and Ladders Board](/post/snakes_and_ladders/board.jpg)
 
-We'll represent this board (and other boards) as a vector with one element per 'spot' on the board. Each element holds the value of the shift that occurs when you land on it: negative for snakes, positive for ladders, or zero for neither.
+A snakes and ladders board can be represented as a vector, with each element of the vector representing a square or 'spot' on the board. Each element holds the value of the shift that occurs when you land on it: negative for snakes, positive for ladders, or zero for neither.
 
-The vector below is a representation of my son's board. I've let R do the calculations for me, entering values as *destination - source* for ladders and *source - destinaton* for snakes.
+The vector below is a representation of my son's board. We're letting R do the calculations for us here, entering values as *destination - source* for ladders and *source - destinaton* for snakes.
 
 
 ```r
-our_board = c(
+neds_board = c(
     38-1, 0, 0, 14-4, 0, 0, 0, 0, 31-9, 0,
     0, 0, 0, 0, 0, 6-16, 0, 0, 0, 0,
     42-21, 0, 0, 0, 0, 0, 0, 84-28, 0, 0,
@@ -52,13 +51,13 @@ our_board = c(
 
 # Playing the Game
 
-We have a data structure that represents the board, now we need an algorithm that represents the game.
+With a data structure that represents the board, we now we need an algorithm that represents the game.
 
 The `snl_game()` function takes a vector defining a board, and a finish type, and runs through a single player game until the game is complete, returning the number of rolls it took to finish the game.
 
-The finish type specfies one of the two different ways a game can be finished. My son and I play an 'over' finish type, where any dice roll that takes you over the board length results in a win.
+The finish type specfies one of the two different ways a game can be finished. My son and I play an 'over' finish type, where any dice roll that takes you over the last spot on the board length results in a win.
 
-The other finish is the 'exact' type, where you need to land exactly on the board length + 1 to win. If you go over, you remain in your current place.
+The other finish is the 'exact' type, where you need to land exactly one spot past the last spot on the board to win. If you roll a value that takes you over, you remain in your current place.
     
 
 ```r
@@ -99,14 +98,14 @@ snl_game <- function(board, finish = 'exact') {
         # Did we win?
         if (next_pos == fin_pos) { return(rolls) }
         
+        # Take into account any snakes/ladders  
+        pos <- next_pos + board[next_pos]
+        
         # Did we somehow move off the board in the negative direction?
         if (next_pos < 1) {
             warning(glue("Went into negative board position: {next_pos}"))
             return(NA_integer_)
         }
-        
-        # Take into account any snakes/ladders  
-        pos <- next_pos + board[next_pos]
     }
 }
 ```
@@ -114,18 +113,21 @@ snl_game <- function(board, finish = 'exact') {
 
 # Answering the Specific Question
 
-Now that we have a board and a game, let's answer the specifuc queston about the average number of rolls to win on my son's board. Using my new favourite function `crossing()`, we simulate 200,000 games times for each of the finish types and calculate the mean number of rolls. We visualise this as a histogram:
+Now that we've defined a data structure and an algorithm, let's try and determine the average number of rolls to win on my son's board. Using my new favourite function `crossing()`, 200,000 games are simulated for each of the finish types and summary statistics calculated. We visualise the distribution of the numbner of rolls as a histogram:
 
 
 ```r
 # Simulate 200,000 games of each finish type 
-our_board_sim <- 
-    crossing(finish_type = c('exact', 'over'), n = 1:200000) %>% 
-    mutate(rolls = map_dbl(finish_type, ~snl_game(our_board, finish = .x)))
+neds_board_sim <- 
+    crossing(
+        finish_type = c('exact', 'over'), 
+        n = 1:200000
+    ) %>% 
+    mutate(rolls = map_dbl(finish_type, ~snl_game(neds_board, finish = .x)))
 
 # Summarise the results
-our_board_summary <-
-    our_board_sim %>% 
+neds_board_summary <-
+    neds_board_sim %>% 
     group_by(finish_type) %>% 
     summarise(
         min = min(rolls),
@@ -136,16 +138,16 @@ our_board_summary <-
     )
 
 # Plot the histograms
-our_board_sim %>% 
+neds_board_sim %>% 
     ggplot() +
     geom_histogram(aes(rolls), binwidth = 1) +
     geom_vline(
         aes(xintercept = mean), 
         linetype = 'dashed', 
         colour = 'red', 
-        our_board_summary
+        neds_board_summary
     ) +
-    geom_label(aes(label = mean, x = mean, y = 0), our_board_summary) +
+    geom_label(aes(label = round(mean, 1), x = mean, y = 0), neds_board_summary) +
     facet_wrap(~finish_type, scales = 'free') +
     labs(
         x = 'Number of Dice Rolls',
@@ -157,7 +159,7 @@ our_board_sim %>%
 <img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/my_board_simulation-1.png" width="672" />
 
 ```r
-our_board_summary %>% 
+neds_board_summary %>% 
     kable() %>%
     kable_styling()
 ```
@@ -177,53 +179,52 @@ our_board_summary %>%
   <tr>
    <td style="text-align:left;"> exact </td>
    <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 316 </td>
-   <td style="text-align:right;"> 41.68566 </td>
+   <td style="text-align:right;"> 292 </td>
+   <td style="text-align:right;"> 41.78000 </td>
    <td style="text-align:right;"> 90 </td>
    <td style="text-align:right;"> 15 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
    <td style="text-align:right;"> 7 </td>
-   <td style="text-align:right;"> 290 </td>
-   <td style="text-align:right;"> 36.33927 </td>
-   <td style="text-align:right;"> 82 </td>
+   <td style="text-align:right;"> 321 </td>
+   <td style="text-align:right;"> 36.50445 </td>
+   <td style="text-align:right;"> 83 </td>
    <td style="text-align:right;"> 12 </td>
   </tr>
 </tbody>
 </table>
 
-So we can see that it takes on average 41.68566 rolls to finish an 'exact' game type, and 36.33927 rolls to finish an 'over' game type.
 
-For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around14  minutes, with 95% of games finishing in less than 28 minutes.
+
+From this simulated data we've determined that it takes on average 41.78 rolls to finish an 'exact' game type, and 36.5 rolls to finish an 'over' game type.
+
+For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around13 minutes, with 95% of games finishing in less than 28 minutes.
 
 # Answering the General Question
 
-We've answered the specific question, but can we generalise this to any board? 
+We've answered the specific question, but can we generalise this to any board? To do this, we'll have to provide a way of generating a board.
 
 There are two random elements that we need to generate: which spots on the board will have a snake or a ladder, and the shift value for each of these spots.
 
-For the latter we use the `spot_alloc()` function below. It takes a board 
-
-The first step is to define the the shift - either forwards or backwards - of a single spot. This is done with the `spot_alloc()` function. The shift is taken from a normal distribution (truncated to an integer) and `min()`/`max()` clamped so that we don't shift ourselves off the bottom or the top of the board.
+The first step is to define the the shift - either forwards or backwards - of a single spot. This is done with the `spot_alloc()` function below. The shift is taken from a normal distribution (floored to an integer) and `min()`/`max()` clamped so that we don't shift ourselves off the bottom or the top of the board.
 
 
 ```r
-spot_alloc <- function(spot, board_size, mean) {
+spot_alloc <- function(spot, board_size, mean, sd) {
     # Integer portion of a random normal variable
-    r <- floor(rnorm(1, mean, board_size / 3))
+    r <- floor(rnorm(1, mean, sd))
    
-    # Bound the snake or ladder by the bottom
-    # and top of the board
+    # Clamp the shift value to within the board limits
     max(-(spot -1), min(board_size - spot, r))
 }
 ```
 
-The `snl_board()` generates a board, taking a board size, a proportion of the board that will be snakes and ladders, and a desired mean.
+The second step is to generate the board. The `snl_board()` function does this, taking a board size, a proportion of the board that will be snakes and ladders, and a desired mean and standard deviation for the snake and ladder shifts. 
 
 
 ```r
-snl_board <- function(board_size, proportion, mean) {
+snl_board <- function(board_size, proportion, mean, sd) {
     # Allocate the board
     board <- rep(0, board_size)
    
@@ -231,7 +232,7 @@ snl_board <- function(board_size, proportion, mean) {
     spots <- trunc(runif(proportion * board_size, 1, board_size))
         
     # Assign to these spots either a snake or a ladder
-    board[spots] <- map_dbl(spots, ~spot_alloc(.x, board_size, mean))
+    board[spots] <- map_dbl(spots, ~spot_alloc(.x, board_size, mean, sd))
     
     return(board)
 }
@@ -241,10 +242,21 @@ Due to the clamping, the mean we speciify in our argument to `snl_board()` doesn
 
 
 ```r
+# Our board generation with only one variable.
+board_generator <- function(mean) {
+    # Constant arguments across off of the simulations
+   board_length <- 100
+   snl_prop <- .19
+   snl_sd <- board_length / 3
+   
+   snl_board(board_length, snl_prop, mean, snl_sd)
+}
+
+# Running the simulations
 crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
-    mutate(board_mean = map_dbl(mean, ~mean(snl_board(100, .19, .x)))) %>% 
+    mutate( board_mean = map_dbl(mean, ~mean(board_generator(.x))) ) %>% 
     ggplot() +
-    geom_point(aes(mean, board_mean)) +
+    geom_point(aes(mean, board_mean), alpha = .2) +
     labs(
         x = 'Specified Mean',
         y = 'Actual Mean',
@@ -252,31 +264,30 @@ crossing(n = 1:10, mean = seq(-200, 200, 3)) %>%
     )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-7-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
-We've got a board and a game, let's play some snakes and ladders. We'll simulate 500 games of each finish type for mean values between 0 and 50, generating a unique board for each simulation.
+With a board and a game we can now run our simulations for the general case. For each game type and mean we'll run 200 simulations.
     
 
 ```r
 set.seed(1)
+# Simulate our snakes and ladders games for different means and finish types.
 general_snl_sim <-
     crossing(
-        n = 1:500,
-        mean = -2:50,
+        n = 1:200,
+        mean = -2:20,
         finish_type = c('exact', 'over')
     ) %>% 
     mutate(
-        board = map(mean, ~snl_board(100, .19, .x)),
+        board = map(mean, ~board_generator(.x)),
         board_mean = map_dbl(board, ~mean(.x)),
         rolls = map2_dbl(board, finish_type, ~snl_game(.x, .y))
     )
 
 
-
-
 general_snl_sim %>%
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .1) +
+    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .5) +
     facet_wrap(~finish_type) +
     theme(legend.position = 'none') +
     labs(
@@ -287,7 +298,9 @@ general_snl_sim %>%
     )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-8-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+
+With the data in hand, we can now attempt to model the number of dice rolls versus the board mean to answer our question.
 
 # Modeling
 
@@ -297,29 +310,30 @@ We'll keep it simple and apply an ordinary least squares to each of the finish t
 ```r
 library(broom)
 
+# Perform a regression against each group separately
 ols_models <-
 general_snl_sim %>%
     group_by(finish_type) %>% 
     do(model = lm(rolls ~ board_mean, data = .) )
 
-
+# Graph the linear regression 
 general_snl_sim %>%
     ggplot() +
-    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .1) +
+    geom_point(aes(board_mean, rolls, colour = finish_type), alpha = .3) +
     geom_smooth(aes(board_mean, rolls), method = 'lm', formula = 'y ~ x', ) +
     facet_wrap(~finish_type) +
-    theme(legend.position = 'none') +
     labs(
         x = 'Board Mean',
         y = 'Dice Rolls',
+        colour = 'Finish Type',
         title = 'Number of Dice Rolls vs Board Mean',
         subtitle = 'Split by Finish Type with OLS Best Fit'
     )
 ```
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-10-1.png" width="672" />
 
-From this we can see that the intercepts, representing a board mean of 0, are 34.9 rolls for the exact finish type, and 29.2 rolls for the over finish type.
+From this we can see that the intercepts, representing a board mean of 0, are 38.3 rolls for the exact finish type, and 33.9 rolls for the over finish type.
 
 In both of the finish types, the number of rolls required to finsh the game changes by `round(dplyr::filter(tidy(ols_models, model), (finish_type == 'over' & term == 'board_mean'))[['estimate']], 1)` - the negative specifying a decrease - for every increase of the board mean by one.
 
@@ -346,39 +360,41 @@ ols_models %>%
   <tr>
    <td style="text-align:left;"> exact </td>
    <td style="text-align:left;"> (Intercept) </td>
-   <td style="text-align:right;"> 34.914510 </td>
-   <td style="text-align:right;"> 0.1705443 </td>
-   <td style="text-align:right;"> 204.72402 </td>
+   <td style="text-align:right;"> 38.261272 </td>
+   <td style="text-align:right;"> 0.3733695 </td>
+   <td style="text-align:right;"> 102.47561 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> exact </td>
    <td style="text-align:left;"> board_mean </td>
-   <td style="text-align:right;"> -4.049970 </td>
-   <td style="text-align:right;"> 0.0488341 </td>
-   <td style="text-align:right;"> -82.93323 </td>
+   <td style="text-align:right;"> -7.307529 </td>
+   <td style="text-align:right;"> 0.2138514 </td>
+   <td style="text-align:right;"> -34.17106 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
    <td style="text-align:left;"> (Intercept) </td>
-   <td style="text-align:right;"> 29.200586 </td>
-   <td style="text-align:right;"> 0.1338574 </td>
-   <td style="text-align:right;"> 218.14705 </td>
+   <td style="text-align:right;"> 33.899530 </td>
+   <td style="text-align:right;"> 0.4209242 </td>
+   <td style="text-align:right;"> 80.53596 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
    <td style="text-align:left;"> board_mean </td>
-   <td style="text-align:right;"> -3.767098 </td>
-   <td style="text-align:right;"> 0.0382978 </td>
-   <td style="text-align:right;"> -98.36318 </td>
+   <td style="text-align:right;"> -7.371848 </td>
+   <td style="text-align:right;"> 0.2413380 </td>
+   <td style="text-align:right;"> -30.54574 </td>
    <td style="text-align:right;"> 0 </td>
   </tr>
 </tbody>
 </table>
 
-How well does the least squares model the number of roles in terms of the mean of the board? The `\(R^2\)` value tells us that it explains around a fifth to a quarter of the variance. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders, and may be close to an upper bound on the variance that can be explained.
+
+
+How well does the least squares model the number of roles in terms of the mean of the board? The `\(R^2\)` value tells us that the linear regression explains around 20% for the exact finish type, and 17% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
 
 
 ```r
@@ -399,15 +415,15 @@ ols_models %>%
 <tbody>
   <tr>
    <td style="text-align:left;"> exact </td>
-   <td style="text-align:right;"> 0.2060743 </td>
+   <td style="text-align:right;"> 0.2025199 </td>
   </tr>
   <tr>
    <td style="text-align:left;"> over </td>
-   <td style="text-align:right;"> 0.2674711 </td>
+   <td style="text-align:right;"> 0.1686919 </td>
   </tr>
 </tbody>
 </table>
-The next step is to perform some diagnostics on these models. The first thing to look at is a graph of the residuals versus the response variable. There are two things that stand out: 
+The next step is to perform some diagnostics on these models. The first thing to look at is a graph of the residuals versus the response variable. 
 
 
 ```r
@@ -415,27 +431,27 @@ ols_models %>%
     augment(model) %>% 
     ggplot() +
     geom_point(aes(.fitted, .resid, colour = finish_type), alpha = .1) +
-    geom_smooth(aes(.fitted, .resid), method = 'loess') +
+    geom_smooth(aes(.fitted, .resid), method = 'loess', formula = 'y ~ x') +
     facet_wrap(~finish_type) +
     labs(
         x = 'Fitted Value',
         y = 'Residuals',
+        colour = 'Finish Type',
         title = 'Residual Diagnostic Plot'
     )
 ```
 
-```
-## `geom_smooth()` using formula 'y ~ x'
-```
+<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-14-1.png" width="672" />
 
-<img src="/post/2020-05-09-snakes-and-ladders_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+There are two things that immediately stand out in this plot - potential non-linearity of the data, the heteroscedacticity of the residuals.
 
 ## Non-Linearity
 
-The first is that between the fitted values of 0 and about 30 rolls, we don't see a discernable pattern in the residual plot. In this space this use of a linear model is reasonable. However as we get above 30 rolls we start to see a curve, indicating that our linear model starts to break down.
+In the residual graph, there's a noticable 'U' shape to. This tells us that there is likely a non-linear relationship between the response and predictor.
 
+The next steps from here would be to either transform the data before applying the linear regression, or finding a more flexible model to fit the data on.
 
-## Homoscedasticity
+## Heterocedasticity
 
 The second thing to notice is the variance of the residuals increasing as the fitted values increase, appearing as a funnel shape in the plot. This implies that our residuals are **heteroscedastic**, whereas one of the assumptions of a linear regression is that the residuals are **homoscedastic**.
 
@@ -447,6 +463,7 @@ At the outet of this article I wanted to answer two questions: what is the mean 
 
 In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
 
-In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. The next steps in this instance would be to consider transforming the data, or trying different models.
+In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. 
+
 
 

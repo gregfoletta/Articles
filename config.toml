@@ -1,4 +1,4 @@
-baseurl = "https://snl.articles.foletta.org"
+baseurl = "https://stage.articles.foletta.org"
 title = "Greg Foletta - Technical Articles"
 copyright = "Copyright &copy; 2019 - Greg Foletta"
 canonifyurls = true

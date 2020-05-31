@@ -144,7 +144,7 @@ neds_board_sim %>%
         aes(xintercept = mean), 
         linetype = 'dashed', 
         colour = 'red', 
-        our_board_summary
+        neds_board_summary
     ) +
     geom_label(aes(label = round(mean, 1), x = mean, y = 0), neds_board_summary) +
     facet_wrap(~finish_type, scales = 'free') +
@@ -164,7 +164,7 @@ neds_board_summary %>%
 exact_mean <- round(dplyr::filter(neds_board_summary, finish_type == 'exact')[['mean']], 2)
 over_mean <- round(dplyr::filter(neds_board_summary, finish_type == 'over')[['mean']], 2)
 estimated_over_avg_time <- ceiling((over_mean * 10 * 2) / 60)
-over_ninefive <- dplyr::filter(our_board_summary, finish_type == 'over')[['quantile_95']]
+over_ninefive <- dplyr::filter(neds_board_summary, finish_type == 'over')[['quantile_95']]
 estimated_over_ninefive_time <- ceiling(over_ninefive * 2 * 10 / 60)
 ```
 
@@ -357,5 +357,6 @@ At the outet of this article I wanted to answer two questions: what is the mean 
 In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
 
 In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. 
+
 
 
