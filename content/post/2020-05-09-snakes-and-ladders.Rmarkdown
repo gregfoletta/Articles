@@ -318,7 +318,7 @@ exact_rsq_percent <- round(ols_glance[['r.squared']][1] * 100)
 over_rsq_percent <- round(ols_glance[['r.squared']][2] * 100)
 ```
 
-How well does the least squares model the number of roles in terms of the mean of the board? The $R^2$ value tells us that the linear regression explains around `r exact_rsq_percent`% for the exact finish type, and `r over_rsq_percent`% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
+How well does the least squares model the number of roles in terms of the mean of the board? The \(R^2\) value tells us that the linear regression explains around `r exact_rsq_percent`% for the exact finish type, and `r over_rsq_percent`% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
 
 ```{r, comment=NA}
 ols_models %>% 
@@ -363,7 +363,8 @@ At the outet of this article I wanted to answer two questions: what is the mean 
 
 In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
 
-In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals.
+In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. Further work would be needed - either by transforming the data or by using a more flexible model - to get more accurate estimates and confidence intervals of the mean number of rolls across all board means.
+
 
 
 

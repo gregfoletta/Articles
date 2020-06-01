@@ -334,7 +334,7 @@ ols_models %>% tidy(model)
 
 
 
-How well does the least squares model the number of roles in terms of the mean of the board? The `\(R^2\)` value tells us that the linear regression explains around 25% for the exact finish type, and 28% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
+How well does the least squares model the number of roles in terms of the mean of the board? The $R^2$ value tells us that the linear regression explains around 25% for the exact finish type, and 28% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
 
 
 ```r
