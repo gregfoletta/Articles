@@ -166,15 +166,15 @@ print(neds_board_summary)
 ## # A tibble: 2 x 6
 ##   finish_type   min   max  mean quantile_95 quantile_5
 ##   <chr>       <dbl> <dbl> <dbl>       <dbl>      <dbl>
-## 1 exact           7   323  41.7          90         15
-## 2 over            7   269  36.4          83         12
+## 1 exact           7   341  41.8          90         15
+## 2 over            7   298  36.5          83         12
 ```
 
 
 
-From this simulated data we've determined that it takes on average 41.65 rolls to finish an 'exact' game type, and 36.42 rolls to finish an 'over' game type.
+From this simulated data we've determined that it takes on average 41.78 rolls to finish an 'exact' game type, and 36.49 rolls to finish an 'over' game type.
 
-For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around13 minutes, with 95% of games finishing in less than 28 minutes.
+For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around 13 minutes, with 95% of games finishing in less than 28 minutes.
 
 # Answering the General Question
 

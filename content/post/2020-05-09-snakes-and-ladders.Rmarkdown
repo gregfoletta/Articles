@@ -168,7 +168,7 @@ estimated_over_ninefive_time <- ceiling(over_ninefive * 2 * 10 / 60)
 
 From this simulated data we've determined that it takes on average `r exact_mean` rolls to finish an 'exact' game type, and `r over_mean` rolls to finish an 'over' game type.
 
-For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around`r estimated_over_avg_time` minutes, with 95% of games finishing in less than `r estimated_over_ninefive_time` minutes.
+For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around `r estimated_over_avg_time` minutes, with 95% of games finishing in less than `r estimated_over_ninefive_time` minutes.
 
 # Answering the General Question
 
