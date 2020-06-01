@@ -163,18 +163,18 @@ print(neds_board_summary)
 ```
 
 ```
-## # A tibble: 2 x 6
-##   finish_type   min   max  mean quantile_95 quantile_5
-##   <chr>       <dbl> <dbl> <dbl>       <dbl>      <dbl>
-## 1 exact           7   323  41.7          90         15
-## 2 over            7   269  36.4          83         12
+# A tibble: 2 x 6
+  finish_type   min   max  mean quantile_95 quantile_5
+  <chr>       <dbl> <dbl> <dbl>       <dbl>      <dbl>
+1 exact           7   297  41.7          90         15
+2 over            7   353  36.5          82         12
 ```
 
 
 
-From this simulated data we've determined that it takes on average 41.65 rolls to finish an 'exact' game type, and 36.42 rolls to finish an 'over' game type.
+From this simulated data we've determined that it takes on average 41.71 rolls to finish an 'exact' game type, and 36.5 rolls to finish an 'over' game type.
 
-For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around13 minutes, with 95% of games finishing in less than 28 minutes.
+For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around 13 minutes, with 95% of games finishing in less than 28 minutes.
 
 # Answering the General Question
 
@@ -322,14 +322,14 @@ ols_models %>% tidy(model)
 ```
 
 ```
-## # A tibble: 4 x 6
-## # Groups:   finish_type [2]
-##   finish_type term        estimate std.error statistic p.value
-##   <chr>       <chr>          <dbl>     <dbl>     <dbl>   <dbl>
-## 1 exact       (Intercept)    31.9     0.181      176.        0
-## 2 exact       board_mean     -2.64    0.0318     -82.9       0
-## 3 over        (Intercept)    27.5     0.172      160.        0
-## 4 over        board_mean     -2.72    0.0302     -90.1       0
+# A tibble: 4 x 6
+# Groups:   finish_type [2]
+  finish_type term        estimate std.error statistic p.value
+  <chr>       <chr>          <dbl>     <dbl>     <dbl>   <dbl>
+1 exact       (Intercept)    31.9     0.181      176.        0
+2 exact       board_mean     -2.64    0.0318     -82.9       0
+3 over        (Intercept)    27.5     0.172      160.        0
+4 over        board_mean     -2.72    0.0302     -90.1       0
 ```
 
 
@@ -344,12 +344,12 @@ ols_models %>%
 ```
 
 ```
-## # A tibble: 2 x 2
-## # Groups:   finish_type [2]
-##   finish_type r.squared
-##   <chr>           <dbl>
-## 1 exact           0.250
-## 2 over            0.283
+# A tibble: 2 x 2
+# Groups:   finish_type [2]
+  finish_type r.squared
+  <chr>           <dbl>
+1 exact           0.250
+2 over            0.283
 ```
 
 The next step is to perform some diagnostics on these models. The first thing to look at is a graph of the residuals versus the response variable. 

@@ -115,7 +115,7 @@ snl_game <- function(board, finish = 'exact') {
 
 Now that we've defined a data structure and an algorithm, let's try and determine the average number of rolls to win on my son's board. Using my new favourite function `crossing()`, 200,000 games are simulated for each of the finish types and summary statistics calculated. We visualise the distribution of the numbner of rolls as a histogram:
 
-```{r my_board_simulation}
+```{r my_board_simulation, comment=NA}
 # Simulate 200,000 games of each finish type 
 neds_board_sim <- 
     crossing(
@@ -168,7 +168,7 @@ estimated_over_ninefive_time <- ceiling(over_ninefive * 2 * 10 / 60)
 
 From this simulated data we've determined that it takes on average `r exact_mean` rolls to finish an 'exact' game type, and `r over_mean` rolls to finish an 'over' game type.
 
-For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around`r estimated_over_avg_time` minutes, with 95% of games finishing in less than `r estimated_over_ninefive_time` minutes.
+For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around `r estimated_over_avg_time` minutes, with 95% of games finishing in less than `r estimated_over_ninefive_time` minutes.
 
 # Answering the General Question
 
@@ -307,7 +307,7 @@ The coefficient of the board mean variable is very similar for both finish types
 
 Of course with a coefficient comes a standard error for that coefficient, but I'll leave disucssion of this for later when look at the diagnostic plots.
 
-```{r}
+```{r, comment=NA}
 ols_models %>% tidy(model)
 ```
 
@@ -320,7 +320,7 @@ over_rsq_percent <- round(ols_glance[['r.squared']][2] * 100)
 
 How well does the least squares model the number of roles in terms of the mean of the board? The $R^2$ value tells us that the linear regression explains around `r exact_rsq_percent`% for the exact finish type, and `r over_rsq_percent`% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
 
-```{r}
+```{r, comment=NA}
 ols_models %>% 
     glance(model) %>% 
     select(finish_type, r.squared)
