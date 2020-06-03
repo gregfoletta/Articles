@@ -1,7 +1,7 @@
 ---
 title: Simulating Snakes and Ladders
 author: Greg Foletta
-date: '2020-05-05'
+date: '2020-06-03'
 slug: snakes-and-ladders
 categories: [R]
 description: 'Simulating Snakes and Ladders with R'
@@ -166,13 +166,13 @@ print(neds_board_summary)
 # A tibble: 2 x 6
   finish_type   min   max  mean quantile_95 quantile_5
   <chr>       <dbl> <dbl> <dbl>       <dbl>      <dbl>
-1 exact           7   297  41.7          90         15
-2 over            7   353  36.5          82         12
+1 exact           7   288  41.7          90         15
+2 over            7   293  36.5          83         12
 ```
 
 
 
-From this simulated data we've determined that it takes on average 41.71 rolls to finish an 'exact' game type, and 36.5 rolls to finish an 'over' game type.
+From this simulated data we've determined that it takes on average 41.72 rolls to finish an 'exact' game type, and 36.51 rolls to finish an 'over' game type.
 
 For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around 13 minutes, with 95% of games finishing in less than 28 minutes.
 
@@ -310,11 +310,11 @@ general_snl_sim %>%
 
 
 
-The intercepts, which represent a board mean of 0, are 31.9 rolls for the exact finish type, and 27.5rolls for the over finish type.
+The intercepts, which represent a board mean of 0, are 31.9 rolls for the exact finish type, and 27.5 rolls for the over finish type.
 
-The coefficient of the board mean variable is very similar for both finish types, -2.6 and -2.7 for the exact and over types respectively. This tells us that for every one unit increase in the board mean, the number of rolls to finish a game decreases by these amounts.
+The coefficient of the board mean variable is very similar for both finish types, -2.6 and -2.7 for the exact and over types respectively. This tells us that for every one unit increase in the board mean, the number of rolls to finish a game on average decreases by -2.6 and -2.7 rolls.
 
-Of course with a coefficient comes a standard error for that coefficient, but I'll leave disucssion of this for later when look at the diagnostic plots.
+Whenever we discuss a linear model it's not enough to simply discuss coefficients; we also need to discuss what our uncertaintly is. However let me put a pin in this and discuss this shortly when looking at the diagnostics of the fit.
 
 
 ```r
@@ -334,7 +334,7 @@ ols_models %>% tidy(model)
 
 
 
-How well does the least squares model the number of roles in terms of the mean of the board? The $R^2$ value tells us that the linear regression explains around 25% for the exact finish type, and 28% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
+How well does the least squares model the number of roles in terms of the mean of the board? The R-squared value tells us that the linear regression explains around 25% for the exact finish type, and 28% for the over finish type. On first glance that seems low, however it's probably reasonable given the randomness of the dice rolls and the snakes and ladders.
 
 
 ```r
@@ -376,23 +376,26 @@ There are two things that immediately stand out in this plot - potential non-lin
 
 ## Non-Linearity
 
-In the residual graph, there's a noticable 'U' shape to. This tells us that there is likely a non-linear relationship between the response and predictor.
+Thie first property of the residual graph to notice is the uptick in the shape of the residuals between a fitted value of 30 and 40. This tells us that for fitted values less than 30 (or high board means), the linear regression is a resonably fit to the data. However as the fitted values grow, there doesn't appear to be a linear relationship between the response and predictor.
 
-The next steps from here would be to either transform the data before applying the linear regression, or finding a more flexible model to fit the data on.
+The next steps from here would be to either transform the predictor before applying the linear regression, or finding a more flexible model to fit the data on.
 
 ## Heterocedasticity
 
-The second thing to notice is the variance of the residuals increasing as the fitted values increase, appearing as a funnel shape in the plot. This implies that our residuals are **heteroscedastic**, whereas one of the assumptions of a linear regression is that the residuals are **homoscedastic**.
+The second property to notice is the variance of the residuals increasing as the fitted values increase. This manifests itself as a funnel shape in the residual plot. Our residuals are **heteroscedastic**, rather than **homoscedastic**. An important assumption of a linear regression model is that the residuals have a constant variance. The standard errors and confidence intervals rely on this assumption. 
 
-Breaking this assumption doesn't affect our estimated coefficients, but it does affect the bias of the standard errors, meaning our confidence intervals are inaccurate. This is the reason that we didn't look at the standard error after performing our regression: given the variability of the residuals, the standard error is not liklely to be providing us with accurate information. 
+This variability is the reason that we didn't take a look at the standard error after performing our regression: given the variability of the residuals, the standard error is not liklely to be providing us with accurate information. 
+
+A possible solution to this is to transform the response using a consave function (square root or log). This results in a greater shrinkage for larger responses, leading to a redicution in heteroscedacticity.
 
 # Conclusion
 
-At the outet of this article I wanted to answer two questions: what is the mean number of rolls it takes to finish a snakes and ladders game on a specific board, and what is the mean number of rolls to finish a game on a general board.
+At the ouset of this article I wanted to answer two questions: what is the mean number of rolls it takes to finish a snakes and ladders game on a specific board, and what is the mean number of rolls to finish a game on a general board.
 
 In the specific instance we simulated a large number of games on the specific board. Using this data we were able to determine the mean rolls, as well and lower 5% and upper 95% bounds. 
 
-In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals.
+In the general instance we again simulated a large number of games on boards with different means. We it an ordinary least squares model to the data, but saw two issues: some non-linearity of the data in certain ranges of the independent variable, and heteroscedacticity of the residuals. Further work would be needed - either by transforming the data or by using a more flexible model - to get more accurate estimates and confidence intervals of the mean number of rolls across all board means.
+
 
 
 
