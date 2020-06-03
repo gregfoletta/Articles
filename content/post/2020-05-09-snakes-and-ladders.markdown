@@ -1,7 +1,7 @@
 ---
 title: Simulating Snakes and Ladders
 author: Greg Foletta
-date: '2020-05-05'
+date: '2020-06-04'
 slug: snakes-and-ladders
 categories: [R]
 description: 'Simulating Snakes and Ladders with R'
@@ -166,13 +166,13 @@ print(neds_board_summary)
 # A tibble: 2 x 6
   finish_type   min   max  mean quantile_95 quantile_5
   <chr>       <dbl> <dbl> <dbl>       <dbl>      <dbl>
-1 exact           7   303  41.7          90         15
-2 over            7   310  36.5          83         12
+1 exact           7   283  41.7          90         15
+2 over            7   332  36.4          82         12
 ```
 
 
 
-From this simulated data we've determined that it takes on average 41.7 rolls to finish an 'exact' game type, and 36.48 rolls to finish an 'over' game type.
+From this simulated data we've determined that it takes on average 41.74 rolls to finish an 'exact' game type, and 36.39 rolls to finish an 'over' game type.
 
 For the 'over' finish type that my son and I play, I estimate a dice roll and move to take around 10 seconds. Our games should on average take around 13 minutes, with 95% of games finishing in less than 28 minutes.
 
