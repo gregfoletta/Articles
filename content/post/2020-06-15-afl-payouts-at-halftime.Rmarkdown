@@ -1,0 +1,344 @@
+---
+title: AFL Bets - Analysing the Halftime Payout 
+author: Greg Foletta
+date: '2020-06-15'
+slug: afl-payouts-at-halftime
+categories: [R]
+images: []
+---
+
+```{r include=FALSE}
+library(tidyverse)
+
+# Switch devices to allow for transparency..
+knitr::opts_chunk$set(
+    dev.args = list(png = list(type = "cairo")),
+    knitr.table.format = "html",
+    comment = ''
+)
+```
+
+
+If you've watched AFL over the past few years, you would have noticed gambling companies spruiking their betting options. In fact it would be hard for you not to notice, given the way they yell at you down the television screen.
+
+One of the value adds these componaies advertise is the 'goal ahead at halftime payout' benefit. The terms are that if you have a head-to-head bet on the game, and your team is up by 6 points or more at half time, you'll be paid out as if you had won.
+
+Betting companies aren't in the business of giving away money, so they must be confident that, in the long run, the team that is up at half time almost always goes on to win the game. But how confident should they be? Is this something that we can calculate?
+
+Good data analysis always starts off with a question. In this article I will try to answer the question:
+
+> If a betting company pays out an AFL head-to-head bet at halftime because a team is up by 6 points or more, in the long run what proportion of bets will they payout that they wouldn't have if they didn't offer this option?
+
+What is different in this analysis is the perspective we're taking. Generally we're analysing the data from the perspective of the bettor, searching for different predictors to build into a model that can help to predict the outcome.
+
+However the actual score of the game is not generally a predictor you can use to help you beat the gambling companies. So in this article our perspective is more of the gambling company itself, trying to determine what our expected loses are implementing this payout.
+
+# Model Notes Assumptions
+
+The terms of the payout are quite clear-cut, and so within the construct of the offer our model represent it reasonably well. The main unknown that we have is around timing. We assume that this offer applies to all games, and so we don't discriminate on particular games when training our model.
+
+What is likely is that the gambling companies turn this offer on or off based on internal information (such as total amount of bets placed) that only they have visibility into. As we don't have access to this information, we'll have stick with our assumption.
+
+We also don't know what kind of data the betting compnanies work with. Perhaps the hgame has changed significantly recently, making this kind of payout more feasible. We will attempt to model this by adding a categorical variable representing the league a game was played in: the Victorian Football League (VFL) or the Australian Football League (AFL). We can then see if there a signficant change in probabilites between these eras.
+
+# Loading and Transforming the Data
+
+Our data for this analysis will come from the [AFL Tables](https://afltables.com/afl/afl_index.html) site, via the `fitzRoy` R package. The data we receive is in a long format which includes statistics for each player, so we slice each unqiue game and transmute the data into the variables we need. 
+
+I'm also interested as to whether the result versus halftime differential has any relation to the mdoernity of the game. I've added a factor denoting whether the game was played as part of the 'Australian Football League' or 'Victorian Football League', which changed in 1990.
+
+```{r message=FALSE, warning=FALSE, comment=''}
+library(tidyverse)
+library(magrittr)
+library(fitzRoy)
+library(modelr)
+library(lubridate)
+
+# Download the AFL statistics
+afl_match_data <- get_afltables_stats()
+
+# Group by each unique game and take the first row from each. 
+# Transmute into the required data.
+afl_ht_results <-
+    afl_match_data %>% 
+    mutate(Game_ID = group_indices(., Season, Round, Home.team, Away.team)) %>% 
+    group_by(Game_ID) %>% 
+    slice(1) %>% 
+    transmute(
+        Home_HT.Diff = (6 * HQ2G + HQ2B) - (6 * AQ2G + AQ2B),
+        Away_HT.Diff = -Home_HT.Diff,
+        Home_Result = as_factor(ifelse(Home.score > Away.score, 'Win', 'Loss')),
+        Away_Result = as_factor(ifelse(Away.score > Home.score, 'Win', 'Loss')),
+        League = ifelse(year(Date) >= 1990, 'AFL', 'VFL')
+    ) %>% 
+    ungroup()
+
+afl_ht_results
+```
+
+We have one row per game, but our observations are focused on each team rather than each individual game. We pivot the data to give us the half time differential and result per team, which results in two rows per game. As a side note, I appreciate the ability of `pivot_longer()` to extract out more than two columns at once using the `names_sep` argument.
+
+```{r}
+afl_ht_results <-
+    afl_ht_results %>% 
+    pivot_longer(
+        -c(Game_ID, League),
+        names_to = c('Team', '.value'),
+        names_sep = '_',
+        values_drop_na = TRUE
+    ) %>% 
+    select(-Team)
+
+afl_ht_results
+```
+
+In this format there is a lot of redundancy: each game has two rows in our data frame, with each row simply being the negation of the other row. This redundancy won't affect our model fit, but it will affect our confidence and prediction intervals.
+
+To alleviate this, we sample to take only one team's variables per game. At this point, we have tidied our data with the variable required and into the shape we need to start analysing it.
+
+```{r, comment = ''}
+afl_ht_sample <-
+    afl_ht_results %>% 
+    group_by(Game_ID) %>% 
+    sample_frac(.5) %>% 
+    ungroup()
+
+afl_ht_sample
+```
+
+Let's take a look at the win/loss ratios for each halftime differential, splitting on whether which league the game was played.
+
+```{r}
+afl_ht_sample %>%  
+    group_by(HT.Diff, League) %>% 
+    summarise(Ratio = mean(Result == 'Win'), .groups = 'keep') %>% 
+    ggplot() +
+    geom_point(aes(HT.Diff, Ratio, colour = League)) +
+    labs(
+        x = 'Half Time Difference',
+        y = 'Win/Loss Ratio',
+        title = 'AFL Games - All Games',
+        subtitle = 'Half Time Difference vs. Win/Loss Ratio'
+    )
+```
+
+Even before we started this analysis, we knew that we would be modelling wins/losses versus the halftime differential, and that a logistic regression would likley be the first tool we pulled out of the bag. This graph, with it's clear sigmoid-shaped curve, confirms that a logistic regression is an appropriate choice.
+
+# Modeling
+
+Our data is in the right shape, so we now use it to create a model. The data is split into training and test sets, with 80% of the observations in the training set and 20% left over for final testing.
+
+A logistic regression is then used to model the result of the game against the halftime differential, the league, and also take into account any interaction between the league and the halftime differential. As a learning exercise I've decided to use the [tidymodels](https://www.tidymodels.org/) approach to run the regression.
+
+
+```{r, message = FALSE}
+library(tidymodels)
+
+# Split the data into training and test sets.
+set.seed(1)
+afl_ht_sets <-
+    afl_ht_sample %>% 
+    initial_split(prop = .8)
+
+# Define our model and engine.
+afl_ht_model <-
+    logistic_reg() %>% 
+    set_engine('glm')
+
+# Fit our model on the training set
+afl_ht_fit <-
+    afl_ht_model %>% 
+    fit(Result ~ HT.Diff * League, data = training(afl_ht_sets))
+```
+
+Let's see how this model looks against the the training data:
+
+```{r}
+training(afl_ht_sets) %>% 
+    group_by(HT.Diff, League) %>% 
+    summarise(Ratio = mean(Result == 'Win'), .groups = 'keep') %>% 
+    bind_cols(predict(afl_ht_fit, new_data = ., type = 'prob')) %>% 
+    ggplot() +
+    geom_point(aes(HT.Diff, Ratio, colour = League), alpha = .3) +
+    geom_line(aes(HT.Diff, .pred_Win, colour = League))
+```
+
+We see it fits the data well, and that there doesn't appear to be much of a difference between the VFL era and the AFL era.
+
+## Probabilities
+
+We're concerned with half time differentials above 6, so let's look at some of the probabilities our model spits out for one, two and three goal leads at half time.
+
+```{r, comment = ''}
+# 1, 2 and 3 goal leads in the two leagues
+prob_data <-
+    crossing(
+        HT.Diff = c(1, 2, 3) * 6,
+        League = c('AFL', 'VFL')
+    ) 
+
+# Prediction across this data
+afl_ht_fit %>% 
+    predict(new_data = prob_data, type = 'prob') %>% 
+    select(-.pred_Loss) %>% 
+    bind_cols(prob_data) %>% 
+    mutate(.pred_Win = round(.pred_Win * 100, 2))
+```
+
+Our model gives mid-60%, mid-70% and mid-80% probabilities in both leagues for teams leading by one, two and three goals respectively. For the purposes of this article we're going to use a decision threshold of 50% as between the 'Win' and 'Loss' categories. 
+
+What this means is that our model will always predict a win if a team is leading by a goal or more, and thus for the us there will only be two error types:
+
+- True Positives - predicting a win when the result is a win.
+- False Positives - predicting a win when the result is a loss.
+
+At this point we could move to estimate the expected losses from the data, but before we do that let's perform a few more dignostics.
+
+## Training Accuracy
+
+The next step is to look at the accuracy of our model against the training set - that is - the same set of data that model was built upon.
+
+
+```{r}
+afl_ht_fit %>%
+    predict(training(afl_ht_sets)) %>% 
+    bind_cols(training(afl_ht_sets)) %>% 
+    accuracy(Result, .pred_class)
+```
+
+```{r training_accuracy, include=FALSE}
+training_accuracy <-
+    afl_ht_fit %>%
+    predict(training(afl_ht_sets)) %>% 
+    bind_cols(training(afl_ht_sets)) %>% 
+    accuracy(Result, .pred_class) %>% 
+    pull(.estimate)
+```
+
+So `r round(training_accuracy * 100, 2)`% of the time the model predicts the correct result. That's good - but we need to remember that the model was generated from the same data so it's going to be optimistic, and the test accuracy is likley to be lower.
+
+## Model Coefficients
+
+We've looked at the outputs of the model: probabilities and accuracy. But what is the model actually telling us about the relationship between halftime differential and league to the probability of a win? Let's look at the coefficients of the logistic model to determine their relationsips. Our logistic function will look as such:
+
+$$ 
+p(X) = \frac{
+    e^{\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_1 X_2}
+}{
+    1 - e^{\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_1 X_2}
+}, \\
+
+\text{where}: \\
+
+X_1 = \text{Halftime differential} \\
+X_2 = \text{League (VFL | AFL)}
+$$
+
+
+```{r}
+# Model coefficients
+afl_ht_fit %>% 
+    tidy()
+```
+
+* The intercept ($\beta_0$) tells us the log-odds of winning in the AFL with a halftime differential of zero.
+* `HT.Diff` ($\beta_0$) is the change in log-odds of a win in the AFL for every one point of halftime differential.
+* `LeagueVFL` ($\beta_1$) tells us the *difference* in log-odds of winning with a differential of zero in the VFL as compared to the AFL.
+* `HT.Diff:LeagueVFL` ($\beta_3$) is the difference in the change in log-odds of a win for every one point of halftime differential in the VFL.
+
+Moving across to the p-values, if we assume a standard significance value of \(\alpha = 0.05\), then the halftime difference is highly significant, and that there is a slight significance between the change in log-odds per halftime differential between the VFL and the AFL.
+
+The intercepts of the VFL and AFL league aren't statistically significant, and we we would expect this. They are associated with a halftime difference of zero, and we should expect the resulting log-odds to be 0 (i.e the ods are \(e^0 = 1\) or 1:1). Any shift towards a win or loss at the intercept should be purely due to statistical chance.
+
+We're building this model in order to *predict* the results, not in order to *explain* how each variable affects the outcome. As such, the statistical significance of each predictor isn't very relevant to us. But it does raise a question: should we include the statistically insignificant predictors in our model or not?
+
+To answer this question, we'll use bootstrapping.
+
+# Bootstrapping
+
+With the bootstrap, we take a sample from the training set a number of times *with replacement*, run our model accross this data, and and record the accuracy. The mean accuracy is then calculated across all of these runs.
+
+We'll create two models: one with the league included, and a model without. We'll then pick the model with the best accuracy from this bootstrap.
+
+```{r, comment = ''}
+# Recipe A: Result vs Halftime Difference
+afl_recipe_ht <-
+    training(afl_ht_sets) %>% 
+    recipe(Result ~ HT.Diff) %>% 
+    step_dummy(all_nominal(), -all_outcomes())
+
+# Bootstrap Recipe A
+workflow() %>% 
+    add_model(afl_ht_model) %>% 
+    add_recipe(afl_recipe_ht) %>% 
+    fit_resamples(bootstraps(training(afl_ht_sets), times = 50)) %>% 
+    collect_metrics()
+
+# Recipe B: Result vs Halftime Difference, League, and interaction term 
+afl_recipe_ht_league <-
+    training(afl_ht_sets) %>% 
+    recipe(Result ~ HT.Diff + League) %>%
+    step_dummy(all_nominal(), -all_outcomes()) %>% 
+    step_interact(~League_VFL:HT.Diff)
+
+# Bootstrap recipe B
+workflow() %>% 
+    add_model(afl_ht_model) %>% 
+    add_recipe(afl_recipe_ht_league) %>% 
+    fit_resamples(bootstraps(training(afl_ht_sets), times = 50)) %>% 
+    collect_metrics()
+```
+
+We don't see much difference at all between each of the two models.
+
+# Final Testing
+
+We'll use the model that includes the leage predictor in it. First we take a look at the accuracy if our model against the test set.
+
+```{r}
+afl_ht_fit %>% 
+    predict(testing(afl_ht_sets)) %>% 
+    bind_cols(testing(afl_ht_sets)) %>% 
+    accuracy(Result, .pred_class)
+```
+
+Our test accuracy is in fact slightly better than our training accuracy!
+
+This accuracy is across the whole agmut of halftime differentials, but we're only concerned with halftime differentials of 6 points or more.
+
+```{r}
+# Filter out differentials of 6 points or more
+afl_ht_testing_subset <-
+    testing(afl_ht_sets) %>% 
+    filter(HT.Diff >= 6)
+
+# Fit on this data
+afl_ht_testing_subset_fit <-
+    afl_ht_fit %>% 
+    predict(afl_ht_testing_subset) %>% 
+    bind_cols(afl_ht_testing_subset)
+
+# Test set, goal or more accuracy
+afl_ht_testing_subset_fit %>% 
+    accuracy(Result, .pred_class)
+```
+
+Our summary shows that the model always predicts a win for games with a halftime differential of 6 points or more. `r count(afl_ht_testing_subset_fit, .pred_class, Result)[[3]][1]` times that prediction is correct, and `r count(afl_ht_testing_subset_fit, .pred_class, Result)[[3]][2]` times that is incorrect.
+
+```{r include=FALSE}
+acc <-
+    accuracy(afl_ht_testing_subset_fit, Result, .pred_class)[[3]][1] %>% 
+    round(2)
+
+acc_win_percent <- acc * 100
+acc_lose_percent <- 100 - (acc * 100)
+```
+
+
+# Conclusion
+
+How do these values we've calculated relate to the payouts a betting company has to deliver? If a head-to-bet has been placed on a team and that team is up by 6 points or more at half time, `r acc_win_percent`% of the time they will go on to win. The betting company would have had to pay this out anyway, so scenario does not have an affect on the payout.
+
+However with the 'payout at halftime' deal in place, there are times when a team is down by 6 points or more and at half-time and goes on to win. From our data, we see this ocurring `r acc_lose_percent`% of the time.
+
+Therefore, with this deal in place, on head-to-head bets, we would expect the betting companies to pay-out `r acc_lose_percent / acc_win_percent`% more times than they would if the deal was not in place. 
