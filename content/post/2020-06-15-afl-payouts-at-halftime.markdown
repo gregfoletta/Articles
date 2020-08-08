@@ -1,7 +1,7 @@
 ---
 title: AFL Bets - Analysing the Halftime Payout 
 author: Greg Foletta
-date: '2020-06-15'
+date: '2020-08-09'
 slug: afl-payouts-at-halftime
 categories: [R]
 images: []
@@ -138,7 +138,7 @@ afl_ht_sample
 # A tibble: 15,690 x 4
    Game_ID League HT.Diff Result
      <int> <chr>    <dbl> <fct> 
- 1       1 VFL         13 Win   
+ 1       1 VFL        -13 Loss  
  2       2 VFL          2 Win   
  3       3 VFL        -18 Loss  
  4       4 VFL        -17 Loss  
@@ -147,7 +147,7 @@ afl_ht_sample
  7       7 VFL        -23 Loss  
  8       8 VFL         41 Win   
  9       9 VFL         24 Win   
-10      10 VFL        -15 Loss  
+10      10 VFL         15 Win   
 # … with 15,680 more rows
 ```
 
@@ -242,12 +242,12 @@ afl_ht_fit %>%
 # A tibble: 6 x 3
   .pred_Win HT.Diff League
       <dbl>   <dbl> <chr> 
-1      61.4       6 AFL   
-2      63.9       6 VFL   
-3      72.5      12 AFL   
-4      75.6      12 VFL   
-5      81.4      18 AFL   
-6      84.4      18 VFL   
+1      62.3       6 AFL   
+2      62.7       6 VFL   
+3      73.3      12 AFL   
+4      74.5      12 VFL   
+5      82.0      18 AFL   
+6      83.6      18 VFL   
 ```
 
 Our model gives mid-60%, mid-70% and mid-80% probabilities in both leagues for teams leading by one, two and three goals respectively. For the purposes of this article we're going to use a decision threshold of 50% as between the 'Win' and 'Loss' categories. 
@@ -281,7 +281,7 @@ afl_ht_fit %>%
 
 
 
-So 78.35% of the time the model predicts the correct result. That's good - but we need to remember that the model was generated from the same data so it's going to be optimistic, and the test accuracy is likley to be lower.
+So 78.28% of the time the model predicts the correct result. That's good - but we need to remember that the model was generated from the same data so it's going to be optimistic, and the test accuracy is likley to be lower.
 
 ## Model Coefficients
 
@@ -312,10 +312,10 @@ afl_ht_fit %>%
 # A tibble: 4 x 5
   term              estimate std.error statistic   p.value
   <chr>                <dbl>     <dbl>     <dbl>     <dbl>
-1 (Intercept)        0.0444    0.0394       1.13 2.59e-  1
-2 HT.Diff           -0.0847    0.00252    -33.6  4.07e-248
-3 LeagueVFL         -0.0545    0.0488      -1.12 2.64e-  1
-4 HT.Diff:LeagueVFL -0.00856   0.00331     -2.58 9.82e-  3
+1 (Intercept)        0.00621   0.0393      0.158 8.75e-  1
+2 HT.Diff           -0.0845    0.00251   -33.6   4.40e-248
+3 LeagueVFL          0.0319    0.0487      0.654 5.13e-  1
+4 HT.Diff:LeagueVFL -0.00810   0.00330    -2.45  1.42e-  2
 ```
 
 * The intercept ($\beta_0$) tells us the log-odds of winning in the AFL with a halftime differential of zero.
@@ -357,8 +357,8 @@ workflow() %>%
 # A tibble: 2 x 5
   .metric  .estimator  mean     n  std_err
   <chr>    <chr>      <dbl> <int>    <dbl>
-1 accuracy binary     0.783    50 0.000829
-2 roc_auc  binary     0.869    50 0.000668
+1 accuracy binary     0.783    50 0.000830
+2 roc_auc  binary     0.868    50 0.000688
 ```
 
 ```r
@@ -381,8 +381,8 @@ workflow() %>%
 # A tibble: 2 x 5
   .metric  .estimator  mean     n  std_err
   <chr>    <chr>      <dbl> <int>    <dbl>
-1 accuracy binary     0.783    50 0.000630
-2 roc_auc  binary     0.869    50 0.000462
+1 accuracy binary     0.782    50 0.000631
+2 roc_auc  binary     0.868    50 0.000464
 ```
 
 We don't see much difference at all between each of the two models.
@@ -403,7 +403,7 @@ afl_ht_fit %>%
 # A tibble: 1 x 3
   .metric  .estimator .estimate
   <chr>    <chr>          <dbl>
-1 accuracy binary         0.788
+1 accuracy binary         0.793
 ```
 
 Our test accuracy is in fact slightly better than our training accuracy!
@@ -432,10 +432,10 @@ afl_ht_testing_subset_fit %>%
 # A tibble: 1 x 3
   .metric  .estimator .estimate
   <chr>    <chr>          <dbl>
-1 accuracy binary         0.816
+1 accuracy binary         0.825
 ```
 
-Our summary shows that the model always predicts a win for games with a halftime differential of 6 points or more. 1053 times that prediction is correct, and 238 times that is incorrect.
+Our summary shows that the model always predicts a win for games with a halftime differential of 6 points or more. 1054 times that prediction is correct, and 224 times that is incorrect.
 
 
 
