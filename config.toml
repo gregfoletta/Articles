@@ -1,4 +1,4 @@
-baseurl = "https://sportsbet.articles.foletta.org"
+baseurl = "https://stage.articles.foletta.org"
 title = "Greg Foletta - Technical Articles"
 copyright = "Copyright 2020 - Greg Foletta"
 canonifyurls = true

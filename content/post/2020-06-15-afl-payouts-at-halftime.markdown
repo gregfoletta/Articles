@@ -1,7 +1,7 @@
 ---
 title: AFL Bets - Analysing the Halftime Payout 
 author: Greg Foletta
-date: '2020-08-09'
+date: '2020-08-08'
 slug: afl-payouts-at-halftime
 categories: [R]
 images: []
@@ -10,7 +10,7 @@ images: []
 
 
 
-If you've watched AFL over the past few years, you would have noticed gambling companies spruiking their betting options. In fact it would be hard for you not to notice, given the way they yell at you down the television screen.
+If you've watched AFL over the past few years, you would have noticed betting companies spruiking their betting options. In fact it would be hard for you not to notice, given the way they yell at you down the television screen.
 
 One of the value adds these componaies advertise is the 'goal ahead at halftime payout' benefit. The terms are that if you have a head-to-head bet on the game, and your team is up by 6 points or more at half time, you'll be paid out as if you had won.
 
@@ -22,15 +22,17 @@ Good data analysis always starts off with a question. In this article I will try
 
 What is different in this analysis is the perspective we're taking. Generally we're analysing the data from the perspective of the bettor, searching for different predictors to build into a model that can help to predict the outcome.
 
-However the actual score of the game is not generally a predictor you can use to help you beat the gambling companies. So in this article our perspective is more of the gambling company itself, trying to determine what our expected loses are implementing this payout.
+However the actual score of the game is not generally a predictor you can use to help you beat the betting companies. So in this article our perspective is more of the betting company itself, trying to determine what our expected loses are implementing this payout.
 
 # Model Notes Assumptions
 
 The terms of the payout are quite clear-cut, and so within the construct of the offer our model represent it reasonably well. The main unknown that we have is around timing. We assume that this offer applies to all games, and so we don't discriminate on particular games when training our model.
 
-What is likely is that the gambling companies turn this offer on or off based on internal information (such as total amount of bets placed) that only they have visibility into. As we don't have access to this information, we'll have stick with our assumption.
+What is likely is that the betting companies turn this offer on or off based on internal information (such as total amount of bets placed) that only they have visibility into. As we don't have access to this information, we'll have stick with our assumption.
 
 We also don't know what kind of data the betting compnanies work with. Perhaps the hgame has changed significantly recently, making this kind of payout more feasible. We will attempt to model this by adding a categorical variable representing the league a game was played in: the Victorian Football League (VFL) or the Australian Football League (AFL). We can then see if there a signficant change in probabilites between these eras.
+
+Finally, a draw isn't paid out in a head-to-head bet, so we consider a draw to be a loss.
 
 # Loading and Transforming the Data
 
@@ -53,7 +55,9 @@ afl_match_data <- get_afltables_stats()
 # Transmute into the required data.
 afl_ht_results <-
     afl_match_data %>% 
-    mutate(Game_ID = group_indices(., Season, Round, Home.team, Away.team)) %>% 
+    mutate(
+        Game_ID = group_indices(., Season, Round, Home.team, Away.team)
+    ) %>% 
     group_by(Game_ID) %>% 
     slice(1) %>% 
     transmute(
@@ -139,15 +143,15 @@ afl_ht_sample
    Game_ID League HT.Diff Result
      <int> <chr>    <dbl> <fct> 
  1       1 VFL        -13 Loss  
- 2       2 VFL          2 Win   
+ 2       2 VFL         -2 Loss  
  3       3 VFL        -18 Loss  
  4       4 VFL        -17 Loss  
  5       5 VFL         14 Win   
- 6       6 VFL        -20 Loss  
+ 6       6 VFL         20 Win   
  7       7 VFL        -23 Loss  
- 8       8 VFL         41 Win   
- 9       9 VFL         24 Win   
-10      10 VFL         15 Win   
+ 8       8 VFL        -41 Loss  
+ 9       9 VFL        -24 Loss  
+10      10 VFL        -15 Loss  
 # … with 15,680 more rows
 ```
 
@@ -242,12 +246,12 @@ afl_ht_fit %>%
 # A tibble: 6 x 3
   .pred_Win HT.Diff League
       <dbl>   <dbl> <chr> 
-1      62.3       6 AFL   
-2      62.7       6 VFL   
-3      73.3      12 AFL   
-4      74.5      12 VFL   
-5      82.0      18 AFL   
-6      83.6      18 VFL   
+1      61.0       6 AFL   
+2      62.9       6 VFL   
+3      72.2      12 AFL   
+4      74.8      12 VFL   
+5      81.2      18 AFL   
+6      83.8      18 VFL   
 ```
 
 Our model gives mid-60%, mid-70% and mid-80% probabilities in both leagues for teams leading by one, two and three goals respectively. For the purposes of this article we're going to use a decision threshold of 50% as between the 'Win' and 'Loss' categories. 
@@ -281,25 +285,19 @@ afl_ht_fit %>%
 
 
 
-So 78.28% of the time the model predicts the correct result. That's good - but we need to remember that the model was generated from the same data so it's going to be optimistic, and the test accuracy is likley to be lower.
+So 78.29% of the time the model predicts the correct result. That's good - but we need to remember that the model was generated from the same data so it's going to be optimistic, and the test accuracy is likley to be lower.
 
 ## Model Coefficients
 
 We've looked at the outputs of the model: probabilities and accuracy. But what is the model actually telling us about the relationship between halftime differential and league to the probability of a win? Let's look at the coefficients of the logistic model to determine their relationsips. Our logistic function will look as such:
 
-$$ 
-p(X) = \frac{
+$$ p(X) = \frac{
     e^{\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_1 X_2}
 }{
     1 - e^{\beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_1 X_2}
-}, \\
+}$$`
 
-\text{where}: \\
-
-X_1 = \text{Halftime differential} \\
-X_2 = \text{League (VFL | AFL)}
-$$
-
+where \\(X_1\\) is the halftime differential in points, and \\(X_2\\) is a categorical variable denoting the league the game was played in: 'AFL' or 'VFL'.
 
 
 ```r
@@ -312,20 +310,20 @@ afl_ht_fit %>%
 # A tibble: 4 x 5
   term              estimate std.error statistic   p.value
   <chr>                <dbl>     <dbl>     <dbl>     <dbl>
-1 (Intercept)        0.00621   0.0393      0.158 8.75e-  1
-2 HT.Diff           -0.0845    0.00251   -33.6   4.40e-248
-3 LeagueVFL          0.0319    0.0487      0.654 5.13e-  1
-4 HT.Diff:LeagueVFL -0.00810   0.00330    -2.45  1.42e-  2
+1 (Intercept)        0.0618    0.0394      1.57  1.16e-  1
+2 HT.Diff           -0.0846    0.00252   -33.6   5.84e-248
+3 LeagueVFL         -0.0287    0.0488     -0.589 5.56e-  1
+4 HT.Diff:LeagueVFL -0.00865   0.00331    -2.61  9.01e-  3
 ```
 
-* The intercept ($\beta_0$) tells us the log-odds of winning in the AFL with a halftime differential of zero.
-* `HT.Diff` ($\beta_0$) is the change in log-odds of a win in the AFL for every one point of halftime differential.
-* `LeagueVFL` ($\beta_1$) tells us the *difference* in log-odds of winning with a differential of zero in the VFL as compared to the AFL.
-* `HT.Diff:LeagueVFL` ($\beta_3$) is the difference in the change in log-odds of a win for every one point of halftime differential in the VFL.
+* The intercept (\\(\beta_0\\)) tells us the log-odds of winning in the AFL with a halftime differential of zero.
+* `HT.Diff` (\\(\beta_0\\)) is the change in log-odds of a win in the AFL for every one point of halftime differential.
+* `LeagueVFL` (\\(\beta_1\\)) tells us the *difference* in log-odds of winning with a differential of zero in the VFL as compared to the AFL.
+* `HT.Diff:LeagueVFL` (\\(\beta_3\\)) is the difference in the change in log-odds of a win for every one point of halftime differential in the VFL.
 
-Moving across to the p-values, if we assume a standard significance value of \(\alpha = 0.05\), then the halftime difference is highly significant, and that there is a slight significance between the change in log-odds per halftime differential between the VFL and the AFL.
+Looking at the p-values, if we assume a standard significance value of \\(\alpha = 0.05\\), then the halftime difference is highly significant, and that there is a slight significance between the change in log-odds per halftime differential between the VFL and the AFL.
 
-The intercepts of the VFL and AFL league aren't statistically significant, and we we would expect this. They are associated with a halftime difference of zero, and we should expect the resulting log-odds to be 0 (i.e the ods are \(e^0 = 1\) or 1:1). Any shift towards a win or loss at the intercept should be purely due to statistical chance.
+The intercepts of the VFL and AFL league aren't statistically significant, and we we would expect this. They are associated with a halftime difference of zero, and we should expect the resulting log-odds to be 0 (i.e the ods are \\(e^0 = 1\\) or 1:1). Any shift towards a win or loss at the intercept should be purely due to statistical chance.
 
 We're building this model in order to *predict* the results, not in order to *explain* how each variable affects the outcome. As such, the statistical significance of each predictor isn't very relevant to us. But it does raise a question: should we include the statistically insignificant predictors in our model or not?
 
@@ -357,8 +355,8 @@ workflow() %>%
 # A tibble: 2 x 5
   .metric  .estimator  mean     n  std_err
   <chr>    <chr>      <dbl> <int>    <dbl>
-1 accuracy binary     0.783    50 0.000830
-2 roc_auc  binary     0.868    50 0.000688
+1 accuracy binary     0.783    50 0.000857
+2 roc_auc  binary     0.869    50 0.000678
 ```
 
 ```r
@@ -381,8 +379,8 @@ workflow() %>%
 # A tibble: 2 x 5
   .metric  .estimator  mean     n  std_err
   <chr>    <chr>      <dbl> <int>    <dbl>
-1 accuracy binary     0.782    50 0.000631
-2 roc_auc  binary     0.868    50 0.000464
+1 accuracy binary     0.783    50 0.000647
+2 roc_auc  binary     0.869    50 0.000461
 ```
 
 We don't see much difference at all between each of the two models.
@@ -403,12 +401,12 @@ afl_ht_fit %>%
 # A tibble: 1 x 3
   .metric  .estimator .estimate
   <chr>    <chr>          <dbl>
-1 accuracy binary         0.793
+1 accuracy binary         0.790
 ```
 
 Our test accuracy is in fact slightly better than our training accuracy!
 
-This accuracy is across the whole agmut of halftime differentials, but we're only concerned with halftime differentials of 6 points or more.
+This accuracy is across the whole gamut of halftime differentials, but we're only concerned with halftime differentials of 6 points or more.
 
 
 ```r
@@ -432,18 +430,21 @@ afl_ht_testing_subset_fit %>%
 # A tibble: 1 x 3
   .metric  .estimator .estimate
   <chr>    <chr>          <dbl>
-1 accuracy binary         0.825
+1 accuracy binary         0.820
 ```
 
-Our summary shows that the model always predicts a win for games with a halftime differential of 6 points or more. 1054 times that prediction is correct, and 224 times that is incorrect.
 
 
-
+Our model, applied to the subset of the test data we're concerned with, is 82% accurate.
 
 # Conclusion
+
+
 
 How do these values we've calculated relate to the payouts a betting company has to deliver? If a head-to-bet has been placed on a team and that team is up by 6 points or more at half time, 82% of the time they will go on to win. The betting company would have had to pay this out anyway, so scenario does not have an affect on the payout.
 
 However with the 'payout at halftime' deal in place, there are times when a team is down by 6 points or more and at half-time and goes on to win. From our data, we see this ocurring 18% of the time.
 
-Therefore, with this deal in place, on head-to-head bets, we would expect the betting companies to pay-out 0.2195122% more times than they would if the deal was not in place. 
+Therefore, with this deal in place, on head-to-head bets, we would expect the betting companies to pay-out 18/82 or 21.95% more times than they would if the deal was not in place. 
+
+While this tells how much more the betting companies will pay out, it doesn't tell us how much *more* they will have to pay out. To determine this, we will have to look at the odds for each game. I will leave this for a potential future article.
