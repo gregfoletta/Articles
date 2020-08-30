@@ -14,6 +14,51 @@ images: []
 ```r
 library(tidyverse)
 library(modelr)
+library(tidymodels)
+```
+
+```
+## ── Attaching packages ────────────────────────────────────────────────────────────────────────────── tidymodels 0.1.1 ──
+```
+
+```
+## ✓ broom     0.7.0      ✓ recipes   0.1.13
+## ✓ dials     0.0.8      ✓ rsample   0.0.7 
+## ✓ infer     0.5.3      ✓ tune      0.1.1 
+## ✓ modeldata 0.0.2      ✓ workflows 0.1.3 
+## ✓ parsnip   0.1.3      ✓ yardstick 0.0.7
+```
+
+```
+## ── Conflicts ───────────────────────────────────────────────────────────────────────────────── tidymodels_conflicts() ──
+## x rlang::%@%()         masks purrr::%@%()
+## x rlang::as_function() masks purrr::as_function()
+## x rlang::as_list()     masks xml2::as_list()
+## x broom::bootstrap()   masks modelr::bootstrap()
+## x glue::collapse()     masks dplyr::collapse()
+## x scales::discard()    masks purrr::discard()
+## x magrittr::extract()  masks tidyr::extract()
+## x dplyr::filter()      masks stats::filter()
+## x recipes::fixed()     masks stringr::fixed()
+## x rlang::flatten()     masks purrr::flatten()
+## x rlang::flatten_chr() masks purrr::flatten_chr()
+## x rlang::flatten_dbl() masks purrr::flatten_dbl()
+## x rlang::flatten_int() masks purrr::flatten_int()
+## x rlang::flatten_lgl() masks purrr::flatten_lgl()
+## x rlang::flatten_raw() masks purrr::flatten_raw()
+## x rlang::invoke()      masks purrr::invoke()
+## x dplyr::lag()         masks stats::lag()
+## x rlang::list_along()  masks purrr::list_along()
+## x yardstick::mae()     masks modelr::mae()
+## x yardstick::mape()    masks modelr::mape()
+## x rlang::modify()      masks purrr::modify()
+## x rvest::pluck()       masks purrr::pluck()
+## x rlang::prepend()     masks purrr::prepend()
+## x yardstick::rmse()    masks modelr::rmse()
+## x rlang::set_names()   masks magrittr::set_names(), purrr::set_names()
+## x yardstick::spec()    masks readr::spec()
+## x rlang::splice()      masks purrr::splice()
+## x recipes::step()      masks stats::step()
 ```
 
 
@@ -22,12 +67,24 @@ library(modelr)
 ```r
 # Extract out Moonee Valley over the past five years from our
 # full dataset of races
+full_results <-
+    full_results %>% 
+    arrange(date, track) %>% 
+    mutate(
+        race_id = group_indices(., track, date, race_number),
+        track_race_id = group_indices(., date, race_number)
+    ) %>% 
+    mutate(odds.sp.win = ifelse(position != 1 | is.na(odds.sp), -1, odds.sp))
+```
+
+# Monee Valley
+
+
+```r
 mv_results <-
     full_results %>%
-    filter(track == 'Moonee Valley' & year(date) > 2015) %>%
-    arrange(date) %>% 
-    mutate(mv_race_id = group_indices(., date, race_number)) %>% 
-    mutate(odds.sp.win = ifelse(position != 1 | is.na(odds.sp), -1, odds.sp))
+    filter(track == 'Moonee Valley' & year(date) > 2015) %>% 
+    mutate(track_race_id = group_indices(., track, date, race_number)) 
 ```
 
 # Approach: Picking a Random Horse
@@ -36,16 +93,16 @@ In this approach, we look at the last five years of races at Moonee Valley. We p
 
 
 ```r
-set.seed(1)
+set.seed(3)
 mv_results %>%
-    group_by(race_id) %>% 
+    group_by(track_race_id) %>% 
     mutate(random_guess = sample(1:n())) %>% 
     ungroup() %>% 
     filter(random_guess == 1) %>%
     mutate(dollar_bet = cumsum(odds.sp.win)) %>% 
     ggplot() +
     geom_line(
-        aes(mv_race_id, dollar_bet, colour = as_factor(year(date))),
+        aes(track_race_id, dollar_bet, colour = as_factor(year(date))),
         size = .5
     ) +
     labs(
@@ -57,7 +114,8 @@ mv_results %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-4-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-5-1.png" width="672" />
+
 # Approach: Betting on the Favourite
 
 In this approach, we simply bet on the favourite in each race based on their starting price.
@@ -65,13 +123,14 @@ In this approach, we simply bet on the favourite in each race based on their sta
 
 ```r
 mv_results %>% 
-    group_by(race_id, n = 1, ties = FALSE) %>% 
-    slice_min(odds.sp) %>% 
+    group_by(track_race_id)%>% 
+    slice_min(odds.sp, n = 1, with_ties = FALSE) %>% 
     ungroup() %>%
-    arrange(mv_race_id) %>% 
+    arrange(track_race_id) %>% 
     mutate(dollar_bet = cumsum(odds.sp.win)) %>% 
     ggplot() +
-    geom_line(aes(mv_race_id, dollar_bet, colour = as_factor(year(date)))) +
+    geom_line(aes(track_race_id, dollar_bet, colour = as_factor(year(date)))) +
+    geom_hline(yintercept = 0) +
     labs(
         title = 'Moonee Valley - Last Five Years - Cumulative Winnings',
         subtitle = 'Dollar Bet Placed the Favourite (Starting Price)',
@@ -81,8 +140,190 @@ mv_results %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-5-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-6-1.png" width="672" />
 
+
+```r
+set.seed(1)
+mv_results %>% 
+    group_by(race_id) %>% 
+    slice_min(odds.sp, n = 1, with_ties = FALSE) %>% 
+    rep_sample_n(size = 80, reps = 20) %>%
+    arrange(date) %>% 
+    mutate(
+        index = 1:n(),
+        cumulative_return = cumsum(odds.sp.win)
+    ) %>% 
+    ggplot() +
+    geom_line(
+        aes(
+            index, cumulative_return, 
+            group = factor(replicate), 
+            colour = factor(year(date))
+        )
+    ) +
+    geom_hline(yintercept = 0) +
+        labs(
+        title = 'Moonee Valley - Last Five Years - Cumulative Winnings',
+        subtitle = 'Dollar Bet on Favourite (Starting Price) - 80 Races, 20 Times',
+        x = 'Race Index',
+        y = 'Cumulative Winnings (Dollars)',
+        colour = 'Year'
+    )
+```
+
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-7-1.png" width="672" />
+
+
+
+
+```r
+mv_results %>% 
+    sample_frac(.2) %>% 
+    group_by(track_race_id)%>% 
+    slice_min(odds.sp, n = 1, with_ties = FALSE) %>% 
+    ungroup() %>%
+    arrange(track_race_id) %>% 
+    mutate(dollar_bet = cumsum(odds.sp.win)) %>% 
+    ggplot() +
+    geom_line(aes(track_race_id, dollar_bet, colour = as_factor(year(date)))) +
+    labs(
+        title = 'Moonee Valley - Last Five Years - Cumulative Winnings',
+        subtitle = 'Dollar Bet Placed the Favourite (Starting Price)',
+        x = 'Moonee Valley Race',
+        y = 'Cumulative Winnings (Dollars)',
+        colour = 'Year'
+    )
+```
+
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-8-1.png" width="672" />
+
+## Approach: Barrier Position
+
+We filter out races that are less than 1110m. We then look at win ratio per barrier position:
+
+
+```r
+# Filter out races lengths and entire circuit rail positions.
+# Extract out the rail position in metres and add a win/loss
+# categorical variable
+mv_results_1100 <-
+    mv_results %>% 
+    filter(length <= 1100) %>% 
+    filter(str_detect(rail_position, 'Entire Circuit')) %>% 
+    mutate(
+        rail_metres = str_match(rail_position, '\\d'),
+        rail_metres = ifelse(is.na(rail_metres), 0, rail_metres),
+        win = ifelse(position == 1, TRUE, FALSE)
+    )
+
+mv_results_1100 %>% 
+    mutate(barrier = as.integer(barrier)) %>% 
+    add_count(barrier, name = 'barrier_runs') %>% 
+    group_by(barrier, barrier_runs, ) %>% 
+    summarise(win = sum(win)) %>% 
+    mutate(win_ratio = win/barrier_runs) %>% 
+    ggplot() +
+    geom_col(aes(barrier, win))
+```
+
+```
+## `summarise()` regrouping output by 'barrier' (override with `.groups` argument)
+```
+
+```
+## Warning: Removed 1 rows containing missing values (position_stack).
+```
+
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+
+
+# All Tracks
+
+## Approach: Betting on the Favourite
+
+Let's take a look at all tracks where there have been at least than 100 races over the past five years and see how betting on the favourite would have worked out.
+
+Note that there can be times when there is more than one horse as the favourite. In these instances, we place a bet on each horse.
+
+
+```r
+full_dollar_bets <-
+    full_results %>%
+    add_count(track) %>% 
+    filter(n > 100) %>% 
+    filter(year(date) > 2015) %>% 
+    group_by(race_id) %>% 
+    slice_min(odds.sp, with_ties = TRUE) %>%
+    ungroup() %>% 
+    group_by(track, state) %>% 
+    summarise(dollar_bet = sum(odds.sp.win)) %>% 
+    ungroup()
+```
+
+```
+## `summarise()` regrouping output by 'track' (override with `.groups` argument)
+```
+
+```r
+full_dollar_bets %>% 
+    ggplot() + 
+    geom_col(aes(reorder(track, dollar_bet), dollar_bet, fill = state)) +
+    theme(
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+    labs(
+        title = 'Betting on Favourite - Cumulative Winnings - Last 5 Years',
+        subtitle = 'Tracks with more than 120 races',
+        x = '',
+        y = 'Cumulative Winnings ($)',
+        fill = 'State'
+    )
+```
+
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+What are the top and bottom 20 tracks?
+
+
+```r
+# Top 30
+full_dollar_bets %>%
+    slice_max(dollar_bet, n = 30) %>% 
+    ggplot() + 
+    geom_col(aes(reorder(track, dollar_bet), dollar_bet, fill = state)) +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+    ) +
+    labs(
+        title = 'Betting on Favourite - Cumulative Winnings - Last 5 Years',
+        subtitle = 'Tracks with more than 120 races',
+        x = 'Track Name',
+        y = 'Cumulative Winnings ($)',
+        fill = 'State'
+    )
+```
+
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-11-1.png" width="672" />
+
+```r
+# Bottom 30
+full_dollar_bets %>% 
+    slice_min(dollar_bet, n = 30) %>% 
+    ggplot() + 
+    geom_col(aes(reorder(track, dollar_bet), dollar_bet, fill = state)) +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+    ) +
+    labs(
+        title = 'Betting on Favourite - Cumulative Winnings - Last 5 Years',
+        subtitle = 'Tracks with more than 120 races',
+        x = 'Track Name',
+        y = 'Cumulative Winnings ($)',
+        fill = 'State'
+    )
+```
+
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-11-2.png" width="672" />
 
 
 
