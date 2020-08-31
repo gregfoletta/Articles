@@ -1,5 +1,5 @@
 ---
-title: Horse Racing Analysis
+title: Horse Racing Analysis (Draft)
 author: ~
 date: '2020-08-25'
 slug: horse-racing-analysis
@@ -12,72 +12,85 @@ images: []
 
 
 ```r
-library(tidyverse)
-library(modelr)
-library(tidymodels)
-```
-
-```
-## ── Attaching packages ────────────────────────────────────────────────────────────────────────────── tidymodels 0.1.1 ──
-```
-
-```
-## ✓ broom     0.7.0      ✓ recipes   0.1.13
-## ✓ dials     0.0.8      ✓ rsample   0.0.7 
-## ✓ infer     0.5.3      ✓ tune      0.1.1 
-## ✓ modeldata 0.0.2      ✓ workflows 0.1.3 
-## ✓ parsnip   0.1.3      ✓ yardstick 0.0.7
-```
-
-```
-## ── Conflicts ───────────────────────────────────────────────────────────────────────────────── tidymodels_conflicts() ──
-## x rlang::%@%()         masks purrr::%@%()
-## x rlang::as_function() masks purrr::as_function()
-## x rlang::as_list()     masks xml2::as_list()
-## x broom::bootstrap()   masks modelr::bootstrap()
-## x glue::collapse()     masks dplyr::collapse()
-## x scales::discard()    masks purrr::discard()
-## x magrittr::extract()  masks tidyr::extract()
-## x dplyr::filter()      masks stats::filter()
-## x recipes::fixed()     masks stringr::fixed()
-## x rlang::flatten()     masks purrr::flatten()
-## x rlang::flatten_chr() masks purrr::flatten_chr()
-## x rlang::flatten_dbl() masks purrr::flatten_dbl()
-## x rlang::flatten_int() masks purrr::flatten_int()
-## x rlang::flatten_lgl() masks purrr::flatten_lgl()
-## x rlang::flatten_raw() masks purrr::flatten_raw()
-## x rlang::invoke()      masks purrr::invoke()
-## x dplyr::lag()         masks stats::lag()
-## x rlang::list_along()  masks purrr::list_along()
-## x yardstick::mae()     masks modelr::mae()
-## x yardstick::mape()    masks modelr::mape()
-## x rlang::modify()      masks purrr::modify()
-## x rvest::pluck()       masks purrr::pluck()
-## x rlang::prepend()     masks purrr::prepend()
-## x yardstick::rmse()    masks modelr::rmse()
-## x rlang::set_names()   masks magrittr::set_names(), purrr::set_names()
-## x yardstick::spec()    masks readr::spec()
-## x rlang::splice()      masks purrr::splice()
-## x recipes::step()      masks stats::step()
-```
-
-
-
-
-```r
-# Extract out Moonee Valley over the past five years from our
-# full dataset of races
+# Adding some additional variables
 full_results <-
     full_results %>% 
     arrange(date, track) %>% 
     mutate(
         race_id = group_indices(., track, date, race_number),
-        track_race_id = group_indices(., date, race_number)
+        track_race_id = group_indices(., date, race_number),
+        result = as_factor( ifelse(position == 1, 'Win', 'Loss')),
+        result = fct_relevel(result, c('Win', 'Loss'))
     ) %>% 
     mutate(odds.sp.win = ifelse(position != 1 | is.na(odds.sp), -1, odds.sp))
 ```
 
+
+```r
+library(tidyverse)
+library(modelr)
+library(tidymodels)
+library(yardstick)
+```
+
+This is a draft article looking at horse racing results, trying to determine with what kind of accuracy we can pick the winner of a race. 
+
+# Our Dataset 
+
+We have a dataset that contains race results for all race tracks in Australia over the last ten years.
+
+Here's an example with some of the key variables selected:
+
+
+```r
+full_results %>% 
+    slice(1:10) %>% 
+    select(
+        track, date, race_number, 
+        position, horse.name, barrier, 
+        margin, rail_position, race_duration, 
+        length, condition
+    )
+```
+
+```
+## # A tibble: 10 x 11
+##    track date       race_number position horse.name barrier margin rail_position
+##    <fct> <date>           <int> <fct>    <chr>        <int>  <dbl> <chr>        
+##  1 Ascot 2011-01-01           1 1        KEMILEE          4     NA <NA>         
+##  2 Ascot 2011-01-01           1 2        Final Cut        9     NA <NA>         
+##  3 Ascot 2011-01-01           1 3        Bim Bom B…       2     NA <NA>         
+##  4 Ascot 2011-01-01           1 4        Theatron         8     NA <NA>         
+##  5 Ascot 2011-01-01           1 5        Make Me B…       3     NA <NA>         
+##  6 Ascot 2011-01-01           1 6        Secret Sa…       1     NA <NA>         
+##  7 Ascot 2011-01-01           1 7        Dual City       10     NA <NA>         
+##  8 Ascot 2011-01-01           1 8        Rose Of P…       7     NA <NA>         
+##  9 Ascot 2011-01-01           1 9        Buffalo M…      11     NA <NA>         
+## 10 Ascot 2011-01-01           1 10       The Pilla…       5     NA <NA>         
+## # … with 3 more variables: race_duration <chr>, length <int>, condition <fct>
+```
+
+The more pertinent variables are:
+
+- track: the name of the track.
+- date: the date of the race meet.
+- race_number: the number of the race within the meet.
+- position: the finishing position of the horse..
+- horse.name: the name of the horse.
+- barrier: the number of the barrier the horse started from.
+- margin: the margin of the horse away from the winniner
+- rail_position: the position of the rail on the track
+- race_duration: how long the race took.
+- length: the length of the race.
+- condition: the condition of the track.
+
+# The Key Questions
+
+In the first instance we're going to be focusing on races at the Moonee Valley track over the past 5 years. We're going to be trying different methods and models and observing how accurate these are in picking the winner of each race.
+
 # Monee Valley
+
+We extract out race results from Moonee Valley over the last five years.
 
 
 ```r
@@ -87,87 +100,65 @@ mv_results <-
     mutate(track_race_id = group_indices(., track, date, race_number)) 
 ```
 
-# Approach: Picking a Random Horse
+This dataset has 904 races in it.
+
+## Approach 1: Picking a Random Horse
 
 In this approach, we look at the last five years of races at Moonee Valley. We pick a random horse from each race and "place" a dollar bet. If it wins, we get the starting price odds back, and if it loses we of course lose our dollar.
 
 
-```r
-set.seed(3)
-mv_results %>%
-    group_by(track_race_id) %>% 
-    mutate(random_guess = sample(1:n())) %>% 
-    ungroup() %>% 
-    filter(random_guess == 1) %>%
-    mutate(dollar_bet = cumsum(odds.sp.win)) %>% 
-    ggplot() +
-    geom_line(
-        aes(track_race_id, dollar_bet, colour = as_factor(year(date))),
-        size = .5
-    ) +
-    labs(
-        title = 'Moonee Valley - Last Five Years - Cumulative Winnings',
-        subtitle = 'Dollar Bet Placed on a Random Horse in Every Race',
-        x = 'Date',
-        y = 'Cumulative Winnings (Dollars)',
-        colour = 'Year'
-    )
-```
-
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-5-1.png" width="672" />
-
-# Approach: Betting on the Favourite
-
-In this approach, we simply bet on the favourite in each race based on their starting price.
-
 
 ```r
-mv_results %>% 
-    group_by(track_race_id)%>% 
-    slice_min(odds.sp, n = 1, with_ties = FALSE) %>% 
-    ungroup() %>%
-    arrange(track_race_id) %>% 
-    mutate(dollar_bet = cumsum(odds.sp.win)) %>% 
-    ggplot() +
-    geom_line(aes(track_race_id, dollar_bet, colour = as_factor(year(date)))) +
-    geom_hline(yintercept = 0) +
-    labs(
-        title = 'Moonee Valley - Last Five Years - Cumulative Winnings',
-        subtitle = 'Dollar Bet Placed the Favourite (Starting Price)',
-        x = 'Moonee Valley Race',
-        y = 'Cumulative Winnings (Dollars)',
-        colour = 'Year'
-    )
-```
-
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-6-1.png" width="672" />
-
-
-```r
-set.seed(1)
-mv_results %>% 
+# Function that picks a random horse from each race (based on race_id)
+mdl_hr_random <- function(data) {
+    data %>%
     group_by(race_id) %>% 
-    slice_min(odds.sp, n = 1, with_ties = FALSE) %>% 
-    rep_sample_n(size = 80, reps = 20) %>%
-    arrange(date) %>% 
+    mutate( 
+        .pred = as_factor( sample(1:n()) ),
+        .pred.result = factor(
+            ifelse(.pred == 1, 'Win', 'Loss'),
+            levels = c('Win', 'Loss')
+        )
+    ) %>% 
+    ungroup()
+}
+
+# Extract out our 'winning' predictions
+mv_random <-
+    mv_results %>%
+    mdl_hr_random() %>% 
+    filter(.pred.result == 'Win')
+    
+# How accurate is the model:
+mv_random %>% accuracy(result, .pred.result)
+```
+
+```
+## # A tibble: 1 x 3
+##   .metric  .estimator .estimate
+##   <chr>    <chr>          <dbl>
+## 1 accuracy binary         0.107
+```
+
+So when we pick a random horse, we are 10.7% accurate. This makes sense, as on average there are 9.6466667 horses in each race.
+
+Let's place a dollar bet on a random horse in each race over the past five years.
+
+
+```r
+mv_random %>%
     mutate(
-        index = 1:n(),
-        cumulative_return = cumsum(odds.sp.win)
+        cumulative_return = cumsum(odds.sp.win),
+        index = 1:n()
     ) %>% 
     ggplot() +
-    geom_line(
-        aes(
-            index, cumulative_return, 
-            group = factor(replicate), 
-            colour = factor(year(date))
-        )
-    ) +
+    geom_line(aes(index, cumulative_return, colour = as_factor(year(date)))) +
     geom_hline(yintercept = 0) +
-        labs(
-        title = 'Moonee Valley - Last Five Years - Cumulative Winnings',
-        subtitle = 'Dollar Bet on Favourite (Starting Price) - 80 Races, 20 Times',
+    labs(
         x = 'Race Index',
-        y = 'Cumulative Winnings (Dollars)',
+        y = 'Cumulative Return (Dollars)',
+        title = 'Moonee Valley - Last Five Years',
+        subtitle = 'Cumulative Return - Pick: Random Horse',
         colour = 'Year'
     )
 ```
@@ -176,29 +167,101 @@ mv_results %>%
 
 
 
+# Approach 1: Betting on the Favourite
+
+In this approach, we simply bet on the favourite in each race based on their starting price.
+
 
 ```r
-mv_results %>% 
-    sample_frac(.2) %>% 
-    group_by(track_race_id)%>% 
-    slice_min(odds.sp, n = 1, with_ties = FALSE) %>% 
-    ungroup() %>%
-    arrange(track_race_id) %>% 
-    mutate(dollar_bet = cumsum(odds.sp.win)) %>% 
+# Function that picks the horse with the lowest odds. 
+mdl_hr_favourite <- function(data) {
+    data %>% 
+    group_by(race_id) %>% 
+    mutate(
+        .pred = order(odds.sp),
+        .pred.result = factor(
+            ifelse(.pred == 1, 'Win', 'Loss'),
+            levels = c('Win', 'Loss')
+        )
+    ) %>% 
+    ungroup()
+}
+
+mv_favourite <-
+    mv_results %>% 
+    mdl_hr_favourite() %>% 
+    filter(.pred.result == 'Win')
+
+mv_favourite %>% accuracy(result, .pred.result)
+```
+
+```
+## # A tibble: 1 x 3
+##   .metric  .estimator .estimate
+##   <chr>    <chr>          <dbl>
+## 1 accuracy binary         0.341
+```
+
+By picking the favourite, we've increased our accuracy to 34.1%. This is the consensus view, and we can consider it a distillation of a whole bunch of factors: track conditions, weather, form, make-up of the race. This is our baseline that we would like to beat, and with this level of accuracy it's going to be difficult. Of course if it wasn't difficult, everyone would be making money!
+
+Again, let's place a dollar bet on each race and see what our returns are.
+
+
+```r
+mv_favourite %>% 
+    mutate(
+        cumulative_return = cumsum(odds.sp.win),
+        index = 1:n()
+    ) %>% 
     ggplot() +
-    geom_line(aes(track_race_id, dollar_bet, colour = as_factor(year(date)))) +
+    geom_line(aes(index, cumulative_return, colour = factor(year(date)))
+    ) +
+    geom_hline(yintercept = 0) +
     labs(
-        title = 'Moonee Valley - Last Five Years - Cumulative Winnings',
-        subtitle = 'Dollar Bet Placed the Favourite (Starting Price)',
-        x = 'Moonee Valley Race',
+        title = 'Moonee Valley - Last Five Years',
+        subtitle = 'Cumulative Return - Pick: Favourite',
+        x = 'Race Index',
         y = 'Cumulative Winnings (Dollars)',
         colour = 'Year'
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-8-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-9-1.png" width="672" />
 
-## Approach: Barrier Position
+Now this is if we bet on every single race over the past 5 years, which might not be realistic for some punters. Instead, let's put a dollar bet on 100 random races over the five years, but do it 20 times so see the how varied the return is.
+
+
+
+```r
+mv_random %>% 
+    rep_sample_n(size = 100, reps = 20) %>%
+    group_by(replicate) %>% 
+    arrange(date) %>% 
+    mutate(
+        cumulative_return = cumsum(odds.sp.win),
+        index = 1:n()
+    ) %>% 
+    ggplot() +
+    geom_line(
+        aes(
+            index, cumulative_return,
+            group = replicate, colour = as_factor(year(date))
+        )
+    ) +
+    geom_hline(yintercept = 0) +
+    labs(
+        title = 'Moonee Valley - Last Five Years - 100 Random Races',
+        subtitle = 'Cumulative Return - Pick: Favourite',
+        x = 'Race Index',
+        y = 'Cumulative Winnings (Dollars)',
+        colour = 'Year'
+    )
+```
+
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+
+
+## Approach 3: Barrier Position
 
 We filter out races that are less than 1110m. We then look at win ratio per barrier position:
 
@@ -235,7 +298,7 @@ mv_results_1100 %>%
 ## Warning: Removed 1 rows containing missing values (position_stack).
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
 
 # All Tracks
@@ -281,7 +344,7 @@ full_dollar_bets %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 What are the top and bottom 20 tracks?
 
 
@@ -303,7 +366,7 @@ full_dollar_bets %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-11-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-13-1.png" width="672" />
 
 ```r
 # Bottom 30
@@ -323,7 +386,7 @@ full_dollar_bets %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-11-2.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-13-2.png" width="672" />
 
 
 
