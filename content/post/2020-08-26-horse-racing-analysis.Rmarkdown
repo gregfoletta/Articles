@@ -121,7 +121,7 @@ mv_random <-
 mv_random %>% accuracy(result, .pred.result)
 ```
 
-So when we pick a random horse, we are `r mv_random %>% accuracy(result, .pred.result) %>% pull(.estimate) %>% round(3) *100`% accurate. This makes sense, as on average there are `r mv_results %>% group_by(race_id) %>% slice_max(barrier) %>% ungroup() %>% summarise(m = mean(barrier)) %>% pull(m)` horses in each race.
+So when we pick a random horse, we are `r mv_random %>% accuracy(result, .pred.result) %>% pull(.estimate) %>% round(3) *100`% accurate. This makes sense, as on average there are `r mv_results %>% group_by(race_id) %>% slice_max(barrier) %>% ungroup() %>% summarise(m = mean(barrier)) %>% pull(m) %>% round(3)` horses in each race.
 
 Let's place a dollar bet on a random horse in each race over the past five years.
 

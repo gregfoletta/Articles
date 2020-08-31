@@ -128,10 +128,10 @@ mv_random %>% accuracy(result, .pred.result)
 ## # A tibble: 1 x 3
 ##   .metric  .estimator .estimate
 ##   <chr>    <chr>          <dbl>
-## 1 accuracy binary         0.104
+## 1 accuracy binary         0.111
 ```
 
-So when we pick a random horse, we are 10.4% accurate. This makes sense, as on average there are 9.6466667 horses in each race.
+So when we pick a random horse, we are 11.1% accurate. This makes sense, as on average there are 9.647 horses in each race.
 
 Let's place a dollar bet on a random horse in each race over the past five years.
 
