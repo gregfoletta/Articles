@@ -7,23 +7,15 @@ categories: [R]
 images: []
 ---
 
+This is a draft article looking at horse racing results, trying to determine with what kind of accuracy we can pick the winner of a race. We'll be focusing on the Moonee Valley track in Melbourne (with a small digression at the end), trying a few different approaches:
+
+- Picking a random horse
+- Picking the favourite
+- Looking at barrier position and track conditionkkk
 
 
 
 
-```r
-# Adding some additional variables
-full_results <-
-    full_results %>% 
-    arrange(date, track) %>% 
-    mutate(
-        race_id = group_indices(., track, date, race_number),
-        track_race_id = group_indices(., date, race_number),
-        result = as_factor( ifelse(position == 1, 'Win', 'Loss')),
-        result = fct_relevel(result, c('Win', 'Loss'))
-    ) %>% 
-    mutate(odds.sp.win = ifelse(position != 1 | is.na(odds.sp), -1, odds.sp))
-```
 
 
 ```r
@@ -33,7 +25,6 @@ library(tidymodels)
 library(yardstick)
 ```
 
-This is a draft article looking at horse racing results, trying to determine with what kind of accuracy we can pick the winner of a race. 
 
 # Our Dataset 
 
@@ -137,10 +128,10 @@ mv_random %>% accuracy(result, .pred.result)
 ## # A tibble: 1 x 3
 ##   .metric  .estimator .estimate
 ##   <chr>    <chr>          <dbl>
-## 1 accuracy binary         0.107
+## 1 accuracy binary         0.104
 ```
 
-So when we pick a random horse, we are 10.7% accurate. This makes sense, as on average there are 9.6466667 horses in each race.
+So when we pick a random horse, we are 10.4% accurate. This makes sense, as on average there are 9.6466667 horses in each race.
 
 Let's place a dollar bet on a random horse in each race over the past five years.
 

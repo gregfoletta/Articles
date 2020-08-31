@@ -7,6 +7,11 @@ categories: [R]
 images: []
 ---
 
+This is a draft article looking at horse racing results, trying to determine with what kind of accuracy we can pick the winner of a race. We'll be focusing on the Moonee Valley track in Melbourne (with a small digression at the end), trying a few different approaches:
+
+- Picking a random horse
+- Picking the favourite
+- Looking at barrier position and track conditionkkk
 
 ```{r include=FALSE}
 getwd()
@@ -16,7 +21,7 @@ load('~/Documents/Projects/Horse_Racing_Analysis/data/full_results.Rdata')
 full_results <- full_results %>% util_full_result_types()
 ```
 
-```{r}
+```{r include=FALSE}
 # Adding some additional variables
 full_results <-
     full_results %>% 
@@ -37,7 +42,6 @@ library(tidymodels)
 library(yardstick)
 ```
 
-This is a draft article looking at horse racing results, trying to determine with what kind of accuracy we can pick the winner of a race. 
 
 # Our Dataset 
 
