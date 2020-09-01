@@ -23,6 +23,7 @@ library(tidyverse)
 library(modelr)
 library(tidymodels)
 library(yardstick)
+library(vctrs)
 ```
 
 
@@ -87,8 +88,7 @@ We extract out race results from Moonee Valley over the last five years.
 ```r
 mv_results <-
     full_results %>%
-    filter(track == 'Moonee Valley' & year(date) > 2015) %>% 
-    mutate(track_race_id = group_indices(., track, date, race_number)) 
+    filter(track == 'Moonee Valley' & year(date) > 2015)
 ```
 
 This dataset has 904 races in it.
@@ -128,10 +128,10 @@ mv_random %>% accuracy(result, .pred.result)
 ## # A tibble: 1 x 3
 ##   .metric  .estimator .estimate
 ##   <chr>    <chr>          <dbl>
-## 1 accuracy binary         0.111
+## 1 accuracy binary         0.114
 ```
 
-So when we pick a random horse, we are 11.1% accurate. This makes sense, as on average there are 9.647 horses in each race.
+So when we pick a random horse, we are 11.4% accurate. This makes sense, as on average there are 9.647 horses in each race.
 
 Let's place a dollar bet on a random horse in each race over the past five years.
 
@@ -224,7 +224,7 @@ Now this is if we bet on every single race over the past 5 years, which might no
 
 
 ```r
-mv_random %>% 
+mv_favourite %>% 
     rep_sample_n(size = 100, reps = 20) %>%
     group_by(replicate) %>% 
     arrange(date) %>% 
@@ -254,7 +254,8 @@ mv_random %>%
 
 ## Approach 3: Barrier Position
 
-We filter out races that are less than 1110m. We then look at win ratio per barrier position:
+In this approach, we're going to look at how the barrier, rail position, and group conditions affect the result.
+
 
 
 ```r
@@ -262,35 +263,78 @@ We filter out races that are less than 1110m. We then look at win ratio per barr
 # Extract out the rail position in metres and add a win/loss
 # categorical variable
 mv_results_1100 <-
-    mv_results %>% 
-    filter(length <= 1100) %>% 
+    full_results %>% 
+    filter(track == 'Moonee Valley' & !is.na(barrier)) %>% 
     filter(str_detect(rail_position, 'Entire Circuit')) %>% 
     mutate(
+        condition.num = as.integer(str_extract(condition, '\\d')),
         rail_metres = str_match(rail_position, '\\d'),
         rail_metres = ifelse(is.na(rail_metres), 0, rail_metres),
         win = ifelse(position == 1, TRUE, FALSE)
     )
+```
 
+This gives us a total of 1058 races. We first take a look at the win to run ratios for each barrier. If the barrier position has no impact, then we would expect to see these ratios around .1, just like our random pick previously.
+
+
+```r
 mv_results_1100 %>% 
-    mutate(barrier = as.integer(barrier)) %>% 
-    add_count(barrier, name = 'barrier_runs') %>% 
-    group_by(barrier, barrier_runs, ) %>% 
-    summarise(win = sum(win)) %>% 
-    mutate(win_ratio = win/barrier_runs) %>% 
+    group_by(barrier) %>% 
+    summarise(win_ratio = sum(win) / n(), .groups = 'drop') %>% 
     ggplot() +
-    geom_col(aes(barrier, win))
+    geom_col(aes(as_factor(barrier), win_ratio)) +
+    labs(
+        title = 'Moonee Valley - Last 5 Years',
+        subtitle = 'Races <= 1100m - Barrier Win Ratios',
+        x = 'Barrier',
+        y = 'Win/Run Ratio'
+    )
 ```
 
-```
-## `summarise()` regrouping output by 'barrier' (override with `.groups` argument)
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+
+What about if we also take into account the condition of the track?
+
+
+```r
+mv_results_1100 %>% 
+    group_by(race_id) %>%
+    slice_head() %>% 
+    ungroup() %>% 
+    count(condition, condition.num) %>% 
+    mutate(condition = fct_reorder(condition, condition.num)) %>% 
+    ggplot() +
+    geom_col(aes(condition, n)) +
+    geom_label(aes(condition, n, label = n)) +
+    labs(
+        title = 'Moonee Valley',
+        subtitle = 'Number of Races per Track Condition',
+        x = 'Track Condition',
+        y = '# of Races'
+    )
 ```
 
-```
-## Warning: Removed 1 rows containing missing values (position_stack).
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+
+
+
+
+```r
+mv_results_1100 %>% 
+    group_by(barrier, condition) %>% 
+    summarise(win_ratio = sum(win)/n(), .groups = 'drop') %>% 
+    ggplot() +
+    geom_col(aes(as_factor(barrier), win_ratio)) +
+    facet_wrap(~condition) +
+    labs(
+        title = 'Moonee Valley - Last 5 Years',
+        subtitle = 'Races <= 1100m - Barrier Win Ratios',
+        x = 'Barrier',
+        y = 'Win/Run Ratio'
+    )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-11-1.png" width="672" />
-
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-14-1.png" width="672" />
 
 # All Tracks
 
@@ -335,7 +379,7 @@ full_dollar_bets %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-15-1.png" width="672" />
 What are the top and bottom 20 tracks?
 
 
@@ -357,7 +401,7 @@ full_dollar_bets %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-16-1.png" width="672" />
 
 ```r
 # Bottom 30
@@ -377,7 +421,7 @@ full_dollar_bets %>%
     )
 ```
 
-<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-13-2.png" width="672" />
+<img src="/post/2020-08-26-horse-racing-analysis_files/figure-html/unnamed-chunk-16-2.png" width="672" />
 
 
 
