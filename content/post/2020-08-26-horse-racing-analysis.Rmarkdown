@@ -11,7 +11,7 @@ This is a draft article looking at horse racing results, trying to determine wit
 
 - Picking a random horse
 - Picking the favourite
-- Looking at barrier position and track conditionkkk
+- Looking at barrier position and track condition
 
 ```{r include=FALSE}
 getwd()
@@ -21,17 +21,10 @@ load('~/Documents/Projects/Horse_Racing_Analysis/data/full_results.Rdata')
 full_results <- full_results %>% util_full_result_types()
 ```
 
-```{r include=FALSE}
 # Adding some additional variables
+```{r}
 full_results <-
     full_results %>% 
-    arrange(date, track) %>% 
-    mutate(
-        race_id = group_indices(., track, date, race_number),
-        track_race_id = group_indices(., date, race_number),
-        result = as_factor( ifelse(position == 1, 'Win', 'Loss')),
-        result = fct_relevel(result, c('Win', 'Loss'))
-    ) %>% 
     mutate(odds.sp.win = ifelse(position != 1 | is.na(odds.sp), -1, odds.sp))
 ```
 
@@ -230,7 +223,6 @@ mv_favourite %>%
 
 In this approach, we're going to look at how the barrier, rail position, and group conditions affect the result.
 
-
 ```{r}
 # Filter out races lengths and entire circuit rail positions.
 # Extract out the rail position in metres and add a win/loss
@@ -240,30 +232,14 @@ mv_results_1100 <-
     filter(track == 'Moonee Valley' & !is.na(barrier)) %>% 
     filter(str_detect(rail_position, 'Entire Circuit')) %>% 
     mutate(
-        condition.num = as.integer(str_extract(condition, '\\d')),
+        condition = fct_reorder(condition, condition.num),
         rail_metres = str_match(rail_position, '\\d'),
         rail_metres = ifelse(is.na(rail_metres), 0, rail_metres),
         win = ifelse(position == 1, TRUE, FALSE)
     )
 ```
 
-This gives us a total of `r mv_results_1100 %>% distinct(race_id) %>% nrow()` races. We first take a look at the win to run ratios for each barrier. If the barrier position has no impact, then we would expect to see these ratios around .1, just like our random pick previously.
 
-```{r}
-mv_results_1100 %>% 
-    group_by(barrier) %>% 
-    summarise(win_ratio = sum(win) / n(), .groups = 'drop') %>% 
-    ggplot() +
-    geom_col(aes(as_factor(barrier), win_ratio)) +
-    labs(
-        title = 'Moonee Valley - Last 5 Years',
-        subtitle = 'Races <= 1100m - Barrier Win Ratios',
-        x = 'Barrier',
-        y = 'Win/Run Ratio'
-    )
-```
-
-What about if we also take into account the condition of the track?
 
 ```{r}
 mv_results_1100 %>% 
@@ -276,7 +252,7 @@ mv_results_1100 %>%
     geom_col(aes(condition, n)) +
     geom_label(aes(condition, n, label = n)) +
     labs(
-        title = 'Moonee Valley',
+        title = 'Moonee Valley - Races <= 1100m',
         subtitle = 'Number of Races per Track Condition',
         x = 'Track Condition',
         y = '# of Races'
@@ -285,21 +261,75 @@ mv_results_1100 %>%
 ```
 
 
+```{r}
+mv_results_1100 %>% 
+    group_by(race_id) %>%
+    slice_head() %>% 
+    ungroup() %>% 
+    count(rail_metres) %>% 
+    ggplot() +
+    geom_col(aes(rail_metres, n)) +
+    geom_label(aes(rail_metres, n, label = n)) +
+    labs(
+        title = 'Moonee Valley - Races <= 1100m',
+        subtitle = 'Number of Races per Full Track Rail Position',
+        x = 'Rail Position (Metres)',
+        y = '# of Races'
+    )
+    
+```
+
+
+This gives us a total of `r mv_results_1100 %>% distinct(race_id) %>% nrow()` races. We first take a look at the win to run ratios for each barrier. If the barrier position has no impact, then we would expect to see these ratios around .1, just like our random pick previously.
 
 ```{r}
 mv_results_1100 %>% 
-    group_by(barrier, condition) %>% 
-    summarise(win_ratio = sum(win)/n(), .groups = 'drop') %>% 
+    group_by(barrier) %>% 
+    summarise(win_ratio = sum(win) / n(), .groups = 'drop') %>% 
     ggplot() +
     geom_col(aes(as_factor(barrier), win_ratio)) +
-    facet_wrap(~condition) +
     labs(
-        title = 'Moonee Valley - Last 5 Years',
-        subtitle = 'Races <= 1100m - Barrier Win Ratios',
+        title = 'Moonee Valley - Races <= 1100m',
+        subtitle = 'Barrier Win Ratios',
         x = 'Barrier',
         y = 'Win/Run Ratio'
     )
 ```
+
+
+```{r}
+mv_results_1100 %>%
+    filter(result == 'Win') %>% 
+    ggplot() +
+    geom_jitter(aes(barrier, rail_metres, colour = result), alpha = .5) +
+    facet_wrap(~condition)
+```
+
+
+
+
+What about if we also take into account the condition of the track? First we take a look at how many races have been raced per groun condition.
+
+```{r}
+mv_results_1100 %>% 
+    group_by(race_id) %>%
+    slice_head() %>% 
+    ungroup() %>% 
+    count(condition, condition.num) %>% 
+    mutate(condition = fct_reorder(condition, condition.num)) %>% 
+    ggplot() +
+    geom_col(aes(condition, n)) +
+    geom_label(aes(condition, n, label = n)) +
+    labs(
+        title = 'Moonee Valley - Races <= 1100m',
+        subtitle = 'Number of Races per Track Condition',
+        x = 'Track Condition',
+        y = '# of Races'
+    )
+    
+```
+
+
 
 # All Tracks
 
