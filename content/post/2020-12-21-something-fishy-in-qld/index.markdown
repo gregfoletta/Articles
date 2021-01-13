@@ -13,23 +13,75 @@ This is a draft article looking at horse racing results, trying to determine wit
 - Picking the favourite
 - Looking at barrier position and track condition
 
-
-
 # Adding some additional variables
 
-```r
-full_results <-
-    full_results %>% 
-    mutate(odds.sp.win = ifelse(position != 1 | is.na(odds.sp), -1, odds.sp))
-```
 
 
 ```r
 library(tidyverse)
-library(modelr)
 library(tidymodels)
-library(yardstick)
-library(vctrs)
+library(encryptr)
+```
+
+
+```r
+decrypted_filename <- 'hr_results.csv'
+decrypt_file('hr_results.csv.encryptr.bin', file_name = decrypted_filename)
+```
+
+```
+## Decrypted file written with name 'hr_results.csv'
+```
+
+```r
+hr_results <- read_csv(
+    decrypted_filename,
+    col_types = cols(
+        race_id = col_double(),
+        track = col_character(),
+        state = col_character(),
+        results_link = col_character(),
+        date = col_date(format = ""),
+        raceday_link = col_character(),
+        race_number = col_double(),
+        position = col_character(),
+        horse.name = col_character(),
+        horse.number = col_double(),
+        barrier = col_double(),
+        margin = col_double(),
+        weight = col_double(),
+        horse.age = col_double(),
+        horse.type = col_character(),
+        trainer = col_character(),
+        jockey = col_character(),
+        horse.ancestry = col_character(),
+        odds.sp = col_double(),
+        odds.stab = col_double(),
+        odds.nsw = col_double(),
+        odds.ubet = col_double(),
+        odds.sb = col_double(),
+        race_duration = col_character(),
+        race_datetime = col_datetime(),
+        rail_position = col_character(),
+        race_name = col_character(),
+        length = col_double(),
+        class = col_character(),
+        condition = col_character(),
+        error = col_character(),
+        track_race_id = col_double(),
+        result = col_character(),
+        condition.num = col_double(),
+        odds.sp.win = col_double()
+    )
+)
+
+if (file.exists(decrypted_filename)) {
+    file.remove(decrypted_filename)
+}
+```
+
+```
+## [1] TRUE
 ```
 
 
@@ -41,10 +93,10 @@ Here's an example with some of the key variables selected:
 
 
 ```r
-full_results %>% 
+hr_results %>% 
     slice(1:10) %>% 
     select(
-        track, date, race_number, 
+        track, date, race_id, race_number, 
         position, horse.name, barrier, 
         margin, rail_position, race_duration, 
         length, condition
@@ -52,21 +104,21 @@ full_results %>%
 ```
 
 ```
-## # A tibble: 10 x 11
-##    track date       race_number position horse.name barrier margin rail_position
-##    <fct> <date>           <int> <fct>    <chr>        <int>  <dbl> <chr>        
-##  1 Canb… 2011-04-01           1 1        Pale             1     NA <NA>         
-##  2 Canb… 2011-04-01           1 2        Nineveh's…       2     NA <NA>         
-##  3 Canb… 2011-04-01           1 3        LE COMMAN…       5     NA <NA>         
-##  4 Canb… 2011-04-01           1 4        Colourist        3     NA <NA>         
-##  5 Canb… 2011-04-01           1 5        Zarweep          6     NA <NA>         
-##  6 Canb… 2011-04-01           1 6        HE'S ALERT       4     NA <NA>         
-##  7 Canb… 2011-04-01           2 1        Pray To G…       1     NA <NA>         
-##  8 Canb… 2011-04-01           2 2        Tonk             3     NA <NA>         
-##  9 Canb… 2011-04-01           2 3        THEREHEIZ        4     NA <NA>         
-## 10 Canb… 2011-04-01           2 4        JOLLY JOK…       2     NA <NA>         
-## # … with 3 more variables: race_duration <Period>, length <int>,
-## #   condition <fct>
+## # A tibble: 10 x 12
+##    track date       race_id race_number position horse.name barrier margin
+##    <chr> <date>       <dbl>       <dbl> <chr>    <chr>        <dbl>  <dbl>
+##  1 Canb… 2011-04-01   25488           1 1        Pale             1     NA
+##  2 Canb… 2011-04-01   25488           1 2        Nineveh's…       2     NA
+##  3 Canb… 2011-04-01   25488           1 3        LE COMMAN…       5     NA
+##  4 Canb… 2011-04-01   25488           1 4        Colourist        3     NA
+##  5 Canb… 2011-04-01   25488           1 5        Zarweep          6     NA
+##  6 Canb… 2011-04-01   25488           1 6        HE'S ALERT       4     NA
+##  7 Canb… 2011-04-01   25489           2 1        Pray To G…       1     NA
+##  8 Canb… 2011-04-01   25489           2 2        Tonk             3     NA
+##  9 Canb… 2011-04-01   25489           2 3        THEREHEIZ        4     NA
+## 10 Canb… 2011-04-01   25489           2 4        JOLLY JOK…       2     NA
+## # … with 4 more variables: rail_position <chr>, race_duration <chr>,
+## #   length <dbl>, condition <chr>
 ```
 
 The more pertinent variables are:
@@ -87,64 +139,20 @@ The more pertinent variables are:
 
 In the first instance we're going to be focusing on races at the Moonee Valley track over the past 5 years. We're going to be trying different methods and models and observing how accurate these are in picking the winner of each race.
 
-# Monee Valley
-
-We extract out race results from Moonee Valley over the last five years.
-
-
-```r
-mv_results <-
-    full_results %>%
-    filter(track == 'Moonee Valley' & year(date) > 2015)
-```
-
-This dataset has 905 races in it.
-
 ## Approach 1: Picking a Random Horse
 
 In this approach, we look at the last five years of races at Moonee Valley. We pick a random horse from each race and "place" a dollar bet. If it wins, we get the starting price odds back, and if it loses we of course lose our dollar.
 
 
 
-```r
-# Function that picks a random horse from each race (based on race_id)
-mdl_hr_random <- function(data) {
-    data %>%
-    group_by(race_id) %>% 
-    mutate( 
-        .pred = as_factor( sample(1:n()) ),
-        .pred.result = factor(
-            ifelse(.pred == 1, 'Win', 'Loss'),
-            levels = c('Win', 'Loss')
-        )
-    ) %>% 
-    ungroup()
-}
 
-# Extract out our 'winning' predictions
-mv_random <-
-    mv_results %>%
-    mdl_hr_random() %>% 
-    filter(.pred.result == 'Win')
-    
-# How accurate is the model:
-mv_random %>% accuracy(result, .pred.result)
-```
-
-```
-## # A tibble: 1 x 3
-##   .metric  .estimator .estimate
-##   <chr>    <chr>          <dbl>
-## 1 accuracy binary         0.113
-```
-
-So when we pick a random horse, we are 11.3% accurate. This makes sense, as on average there are 9.643 horses in each race.
+So when we pick a random horse, we are `mv_random %>% accuracy(result, .pred.result) %>% pull(.estimate) %>% round(3) *100`% accurate. This makes sense, as on average there are ` mv_results %>% group_by(race_id) %>% slice_max(barrier) %>% ungroup() %>% summarise(m = mean(barrier)) %>% pull(m) %>% round(3)` horses in each race.
 
 Let's place a dollar bet on a random horse in each race over the past five years.
 
 
 ```r
-mv_random %>%
+full_results_random %>%
     mutate(
         cumulative_return = cumsum(odds.sp.win),
         index = 1:n()
@@ -161,11 +169,9 @@ mv_random %>%
     )
 ```
 
-<img src="index_files/figure-html/unnamed-chunk-7-1.png" width="672" />
 
 
-
-# Approach 1: Betting on the Favourite
+# Approach 2: Betting on the Favourite
 
 In this approach, we simply bet on the favourite in each race based on their starting price.
 
@@ -185,28 +191,21 @@ mdl_hr_favourite <- function(data) {
     ungroup()
 }
 
-mv_favourite <-
-    mv_results %>% 
+full_results_favourite <-
+    full_results %>% 
     mdl_hr_favourite() %>% 
     filter(.pred.result == 'Win')
 
-mv_favourite %>% accuracy(result, .pred.result)
+full_results_favourite %>% accuracy(result, .pred.result)
 ```
 
-```
-## # A tibble: 1 x 3
-##   .metric  .estimator .estimate
-##   <chr>    <chr>          <dbl>
-## 1 accuracy binary         0.342
-```
-
-By picking the favourite, we've increased our accuracy to 34.2%. This is the consensus view, and we can consider it a distillation of a whole bunch of factors: track conditions, weather, form, make-up of the race. This is our baseline that we would like to beat, and with this level of accuracy it's going to be difficult. Of course if it wasn't difficult, everyone would be making money!
+By picking the favourite, we've increased our accuracy to ` mv_favourite %>% accuracy(result, .pred.result) %>% pull(.estimate) %>% round(3) * 100`%. This is the consensus view, and we can consider it a distillation of a whole bunch of factors: track conditions, weather, form, make-up of the race. This is our baseline that we would like to beat, and with this level of accuracy it's going to be difficult. Of course if it wasn't difficult, everyone would be making money!
 
 Again, let's place a dollar bet on each race and see what our returns are.
 
 
 ```r
-mv_favourite %>% 
+full_results_favourite %>% 
     mutate(
         cumulative_return = cumsum(odds.sp.win),
         index = 1:n()
@@ -223,8 +222,6 @@ mv_favourite %>%
         colour = 'Year'
     )
 ```
-
-<img src="index_files/figure-html/unnamed-chunk-9-1.png" width="672" />
 
 Now this is if we bet on every single race over the past 5 years, which might not be realistic for some punters. Instead, let's put a dollar bet on 100 random races over the five years, but do it 20 times so see the how varied the return is.
 
@@ -256,135 +253,6 @@ mv_favourite %>%
     )
 ```
 
-<img src="index_files/figure-html/unnamed-chunk-10-1.png" width="672" />
-
-
-## Approach 3: Barrier Position
-
-In this approach, we're going to look at how the barrier, rail position, and group conditions affect the result.
-
-
-```r
-# Filter out races lengths and entire circuit rail positions.
-# Extract out the rail position in metres and add a win/loss
-# categorical variable
-mv_results_1100 <-
-    full_results %>% 
-    filter(track == 'Moonee Valley' & !is.na(barrier)) %>% 
-    filter(str_detect(rail_position, 'Entire Circuit')) %>% 
-    mutate(
-        condition = fct_reorder(condition, condition.num),
-        rail_metres = str_match(rail_position, '\\d'),
-        rail_metres = ifelse(is.na(rail_metres), 0, rail_metres),
-        win = ifelse(position == 1, TRUE, FALSE)
-    )
-```
-
-
-
-
-```r
-mv_results_1100 %>% 
-    group_by(race_id) %>%
-    slice_head() %>% 
-    ungroup() %>% 
-    count(condition, condition.num) %>% 
-    mutate(condition = fct_reorder(condition, condition.num)) %>% 
-    ggplot() +
-    geom_col(aes(condition, n)) +
-    geom_label(aes(condition, n, label = n)) +
-    labs(
-        title = 'Moonee Valley - Races <= 1100m',
-        subtitle = 'Number of Races per Track Condition',
-        x = 'Track Condition',
-        y = '# of Races'
-    )
-```
-
-<img src="index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
-
-
-
-```r
-mv_results_1100 %>% 
-    group_by(race_id) %>%
-    slice_head() %>% 
-    ungroup() %>% 
-    count(rail_metres) %>% 
-    ggplot() +
-    geom_col(aes(rail_metres, n)) +
-    geom_label(aes(rail_metres, n, label = n)) +
-    labs(
-        title = 'Moonee Valley - Races <= 1100m',
-        subtitle = 'Number of Races per Full Track Rail Position',
-        x = 'Rail Position (Metres)',
-        y = '# of Races'
-    )
-```
-
-<img src="index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
-
-
-This gives us a total of 1059 races. We first take a look at the win to run ratios for each barrier. If the barrier position has no impact, then we would expect to see these ratios around .1, just like our random pick previously.
-
-
-```r
-mv_results_1100 %>% 
-    group_by(barrier) %>% 
-    summarise(win_ratio = sum(win) / n(), .groups = 'drop') %>% 
-    ggplot() +
-    geom_col(aes(as_factor(barrier), win_ratio)) +
-    labs(
-        title = 'Moonee Valley - Races <= 1100m',
-        subtitle = 'Barrier Win Ratios',
-        x = 'Barrier',
-        y = 'Win/Run Ratio'
-    )
-```
-
-<img src="index_files/figure-html/unnamed-chunk-14-1.png" width="672" />
-
-
-
-```r
-mv_results_1100 %>%
-    filter(result == 'Win') %>% 
-    ggplot() +
-    geom_jitter(aes(barrier, rail_metres, colour = result), alpha = .5) +
-    facet_wrap(~condition)
-```
-
-<img src="index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
-
-
-
-
-What about if we also take into account the condition of the track? First we take a look at how many races have been raced per groun condition.
-
-
-```r
-mv_results_1100 %>% 
-    group_by(race_id) %>%
-    slice_head() %>% 
-    ungroup() %>% 
-    count(condition, condition.num) %>% 
-    mutate(condition = fct_reorder(condition, condition.num)) %>% 
-    ggplot() +
-    geom_col(aes(condition, n)) +
-    geom_label(aes(condition, n, label = n)) +
-    labs(
-        title = 'Moonee Valley - Races <= 1100m',
-        subtitle = 'Number of Races per Track Condition',
-        x = 'Track Condition',
-        y = '# of Races'
-    )
-```
-
-<img src="index_files/figure-html/unnamed-chunk-16-1.png" width="672" />
-
-
-
-# All Tracks
 
 ## Approach: Betting on the Favourite
 
@@ -405,13 +273,7 @@ full_dollar_bets <-
     group_by(track, state) %>% 
     summarise(dollar_bet = sum(odds.sp.win)) %>% 
     ungroup()
-```
 
-```
-## `summarise()` regrouping output by 'track' (override with `.groups` argument)
-```
-
-```r
 full_dollar_bets %>% 
     ggplot() + 
     geom_col(aes(reorder(track, dollar_bet), dollar_bet, fill = state)) +
@@ -426,8 +288,6 @@ full_dollar_bets %>%
         fill = 'State'
     )
 ```
-
-<img src="index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
 What are the top and bottom 20 tracks?
 
 
@@ -447,11 +307,6 @@ full_dollar_bets %>%
         y = 'Cumulative Winnings ($)',
         fill = 'State'
     )
-```
-
-<img src="index_files/figure-html/unnamed-chunk-18-1.png" width="672" />
-
-```r
 # Bottom 30
 full_dollar_bets %>% 
     slice_min(dollar_bet, n = 30) %>% 
@@ -468,5 +323,3 @@ full_dollar_bets %>%
         fill = 'State'
     )
 ```
-
-<img src="index_files/figure-html/unnamed-chunk-18-2.png" width="672" />
