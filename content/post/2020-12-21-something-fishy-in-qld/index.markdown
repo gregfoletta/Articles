@@ -20,22 +20,23 @@ This is a draft article looking at horse racing results, trying to determine wit
 ```r
 library(tidyverse)
 library(tidymodels)
-library(encryptr)
+    library(encryptr)
 ```
 
 
 ```r
-decrypted_filename <- 'hr_results.csv'
-decrypt_file('hr_results.csv.encryptr.bin', file_name = decrypted_filename)
+decrypt_file('hr_results.csv.zip.encryptr.bin')
 ```
 
 ```
-## Decrypted file written with name 'hr_results.csv'
+## Decrypted file written with name 'hr_results.csv.zip'
 ```
 
 ```r
+unzip('hr_results.csv.zip')
+
 hr_results <- read_csv(
-    decrypted_filename,
+    'hr_results.csv',
     col_types = cols(
         race_id = col_double(),
         track = col_character(),
@@ -75,9 +76,15 @@ hr_results <- read_csv(
     )
 )
 
-if (file.exists(decrypted_filename)) {
-    file.remove(decrypted_filename)
-}
+file.remove('hr_results.csv')
+```
+
+```
+## [1] TRUE
+```
+
+```r
+file.remove('hr_results.csv.zip')
 ```
 
 ```

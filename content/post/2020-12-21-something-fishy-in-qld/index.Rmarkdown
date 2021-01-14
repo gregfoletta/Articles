@@ -23,15 +23,15 @@ full_results <-
 ```{r message=FALSE}
 library(tidyverse)
 library(tidymodels)
-library(encryptr)
+    library(encryptr)
 ```
 
 ```{r}
-decrypted_filename <- 'hr_results.csv'
-decrypt_file('hr_results.csv.encryptr.bin', file_name = decrypted_filename)
+decrypt_file('hr_results.csv.zip.encryptr.bin')
+unzip('hr_results.csv.zip')
 
 hr_results <- read_csv(
-    decrypted_filename,
+    'hr_results.csv',
     col_types = cols(
         race_id = col_double(),
         track = col_character(),
@@ -71,9 +71,8 @@ hr_results <- read_csv(
     )
 )
 
-if (file.exists(decrypted_filename)) {
-    file.remove(decrypted_filename)
-}
+file.remove('hr_results.csv')
+file.remove('hr_results.csv.zip')
 ```
 
 
