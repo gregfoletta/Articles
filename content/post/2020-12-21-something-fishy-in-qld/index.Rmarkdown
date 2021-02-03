@@ -13,22 +13,27 @@ This is a draft article looking at horse racing results, trying to determine wit
 - Picking the favourite
 - Looking at barrier position and track condition
 
-# Adding some additional variables
-```{r eval=FALSE, include=FALSE}
-full_results <-
-    full_results %>% 
-    mutate(odds.sp.win = ifelse(position != 1 | is.na(odds.sp), -1, odds.sp))
-```
-
 ```{r message=FALSE}
 library(tidyverse)
 library(tidymodels)
-    library(encryptr)
+library(encryptr)
+library(gt)
+library(zip)
 ```
 
 ```{r}
-decrypt_file('hr_results.csv.zip.encryptr.bin')
-unzip('hr_results.csv.zip')
+results_file <- 'hr_results.csv.zip.encryptr.bin'
+
+if(!file.exists(results_file)) {
+    download.file(
+        url = glue('https://gregfoletta.s3-ap-southeast-2.amazonaws.com/articles-data/{results_file}'),
+        destfile = results_file
+    )
+}
+
+
+decrypt_file(results_file)
+unzip(str_remove(results_file, '.encryptr.bin'))
 
 hr_results <- read_csv(
     'hr_results.csv',
@@ -84,13 +89,15 @@ Here's an example with some of the key variables selected:
 
 ```{r}
 hr_results %>% 
-    slice(1:10) %>% 
+    slice(1:5) %>% 
     select(
-        track, date, race_id, race_number, 
+        track, date, race_number, 
         position, horse.name, barrier, 
-        margin, rail_position, race_duration, 
-        length, condition
-    )
+        race_duration, 
+        length, condition,
+        odds.sp
+    ) %>% 
+    gt()
 ```
 
 The more pertinent variables are:
@@ -107,6 +114,200 @@ The more pertinent variables are:
 - length: the length of the race.
 - condition: the condition of the track.
 
+# Modifications
+
+# Monte-Carlo Cross Validation
+
+```{r}
+tic()
+hr_results_mc <- hr_results %>% 
+    group_by(race_id) %>% 
+    nest() %>% 
+    mc_cv(times = 1000, prop = .01) %>%
+    mutate(analysis = map(splits, ~analysis(.x))) %>%
+    mutate(sample_id = str_remove(id, '^Resample')) %>% 
+    select(-c(id, splits)) %>% 
+    unnest(analysis) %>%
+    unnest(data)
+toc()
+    
+```
+
+
+
+# Approach 1: Random Selection
+
+
+Take a random sample from each race.
+
+```{r}
+hr_random <- hr_results_mc %>% 
+    drop_na(odds.sp) %>% 
+    group_by(race_id) %>% 
+    slice_sample(n = 1) %>% 
+    ungroup()
+```
+
+Place bets and add up cumulative returns
+
+```{r}
+hr_random <- hr_random %>% 
+    group_by(sample_id) %>% 
+    mutate(bet.return = if_else(position == 1, odds.sp, -1)) %>% 
+    mutate(
+        group_index = 1:n(),
+        cumulative.return = cumsum(bet.return)
+    )
+
+hr_random %>% 
+    filter(sample_id %in% c(1:40)) %>% 
+    ggplot() +
+    geom_line(aes(group_index, cumulative.return, group = sample_id), alpha = .5) +
+    labs(
+        title = "Dollar Bets - Random",
+        x = 'Race Index',
+        y = 'Dollars'
+    )
+hr_random %>% 
+    group_by(sample_id) %>% 
+    summarise(return = sum(bet.return)) %>%
+    ggplot() +
+    geom_histogram(aes(return), binwidth = 10) +
+    geom_vline(aes(xintercept = mean(return))) +
+    labs(
+        title = 'Dollar Bet - Random Horse - Returns',
+        x = 'Sample Race Index',
+        y = 'Dollars'
+    )
+```
+
+
+
+```{r}
+# Nest the races, MCCV, then sample
+library(tictoc)
+tic()
+hr_results %>%
+    drop_na(odds.sp) %>%
+    group_by(race_id) %>% 
+    nest()
+toc()
+
+    # select(-splits) %>% 
+    # unnest() %>%
+    # count(id, race_id) %>% 
+    # arrange(desc(n))
+
+    
+    
+    #mutate(sample = map(splits, ~analysis(.x) %>% slice_sample(n = 1))) %>% 
+    #mutate(sample_id = str_remove(id, 'Resample') %>% as.double()) %>% 
+    #select(-c(splits, id)) %>% 
+    #unnest(sample) %>% 
+    #unnest(data)
+```
+    
+
+```{r}
+hr_random <- hr_random %>% 
+    mutate(bet.return = if_else(position == 1, odds.sp, -1)) %>% 
+    group_by(sample_id) %>% 
+    mutate(
+        group_index = 1:n(),
+        cumulative.return = cumsum(bet.return)
+    )
+```
+
+```{r}
+hr_random %>%
+    filter(sample_id %in% c(1:40)) %>% 
+    ggplot() +
+    geom_line(aes(group_index, cumulative.return, group = sample_id), alpha = .5) +
+    labs(
+        title = "Dollar Bets - Random",
+        x = 'Race Index',
+        y = 'Dollars'
+    )
+```
+
+```{r}
+hr_random %>% 
+    group_by(sample_id) %>% 
+    summarise(return = sum(bet.return)) %>%
+    ggplot() +
+    geom_histogram(aes(return), binwidth = 10) +
+    geom_vline(aes(xintercept = mean(return))) +
+    labs(
+        title = 'Dollar Bet - Favourite - Returns',
+        x = 'Sample Race Index',
+        y = 'Dollars'
+    )
+```
+
+# Approach 2 - Favourite
+
+Add a rank and filter out the favourites a
+```{r}
+hr_favourites <- 
+    hr_results %>%
+    drop_na(odds.sp) %>% 
+    group_by(race_id) %>% 
+    mutate(
+        rank = order(odds.sp),
+    ) %>% 
+    ungroup() %>% 
+    filter(rank == 1)
+```
+
+
+```{r}
+hr_favourites_mccv <- hr_favourites %>% 
+    mc_cv(times = 800, prop = .01) %>%
+    mutate(set = map(splits, ~analysis(.x))) %>% 
+    mutate(sample_id = str_remove(id, 'Resample') %>% as.double()) %>% 
+    select(-c(splits, id)) %>% 
+    unnest(cols = set)    
+```
+
+
+```{r}
+hr_favourites_mccv <- hr_favourites_mccv %>% 
+    mutate(bet.return = if_else(position == 1, odds.sp, -1)) %>% 
+    group_by(sample_id) %>% 
+    mutate(
+        group_index = 1:n(),
+        cumulative.return = cumsum(bet.return)
+    )
+```
+
+
+```{r}
+hr_favourites_mccv %>%
+    filter(sample_id %in% c(1:40)) %>% 
+    ggplot() +
+    geom_line(aes(group_index, cumulative.return, group = sample_id), alpha = .5) +
+    labs(
+        title = "Dollar Bets - Favourites",
+        x = 'Race'
+    )
+```
+
+```{r}
+hr_favourites_mccv %>% 
+    group_by(sample_id) %>% 
+    summarise(return = sum(bet.return)) %>%
+    ggplot() +
+    geom_histogram(aes(return), binwidth = 10) +
+    geom_vline(aes(xintercept = mean(return))) +
+    labs(
+        title = 'Dollar Bet - Favourite - Returns',
+        x = 'Sample Race Index',
+        y = 'Dollars'
+    )
+```
+
+
+# --------------------------
 # The Key Questions
 
 In the first instance we're going to be focusing on races at the Moonee Valley track over the past 5 years. We're going to be trying different methods and models and observing how accurate these are in picking the winner of each race.
