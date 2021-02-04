@@ -160,7 +160,7 @@ plan(multisession, workers = availableCores() - 1)
 # Parallel Monte Carlo cross-validation
 library(tictoc)
 tic()
-number_samples <- 10 
+number_samples <- 1000 
 hr_mccv <- future_map(
     1:number_samples,
     ~{ mc_sample(hr_results, times = 1, prop = .005) },
@@ -170,7 +170,7 @@ toc()
 ```
 
 ```
-## 122.609 sec elapsed
+## 553.855 sec elapsed
 ```
 
 ```r
