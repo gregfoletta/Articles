@@ -1,332 +1,318 @@
 ---
-title: Something Fishy in QLD
+title: 'A Bit on the Nose'
 author: Greg Foletta
-date: '2020-12-19'
-slug: something-fishy-in-qld 
+date: '2021-02-04'
+slug: a-bit-on-the-nose
 categories: [R]
 ---
 
-
-This is a draft article looking at horse racing results, trying to determine with what kind of accuracy we can pick the winner of a race. We'll be focusing on the Moonee Valley track in Melbourne (with a small digression at the end), trying a few different approaches:
-
-- Picking a random horse
-- Picking the favourite
-- Looking at barrier position and track condition
-
-# Adding some additional variables
-
+I've never really been interested in horse racing
 
 
 ```r
 library(tidyverse)
-library(tidymodels)
-    library(encryptr)
+library(rsample)
+library(encryptr)
+library(gt)
+library(zip)
+library(glue)
+library(furrr)
+library(lubridate)
 ```
 
 
-```r
-decrypt_file('hr_results.csv.zip.encryptr.bin')
-```
 
-```
-## Decrypted file written with name 'hr_results.csv.zip'
-```
+# Data Information & Aquisition
 
-```r
-unzip('hr_results.csv.zip')
+The data was acquired by using [rvest](https://rvest.tidyverse.org/) to scrape website that contained this information. I was lucky enough to find an index with links to each track's races, and was able to slowly iterate across each of these, pulling out specific variables using CSS selectors and XPaths. The dataset is for my own personal use, and to avoid any legal issues I have encrypted the file that us used in this article.
 
-hr_results <- read_csv(
-    'hr_results.csv',
-    col_types = cols(
-        race_id = col_double(),
-        track = col_character(),
-        state = col_character(),
-        results_link = col_character(),
-        date = col_date(format = ""),
-        raceday_link = col_character(),
-        race_number = col_double(),
-        position = col_character(),
-        horse.name = col_character(),
-        horse.number = col_double(),
-        barrier = col_double(),
-        margin = col_double(),
-        weight = col_double(),
-        horse.age = col_double(),
-        horse.type = col_character(),
-        trainer = col_character(),
-        jockey = col_character(),
-        horse.ancestry = col_character(),
-        odds.sp = col_double(),
-        odds.stab = col_double(),
-        odds.nsw = col_double(),
-        odds.ubet = col_double(),
-        odds.sb = col_double(),
-        race_duration = col_character(),
-        race_datetime = col_datetime(),
-        rail_position = col_character(),
-        race_name = col_character(),
-        length = col_double(),
-        class = col_character(),
-        condition = col_character(),
-        error = col_character(),
-        track_race_id = col_double(),
-        result = col_character(),
-        condition.num = col_double(),
-        odds.sp.win = col_double()
-    )
-)
+The data set that we'll be working with contains information on around 180,000 horse races over the period of 2011 to 2020. The data is in a tidy format, with each row containing information on each horse in each race. This information includes the name and state that the track, the date of the race, the name of the horse, jockey and trainer, the weight the horse is carrying, race length, duration, barrier position, and more.
 
-file.remove('hr_results.csv')
-```
+However we won't be using most of this information in this article. Instead we'll be focusing on the following key variables:
 
-```
-## [1] TRUE
-```
-
-```r
-file.remove('hr_results.csv.zip')
-```
-
-```
-## [1] TRUE
-```
+- *race_id* - a unique identifier for each race. There are multiple rows with the same *race_id*, each representing a horse that ran in that race.
+- *odds.sp* - the 'starting price', which is are the "odds prevailing on a particular horse in the on-course fixed-odds betting market at the time a race begins.".
+- *position* - the finishing position of the horse.
 
 
-# Our Dataset 
+We download the dataset, decrypt, unzip, and load it into the variable `hr_results`.
 
-We have a dataset that contains race results for all race tracks in Australia over the last ten years.
 
-Here's an example with some of the key variables selected:
+
+# An Explore
+
+Before we move on, let's take a look at the dataset from a few different perspectives to give us some context. First up we take a look at the number of races per month per state. We can clearly see the yearly cyclic nature, with the rise into the spring racing carnivals and a drop off over winter.
 
 
 ```r
 hr_results %>% 
-    slice(1:10) %>% 
-    select(
-        track, date, race_id, race_number, 
-        position, horse.name, barrier, 
-        margin, rail_position, race_duration, 
-        length, condition
-    )
-```
-
-```
-## # A tibble: 10 x 12
-##    track date       race_id race_number position horse.name barrier margin
-##    <chr> <date>       <dbl>       <dbl> <chr>    <chr>        <dbl>  <dbl>
-##  1 Canb… 2011-04-01   25488           1 1        Pale             1     NA
-##  2 Canb… 2011-04-01   25488           1 2        Nineveh's…       2     NA
-##  3 Canb… 2011-04-01   25488           1 3        LE COMMAN…       5     NA
-##  4 Canb… 2011-04-01   25488           1 4        Colourist        3     NA
-##  5 Canb… 2011-04-01   25488           1 5        Zarweep          6     NA
-##  6 Canb… 2011-04-01   25488           1 6        HE'S ALERT       4     NA
-##  7 Canb… 2011-04-01   25489           2 1        Pray To G…       1     NA
-##  8 Canb… 2011-04-01   25489           2 2        Tonk             3     NA
-##  9 Canb… 2011-04-01   25489           2 3        THEREHEIZ        4     NA
-## 10 Canb… 2011-04-01   25489           2 4        JOLLY JOK…       2     NA
-## # … with 4 more variables: rail_position <chr>, race_duration <chr>,
-## #   length <dbl>, condition <chr>
-```
-
-The more pertinent variables are:
-
-- track: the name of the track.
-- date: the date of the race meet.
-- race_number: the number of the race within the meet.
-- position: the finishing position of the horse..
-- horse.name: the name of the horse.
-- barrier: the number of the barrier the horse started from.
-- margin: the margin of the horse away from the winniner
-- rail_position: the position of the rail on the track
-- race_duration: how long the race took.
-- length: the length of the race.
-- condition: the condition of the track.
-
-# The Key Questions
-
-In the first instance we're going to be focusing on races at the Moonee Valley track over the past 5 years. We're going to be trying different methods and models and observing how accurate these are in picking the winner of each race.
-
-## Approach 1: Picking a Random Horse
-
-In this approach, we look at the last five years of races at Moonee Valley. We pick a random horse from each race and "place" a dollar bet. If it wins, we get the starting price odds back, and if it loses we of course lose our dollar.
-
-
-
-
-So when we pick a random horse, we are `mv_random %>% accuracy(result, .pred.result) %>% pull(.estimate) %>% round(3) *100`% accurate. This makes sense, as on average there are ` mv_results %>% group_by(race_id) %>% slice_max(barrier) %>% ungroup() %>% summarise(m = mean(barrier)) %>% pull(m) %>% round(3)` horses in each race.
-
-Let's place a dollar bet on a random horse in each race over the past five years.
-
-
-```r
-full_results_random %>%
-    mutate(
-        cumulative_return = cumsum(odds.sp.win),
-        index = 1:n()
-    ) %>% 
+    count(state, month = floor_date(date, '1 month')) %>% 
     ggplot() +
-    geom_line(aes(index, cumulative_return, colour = as_factor(year(date)))) +
-    geom_hline(yintercept = 0) +
+    geom_line(aes(month, n, colour = state)) +
     labs(
-        x = 'Race Index',
-        y = 'Cumulative Return (Dollars)',
-        title = 'Moonee Valley - Last Five Years',
-        subtitle = 'Cumulative Return - Pick: Random Horse',
-        colour = 'Year'
+        title = 'Number of Race Days per Month per State',
+        x = 'Month',
+        y = 'Race Days'
     )
 ```
 
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" />
 
-
-# Approach 2: Betting on the Favourite
-
-In this approach, we simply bet on the favourite in each race based on their starting price.
+WHich horses and trainers have won the most over this time period?
 
 
 ```r
-# Function that picks the horse with the lowest odds. 
-mdl_hr_favourite <- function(data) {
-    data %>% 
+hr_results %>%
+    filter(position == 1) %>%  
+    pivot_longer(c(horse.name, trainer)) %>% 
+    count(name, value, name = 'wins') %>% 
+    group_by(name) %>%
+    slice_max(wins, n = 10) %>% 
+    ggplot() +
+    geom_col(aes(fct_reorder(value, wins), wins), fill = 'darkgreen') +
+    facet_wrap(vars(name), scales = 'free') +
+    coord_flip() +
+    labs(
+        title = 'Top 10 Wins by Horse and by Trainer (2011 - 2020)',
+        x = 'Name',
+        y = 'Wins'
+    )
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-5-1.png" width="672" />
+
+Finally, which tracks have run the most races over this period?
+
+
+```r
+hr_results %>% 
+    distinct(race_id, .keep_all = TRUE) %>% 
+    count(track, name = 'races') %>% 
+    slice_max(races, n = 10) %>% 
+    ggplot() +
+    geom_col(aes(fct_reorder(track, races), races), fill = 'lightblue') +
+    coord_flip() +
+    labs(
+        title = 'Tracks - Total Race Days (2011 - 2020)',
+        x = 'Tack Name',
+        y = 'Race Days'
+    )
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-6-1.png" width="672" />
+
+# Monte-Carlo Cross Validation
+
+Now that we've got a good hold on the data we're using, let's move on to the question at hand. To answer the question, we will simulate placing a dollar bet on a horse, determining whether it won, and then collecting our return, which is either the loss of the dollar, or the gain of the starting price odds of the horse.
+
+We want to do this in a realistic way, but we also want to have enough data to reach a conclusion. At a high level our process will be:
+
+- Take a sample of races across the time period; we'll be using 1% of all races.
+- Place a bet on a horse in each race, and calculate the return.
+- Calculate the cumulative return across the races
+- Repeat this a number of times.
+
+This in effect allows us to live a number of 'lives' over the period, each varying in the races that they bet on.
+
+We take our data frame and nest it together on a race by race basis.
+
+
+```r
+# Nest per race
+hr_results <- hr_results %>%
     group_by(race_id) %>% 
-    mutate(
-        .pred = order(odds.sp),
-        .pred.result = factor(
-            ifelse(.pred == 1, 'Win', 'Loss'),
-            levels = c('Win', 'Loss')
-        )
-    ) %>% 
-    ungroup()
+    nest()
+
+head(hr_results)
+```
+
+```
+## # A tibble: 6 x 2
+## # Groups:   race_id [6]
+##   race_id data              
+##     <dbl> <list>            
+## 1   25488 <tibble [6 × 34]> 
+## 2   25489 <tibble [5 × 34]> 
+## 3   25490 <tibble [6 × 34]> 
+## 4   25491 <tibble [12 × 34]>
+## 5   25492 <tibble [14 × 34]>
+## 6   25493 <tibble [9 × 34]>
+```
+
+The `mc_cv()` is used to create our sampled data sets to perform Monte Carlo cross validation on. Technically I'm not performing the cross-validation part, as I'm only using the 'analysis' or 'training' set of sampled data.
+
+We create a worker function so we can pass it to `future_map()`, which allows us to spread the workload across multiple cores on the system and speeding up the process.
+
+The returned results are then unnested returning us back to our original tidy format, with each sample identified by the *sample_id* variable.
+
+
+```r
+# Sampling function 
+mc_sample <- function(data, times, prop) {
+    data %>% 
+        mc_cv(times = times, prop = prop) %>% 
+        mutate(analysis = map(splits, ~analysis(.x))) %>%
+        select(-c(id, splits))
 }
 
-full_results_favourite <-
-    full_results %>% 
-    mdl_hr_favourite() %>% 
-    filter(.pred.result == 'Win')
+plan(multisession, workers = availableCores() - 1)
 
-full_results_favourite %>% accuracy(result, .pred.result)
+# Parallel Monte Carlo cross-validation
+library(tictoc)
+tic()
+number_samples <- 10 
+hr_mccv <- future_map(
+    1:number_samples,
+    ~{ mc_sample(hr_results, times = 1, prop = .005) },
+    .options = furrr_options(seed = TRUE)
+)
+toc()
 ```
 
-By picking the favourite, we've increased our accuracy to ` mv_favourite %>% accuracy(result, .pred.result) %>% pull(.estimate) %>% round(3) * 100`%. This is the consensus view, and we can consider it a distillation of a whole bunch of factors: track conditions, weather, form, make-up of the race. This is our baseline that we would like to beat, and with this level of accuracy it's going to be difficult. Of course if it wasn't difficult, everyone would be making money!
-
-Again, let's place a dollar bet on each race and see what our returns are.
-
-
-```r
-full_results_favourite %>% 
-    mutate(
-        cumulative_return = cumsum(odds.sp.win),
-        index = 1:n()
-    ) %>% 
-    ggplot() +
-    geom_line(aes(index, cumulative_return, colour = factor(year(date)))
-    ) +
-    geom_hline(yintercept = 0) +
-    labs(
-        title = 'Moonee Valley - Last Five Years',
-        subtitle = 'Cumulative Return - Pick: Favourite',
-        x = 'Race Index',
-        y = 'Cumulative Winnings (Dollars)',
-        colour = 'Year'
-    )
+```
+## 123.05 sec elapsed
 ```
 
-Now this is if we bet on every single race over the past 5 years, which might not be realistic for some punters. Instead, let's put a dollar bet on 100 random races over the five years, but do it 20 times so see the how varied the return is.
-
-
-
 ```r
-mv_favourite %>% 
-    rep_sample_n(size = 100, reps = 20) %>%
-    group_by(replicate) %>% 
-    arrange(date) %>% 
-    mutate(
-        cumulative_return = cumsum(odds.sp.win),
-        index = 1:n()
-    ) %>% 
-    ggplot() +
-    geom_line(
-        aes(
-            index, cumulative_return,
-            group = replicate, colour = as_factor(year(date))
-        )
-    ) +
-    geom_hline(yintercept = 0) +
-    labs(
-        title = 'Moonee Valley - Last Five Years - 100 Random Races',
-        subtitle = 'Cumulative Return - Pick: Favourite',
-        x = 'Race Index',
-        y = 'Cumulative Winnings (Dollars)',
-        colour = 'Year'
-    )
+# Switch plans to close workers and release memory
+plan(sequential)
+
+# Bind samples together and unnest
+hr_mccv <- hr_mccv %>% 
+    bind_rows() %>% 
+    mutate(sample_id = 1:n()) %>% 
+    unnest(cols = analysis) %>% 
+    unnest(cols = data)
 ```
 
 
-## Approach: Betting on the Favourite
+From this sampled data set, we take to subsets:
 
-Let's take a look at all tracks where there have been at least than 100 races over the past five years and see how betting on the favourite would have worked out.
+- `hr_random` takes a random horse from each race.
+- `hr_favourite` takes the favourite from each race.
 
-Note that there can be times when there is more than one horse as the favourite. In these instances, we place a bet on each horse.
+
+The `dollar_bets()` function takes our data, determines the return for each horse, and then on a per sample basis indexes the races and calculates the cumulative return.
 
 
 ```r
-full_dollar_bets <-
-    full_results %>%
-    add_count(track) %>% 
-    filter(n > 100) %>% 
-    filter(year(date) > 2015) %>% 
-    group_by(race_id) %>% 
-    slice_min(odds.sp, with_ties = TRUE) %>%
-    ungroup() %>% 
-    group_by(track, state) %>% 
-    summarise(dollar_bet = sum(odds.sp.win)) %>% 
+dollar_bets <- function(data) {
+    data %>% 
+        mutate(bet.return = if_else(position == 1, odds.sp, -1)) %>% 
+        group_by(sample_id) %>% 
+        mutate(
+            sample_race_index = 1:n(),
+            cumulative.return = cumsum(bet.return)
+        ) %>% 
+        ungroup()
+}
+```
+
+# Approach 1: Random Selection
+
+The first approach to take is to bet on a random horse per race.
+
+
+
+```r
+# Random horse from each race
+hr_random <- hr_mccv %>% 
+    drop_na(odds.sp) %>%
+    group_by(sample_id, race_id) %>% 
+    slice_sample(n = 1) %>% 
     ungroup()
 
-full_dollar_bets %>% 
-    ggplot() + 
-    geom_col(aes(reorder(track, dollar_bet), dollar_bet, fill = state)) +
-    theme(
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()) +
-    labs(
-        title = 'Betting on Favourite - Cumulative Winnings - Last 5 Years',
-        subtitle = 'Tracks with more than 120 races',
-        x = '',
-        y = 'Cumulative Winnings ($)',
-        fill = 'State'
-    )
+# Place our bets
+hr_random <- dollar_bets(hr_random)
 ```
-What are the top and bottom 20 tracks?
+
+Looking at the cumulative return over time and the distribution of returns.
 
 
 ```r
-# Top 30
-full_dollar_bets %>%
-    slice_max(dollar_bet, n = 30) %>% 
-    ggplot() + 
-    geom_col(aes(reorder(track, dollar_bet), dollar_bet, fill = state)) +
-    theme(
-        axis.text.x = element_text(angle = 45, hjust = 1)
-    ) +
+hr_random %>% 
+    filter(sample_id %in% 1:40) %>% 
+    ggplot() +
+    geom_line(aes(sample_race_index, cumulative.return, group = sample_id), alpha = .5) +
     labs(
-        title = 'Betting on Favourite - Cumulative Winnings - Last 5 Years',
-        subtitle = 'Tracks with more than 120 races',
-        x = 'Track Name',
-        y = 'Cumulative Winnings ($)',
-        fill = 'State'
-    )
-# Bottom 30
-full_dollar_bets %>% 
-    slice_min(dollar_bet, n = 30) %>% 
-    ggplot() + 
-    geom_col(aes(reorder(track, dollar_bet), dollar_bet, fill = state)) +
-    theme(
-        axis.text.x = element_text(angle = 45, hjust = 1)
-    ) +
-    labs(
-        title = 'Betting on Favourite - Cumulative Winnings - Last 5 Years',
-        subtitle = 'Tracks with more than 120 races',
-        x = 'Track Name',
-        y = 'Cumulative Winnings ($)',
-        fill = 'State'
+        title = "Dollar Bets - Random",
+        x = 'Race Index',
+        y = 'Dollars'
     )
 ```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
+
+```r
+hr_random %>% 
+    group_by(sample_id) %>% 
+    summarise(return = sum(bet.return)) %>%
+    ggplot() +
+    geom_histogram(aes(return), binwidth = 5) +
+    geom_vline(aes(xintercept = mean(return))) +
+    labs(
+        title = 'Dollar Bet - Random Horse - Returns Over Time',
+        x = 'Sample Race Index',
+        y = 'Dollars'
+    )
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-2.png" width="672" />
+
+
+# Approach 2 - Favourite
+
+The second approach to take is to bet on the favourite in each race.
+
+
+```r
+# Favourite horse from each race
+hr_favourite <- hr_mccv %>% 
+    drop_na(odds.sp) %>% 
+    group_by(sample_id, race_id) %>% 
+    mutate(odds.rank = order(odds.sp)) %>% 
+    slice_min(odds.rank, with_ties = FALSE, n = 1) %>% 
+    ungroup()
+    
+hr_favourite <- hr_favourite %>% 
+    mutate(bet.return = if_else(position == 1, odds.sp, -1)) %>% 
+    group_by(sample_id) %>% 
+    mutate(
+        sample_race_index = 1:n(),
+        cumulative.return = cumsum(bet.return)
+    ) %>% 
+    ungroup()
+```
+
+Again we look at the cumulative return over time, and the distribution of returns.
+
+
+```r
+hr_favourite %>%
+    filter(sample_id %in% 1:40) %>% 
+    ggplot() +
+    geom_line(aes(sample_race_index, cumulative.return, group = sample_id), alpha = .5) +
+    labs(
+        title = "Dollar Bets - Favourites",
+        x = 'Race'
+    )
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+
+```r
+hr_favourite %>% 
+    group_by(sample_id) %>% 
+    summarise(return = sum(bet.return)) %>%
+    ggplot() +
+    geom_histogram(aes(return), binwidth = 5) +
+    geom_vline(aes(xintercept = mean(return))) +
+    labs(
+        title = 'Dollar Bet - Favourite - Returns',
+        x = 'Sample Race Index',
+        y = 'Dollars'
+    )
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-2.png" width="672" />
+# Summary
