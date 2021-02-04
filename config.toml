@@ -50,5 +50,7 @@ pygmentsCodeFences = true
     url = "/categories"
     weight = 1
 
-[markup.goldmark.renderer]
-    unsafe= true
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
