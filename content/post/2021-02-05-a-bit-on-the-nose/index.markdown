@@ -1,12 +1,12 @@
 ---
-title: 'A Bit on the Nose'
+title: A Bit on the Nose
 author: Greg Foletta
 date: '2021-02-04'
 slug: a-bit-on-the-nose
 categories: [R]
 ---
 
-I've never really been interested in horse racing
+I've never really been interested in horse racing...
 
 
 ```r
