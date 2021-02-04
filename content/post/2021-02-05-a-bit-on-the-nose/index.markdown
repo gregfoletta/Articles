@@ -1,7 +1,7 @@
 ---
 title: 'A Bit on the Nose'
 author: Greg Foletta
-date: '2021-02-05'
+date: '2021-02-04'
 slug: a-bit-on-the-nose
 categories: [R]
 ---
@@ -170,7 +170,7 @@ toc()
 ```
 
 ```
-## 122.653 sec elapsed
+## 122.609 sec elapsed
 ```
 
 ```r
