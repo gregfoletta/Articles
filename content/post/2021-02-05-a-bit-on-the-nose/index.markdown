@@ -1,12 +1,12 @@
 ---
-title: A Bit on the Nose
+title: 'A Bit on the Nose'
 author: Greg Foletta
 date: '2021-02-04'
 slug: a-bit-on-the-nose
 categories: [R]
 ---
 
-I've never really been interested in horse racing...
+I've never really been interested in horse racing
 
 
 ```r
@@ -160,7 +160,7 @@ plan(multisession, workers = availableCores() - 1)
 # Parallel Monte Carlo cross-validation
 library(tictoc)
 tic()
-number_samples <- 10 
+number_samples <- 1000 
 hr_mccv <- future_map(
     1:number_samples,
     ~{ mc_sample(hr_results, times = 1, prop = .005) },
@@ -170,7 +170,7 @@ toc()
 ```
 
 ```
-## 123.05 sec elapsed
+## 553.855 sec elapsed
 ```
 
 ```r
