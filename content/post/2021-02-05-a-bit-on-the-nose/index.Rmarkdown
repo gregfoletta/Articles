@@ -1,5 +1,5 @@
 ---
-title: 'A Bit on the Nose'
+title: 'A Bit on the Nose (Draft)'
 author: Greg Foletta
 date: '2021-02-04'
 slug: a-bit-on-the-nose
@@ -207,15 +207,12 @@ mc_sample <- function(data, times, prop) {
 plan(multisession, workers = availableCores() - 1)
 
 # Parallel Monte Carlo cross-validation
-library(tictoc)
-tic()
-number_samples <- 1000 
+number_samples <- 800
 hr_mccv <- future_map(
     1:number_samples,
     ~{ mc_sample(hr_results, times = 1, prop = .005) },
     .options = furrr_options(seed = TRUE)
 )
-toc()
 
 # Switch plans to close workers and release memory
 plan(sequential)
@@ -285,7 +282,7 @@ hr_random %>%
 ```
 ```{r include = FALSE}
 sample_returns <- hr_random %>%
-    group_by(sampel_id) %>% 
+    group_by(sample_id) %>% 
     summarise(return = sum(bet.return)) %>%
     pull(return)
 
@@ -348,7 +345,7 @@ hr_favourite %>%
 
 ```{r include = FALSE}
 sample_returns <- hr_favourite %>%
-    group_by(sampel_id) %>% 
+    group_by(sample_id) %>% 
     summarise(return = sum(bet.return)) %>%
     pull(return)
 
