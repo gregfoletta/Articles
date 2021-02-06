@@ -6,9 +6,18 @@ slug: a-bit-on-the-nose
 categories: [R]
 ---
 
-I've never really been interested in horse racing
+I've never been particularly interested in horse racing, however I've married into a family that's mad for it. Each of them has their own ideas and combinations of factors that lead them to bet on a particular horse; it could be form, barrier position, track condition, and many others.
 
-```{r message=FALSE}
+I was interested at coming at the problem from a data driven perspective. I must admit that there was an initial arrogance that overcame me; an assumption that "of course I can do this better". In fact I've seen this in many places where 'data scientists' stroll into areas with the tools and data, but a lack of understanding of the problem space. Poor assumptions surely abound, and incorrect conclusions are almost certainly reached.
+
+After I quashed this misplaced sense of superiority, I started to think about how I could compute naive baselines that any models I may create could be compared against. The first naive model is to pick a random horse in each race. This is the lower bound for model predictive accuracy. The second naive model is to pick the favourite in each race. The favourite has many of the factors that we would be using in the model already built in: form, barrier position, trainer, jockey, etc. Any model we create needs to do better than this, otherwise we're no better than consensus.
+
+In this article I will answer the following question:
+
+> What is the mean and distribution of returns, and the predictive accuracy, of betting on a random and the favourite respectively in a horse race?
+
+
+```{r include=FALSE}
 library(tidyverse)
 library(rsample)
 library(encryptr)
@@ -18,6 +27,9 @@ library(glue)
 library(furrr)
 library(lubridate)
 ```
+
+
+# Data Information & Aquisition
 
 ```{r include=FALSE}
 hr_col_types <- cols(
@@ -57,24 +69,7 @@ hr_col_types <- cols(
     condition.num = col_double(),
     odds.sp.win = col_double()
 )
-```
 
-# Data Information & Aquisition
-
-The data was acquired by using [rvest](https://rvest.tidyverse.org/) to scrape website that contained this information. I was lucky enough to find an index with links to each track's races, and was able to slowly iterate across each of these, pulling out specific variables using CSS selectors and XPaths. The dataset is for my own personal use, and to avoid any legal issues I have encrypted the file that us used in this article.
-
-The data set that we'll be working with contains information on around 180,000 horse races over the period of 2011 to 2020. The data is in a tidy format, with each row containing information on each horse in each race. This information includes the name and state that the track, the date of the race, the name of the horse, jockey and trainer, the weight the horse is carrying, race length, duration, barrier position, and more.
-
-However we won't be using most of this information in this article. Instead we'll be focusing on the following key variables:
-
-- *race_id* - a unique identifier for each race. There are multiple rows with the same *race_id*, each representing a horse that ran in that race.
-- *odds.sp* - the 'starting price', which is are the "odds prevailing on a particular horse in the on-course fixed-odds betting market at the time a race begins.".
-- *position* - the finishing position of the horse.
-
-
-We download the dataset, decrypt, unzip, and load it into the variable `hr_results`.
-
-```{r include=FALSE}
 results_file <- 'hr_results.csv.zip.encryptr.bin'
 
 if(!file.exists(results_file)) {
@@ -96,9 +91,29 @@ file.remove('hr_results.csv')
 file.remove('hr_results.csv.zip')
 ```
 
+The data was acquired by using [rvest](https://rvest.tidyverse.org/) to scrape a website that contained the information I needed. I was able to iterate across each each , pulling out specific variables using CSS selectors and XPaths. The dataset is for my own personal use, and I have encrypted the data that us used in this article.
+
+The dataset contains information on around 180,000 horse races over the period of 2011 to 2020. The data is in a tidy format, with each row containing information on each horse in each race. This information includes the name and state that the track, the date of the race, the name of the horse, jockey and trainer, the weight the horse is carrying, race length, duration, barrier position, etc.
+
+Most of this information won't be used, instead we'll be focusing on the following key variables:
+
+- *race_id* - a unique identifier for each race. There are multiple rows with the same *race_id*, each representing a horse that ran in that race.
+- *odds.sp* - the 'starting price', which is are the "odds prevailing on a particular horse in the on-course fixed-odds betting market at the time a race begins.".
+- *position* - the finishing position of the horse.
+
+For readability I won't show all of the code used, however as always the full source of this page (and the entire website) is available on [github](https://github.com/gregfoletta/articles.foletta.org). The dataset is downloaded, decrypted, unzipped, the loaded into the variable `hr_results`:
+
+```{r}
+hr_results %>% 
+    select(race_id, state, track, horse.name, jockey, odds.sp, position, barrier, weight) %>% 
+    slice_sample(n = 10) %>% 
+    gt()
+```
+
+
 # An Explore
 
-Before we move on, let's take a look at the dataset from a few different perspectives to give us some context. First up we take a look at the number of races per month per state. We can clearly see the yearly cyclic nature, with the rise into the spring racing carnivals and a drop off over winter.
+Let's take a look at the dataset from a few different perspectives to give us some context. First up we take a look at the number of races per month per state. We can clearly see the yearly cyclic nature, with the rise into the spring racing carnivals and a drop off over winter.
 
 ```{r}
 hr_results %>% 
@@ -112,7 +127,7 @@ hr_results %>%
     )
 ```
 
-WHich horses and trainers have won the most over this time period?
+Next we take a look at the top 10 winning horses and trainers over this period:
 
 ```{r}
 hr_results %>%
@@ -149,20 +164,21 @@ hr_results %>%
     )
 ```
 
-# Monte-Carlo Cross Validation
+# Data Sampling
 
-Now that we've got a good hold on the data we're using, let's move on to the question at hand. To answer the question, we will simulate placing a dollar bet on a horse, determining whether it won, and then collecting our return, which is either the loss of the dollar, or the gain of the starting price odds of the horse.
+With a high level handle on the data we're working with, let's move on to answering the questions. The process is reasonably simple: we simulate placing a dollar bet on a horse, and either collect our return (the starting price odds) in the event that in won, or lose the dollar in the event that it lost.
 
-We want to do this in a realistic way, but we also want to have enough data to reach a conclusion. At a high level our process will be:
+We'll do this in a manner that tries to be realistic, so we're not going to bet on every race. We also want to determine the variability, so there will need to be a random element in there are well. The process is:
+- A sample of races across the time period is taken.
+    - I'll be using 0.5% of all races, which works out to be ~800 races, or about 1.5 races bet on per week.
+- A dollar 'bet' is placed (based on the two criteria) on a horse in each race.
+- The return is determined.
+- The cumulative return is calculated.
+- This process is repeated a number of times. 
 
-- Take a sample of races across the time period; we'll be using 1% of all races.
-- Place a bet on a horse in each race, and calculate the return.
-- Calculate the cumulative return across the races
-- Repeat this a number of times.
+This in effect allows us to live a number of 'lives' over the period, with each life varying in the races that were bet on.
 
-This in effect allows us to live a number of 'lives' over the period, each varying in the races that they bet on.
-
-We take our data frame and nest it together on a race by race basis.
+The first step is to nest the data for each race together, allowing us to easily sample on a per race basis, rather than on a per horse basis.
 
 ```{r}
 # Nest per race
@@ -173,11 +189,11 @@ hr_results <- hr_results %>%
 head(hr_results)
 ```
 
-The `mc_cv()` is used to create our sampled data sets to perform Monte Carlo cross validation on. Technically I'm not performing the cross-validation part, as I'm only using the 'analysis' or 'training' set of sampled data.
+The `mc_cv()` (Monte-Carlo cross validation) function is used to create our sampled data sets. Technically I'm not performing the cross-validation part, as I'm only using the 'analysis' or 'training' set of sampled data. I'm using it as a way to take repeated samples from the data set.
 
-We create a worker function so we can pass it to `future_map()`, which allows us to spread the workload across multiple cores on the system and speeding up the process.
+We create a worker function so we can pass it to `future_map()`, which allows us to spread the workload across multiple cores on the system, speeding up the process.
 
-The returned results are then unnested returning us back to our original tidy format, with each sample identified by the *sample_id* variable.
+The returned results are then unnested, returning us back to our original tidy format, with each sample identified by the *sample_id* variable.
 
 ```{r}
 # Sampling function 
@@ -212,14 +228,7 @@ hr_mccv <- hr_mccv %>%
     unnest(cols = data)
 ```
 
-
-From this sampled data set, we take to subsets:
-
-- `hr_random` takes a random horse from each race.
-- `hr_favourite` takes the favourite from each race.
-
-
-The `dollar_bets()` function takes our data, determines the return for each horse, and then on a per sample basis indexes the races and calculates the cumulative return.
+A `dollar_bets()` function is created which takes our horses (one per race) that we've 'bet' on, determines the return for each horse, and then on a per sample basis indexes the races and calculates the cumulative return. This index is used as our x-axis in some of the graphs, as we can't use date due to the sampled nature of the data.
 
 ```{r}
 dollar_bets <- function(data) {
@@ -237,7 +246,6 @@ dollar_bets <- function(data) {
 # Approach 1: Random Selection
 
 The first approach to take is to bet on a random horse per race.
-
 
 ```{r}
 # Random horse from each race
@@ -275,7 +283,20 @@ hr_random %>%
         y = 'Dollars'
     )
 ```
+```{r include = FALSE}
+sample_returns <- hr_random %>%
+    group_by(sampel_id) %>% 
+    summarise(return = sum(bet.return)) %>%
+    pull(return)
 
+mean_return <- mean(sample_returns)
+ninefive_percent_range <- sample_returns %>%
+    quantile(probs = c(.025, .975)) %>% 
+    glue_collapse(sep = '-')
+```
+
+
+The mean return on this bet is `r mean_return` with the 95% of returns in the range of `r ninefive_percent_range` 
 
 # Approach 2 - Favourite
 
@@ -324,4 +345,22 @@ hr_favourite %>%
         y = 'Dollars'
     )
 ```
+
+```{r include = FALSE}
+sample_returns <- hr_favourite %>%
+    group_by(sampel_id) %>% 
+    summarise(return = sum(bet.return)) %>%
+    pull(return)
+
+mean_return <- mean(sample_returns)
+ninefive_percent_range <- sample_returns %>%
+    quantile(probs = c(.025, .975)) %>% 
+    glue_collapse(sep = '-')
+```
+
+
+The mean return on this bet is `r mean_return` with the 95% of returns in the range of `r ninefive_percent_range` 
+
 # Summary
+
+Favourite looks good.
