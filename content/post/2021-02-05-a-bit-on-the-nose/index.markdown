@@ -44,7 +44,7 @@ hr_results %>%
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#zkaichuvlx .gt_table {
+#olydekjihq .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -69,7 +69,7 @@ hr_results %>%
   border-left-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_heading {
+#olydekjihq .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -81,7 +81,7 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_title {
+#olydekjihq .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -91,7 +91,7 @@ hr_results %>%
   border-bottom-width: 0;
 }
 
-#zkaichuvlx .gt_subtitle {
+#olydekjihq .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -101,13 +101,13 @@ hr_results %>%
   border-top-width: 0;
 }
 
-#zkaichuvlx .gt_bottom_border {
+#olydekjihq .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_col_headings {
+#olydekjihq .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -122,7 +122,7 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_col_heading {
+#olydekjihq .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -142,7 +142,7 @@ hr_results %>%
   overflow-x: hidden;
 }
 
-#zkaichuvlx .gt_column_spanner_outer {
+#olydekjihq .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -154,15 +154,15 @@ hr_results %>%
   padding-right: 4px;
 }
 
-#zkaichuvlx .gt_column_spanner_outer:first-child {
+#olydekjihq .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#zkaichuvlx .gt_column_spanner_outer:last-child {
+#olydekjihq .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#zkaichuvlx .gt_column_spanner {
+#olydekjihq .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -174,7 +174,7 @@ hr_results %>%
   width: 100%;
 }
 
-#zkaichuvlx .gt_group_heading {
+#olydekjihq .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -196,7 +196,7 @@ hr_results %>%
   vertical-align: middle;
 }
 
-#zkaichuvlx .gt_empty_group_heading {
+#olydekjihq .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -211,15 +211,15 @@ hr_results %>%
   vertical-align: middle;
 }
 
-#zkaichuvlx .gt_from_md > :first-child {
+#olydekjihq .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#zkaichuvlx .gt_from_md > :last-child {
+#olydekjihq .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#zkaichuvlx .gt_row {
+#olydekjihq .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -238,7 +238,7 @@ hr_results %>%
   overflow-x: hidden;
 }
 
-#zkaichuvlx .gt_stub {
+#olydekjihq .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -250,7 +250,7 @@ hr_results %>%
   padding-left: 12px;
 }
 
-#zkaichuvlx .gt_summary_row {
+#olydekjihq .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -260,7 +260,7 @@ hr_results %>%
   padding-right: 5px;
 }
 
-#zkaichuvlx .gt_first_summary_row {
+#olydekjihq .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -270,7 +270,7 @@ hr_results %>%
   border-top-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_grand_summary_row {
+#olydekjihq .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -280,7 +280,7 @@ hr_results %>%
   padding-right: 5px;
 }
 
-#zkaichuvlx .gt_first_grand_summary_row {
+#olydekjihq .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -290,11 +290,11 @@ hr_results %>%
   border-top-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_striped {
+#olydekjihq .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#zkaichuvlx .gt_table_body {
+#olydekjihq .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -303,7 +303,7 @@ hr_results %>%
   border-bottom-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_footnotes {
+#olydekjihq .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -317,13 +317,13 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_footnote {
+#olydekjihq .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#zkaichuvlx .gt_sourcenotes {
+#olydekjihq .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -337,46 +337,46 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#zkaichuvlx .gt_sourcenote {
+#olydekjihq .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#zkaichuvlx .gt_left {
+#olydekjihq .gt_left {
   text-align: left;
 }
 
-#zkaichuvlx .gt_center {
+#olydekjihq .gt_center {
   text-align: center;
 }
 
-#zkaichuvlx .gt_right {
+#olydekjihq .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#zkaichuvlx .gt_font_normal {
+#olydekjihq .gt_font_normal {
   font-weight: normal;
 }
 
-#zkaichuvlx .gt_font_bold {
+#olydekjihq .gt_font_bold {
   font-weight: bold;
 }
 
-#zkaichuvlx .gt_font_italic {
+#olydekjihq .gt_font_italic {
   font-style: italic;
 }
 
-#zkaichuvlx .gt_super {
+#olydekjihq .gt_super {
   font-size: 65%;
 }
 
-#zkaichuvlx .gt_footnote_marks {
+#olydekjihq .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="zkaichuvlx" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="olydekjihq" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -393,114 +393,114 @@ hr_results %>%
   </thead>
   <tbody class="gt_table_body">
     <tr>
-      <td class="gt_row gt_right">101025</td>
-      <td class="gt_row gt_left">TAS</td>
-      <td class="gt_row gt_left">Launceston</td>
-      <td class="gt_row gt_left">Bon Bonito</td>
-      <td class="gt_row gt_left">Ismail Toker</td>
-      <td class="gt_row gt_right">4.25</td>
-      <td class="gt_row gt_left">14</td>
-      <td class="gt_row gt_right">7</td>
-      <td class="gt_row gt_right">53.0</td>
+      <td class="gt_row gt_right">162336</td>
+      <td class="gt_row gt_left">VIC</td>
+      <td class="gt_row gt_left">Seymour</td>
+      <td class="gt_row gt_left">Everywhere Mann</td>
+      <td class="gt_row gt_left">Jarrod Fry</td>
+      <td class="gt_row gt_right">3.1</td>
+      <td class="gt_row gt_left">1</td>
+      <td class="gt_row gt_right">9</td>
+      <td class="gt_row gt_right">58.5</td>
     </tr>
     <tr>
-      <td class="gt_row gt_right">7527</td>
-      <td class="gt_row gt_left">WA</td>
-      <td class="gt_row gt_left">Ascot</td>
-      <td class="gt_row gt_left">Fleming Son</td>
-      <td class="gt_row gt_left">M Grantham</td>
-      <td class="gt_row gt_right">11.00</td>
-      <td class="gt_row gt_left">7</td>
-      <td class="gt_row gt_right">3</td>
-      <td class="gt_row gt_right">56.5</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">173552</td>
-      <td class="gt_row gt_left">NSW</td>
-      <td class="gt_row gt_left">Taree</td>
-      <td class="gt_row gt_left">Timing's Essential</td>
-      <td class="gt_row gt_left">Scott Thurlow</td>
-      <td class="gt_row gt_right">7.50</td>
+      <td class="gt_row gt_right">155488</td>
+      <td class="gt_row gt_left">VIC</td>
+      <td class="gt_row gt_left">Sale</td>
+      <td class="gt_row gt_left">Neil's Party</td>
+      <td class="gt_row gt_left">Kane Bradley</td>
+      <td class="gt_row gt_right">21.0</td>
       <td class="gt_row gt_left">3</td>
-      <td class="gt_row gt_right">7</td>
-      <td class="gt_row gt_right">56.5</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">70688</td>
-      <td class="gt_row gt_left">QLD</td>
-      <td class="gt_row gt_left">Gold Coast</td>
-      <td class="gt_row gt_left">FAB FEVOLA</td>
-      <td class="gt_row gt_left">D Tanti</td>
-      <td class="gt_row gt_right">4.25</td>
-      <td class="gt_row gt_left">10</td>
       <td class="gt_row gt_right">2</td>
       <td class="gt_row gt_right">58.5</td>
     </tr>
     <tr>
-      <td class="gt_row gt_right">46517</td>
-      <td class="gt_row gt_left">VIC</td>
-      <td class="gt_row gt_left">Donald</td>
-      <td class="gt_row gt_left">Everyone's Girl</td>
-      <td class="gt_row gt_left">Jack Hill</td>
-      <td class="gt_row gt_right">21.00</td>
-      <td class="gt_row gt_left">13</td>
-      <td class="gt_row gt_right">10</td>
-      <td class="gt_row gt_right">54.0</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">36863</td>
-      <td class="gt_row gt_left">NSW</td>
-      <td class="gt_row gt_left">Coonamble</td>
-      <td class="gt_row gt_left">El Win</td>
-      <td class="gt_row gt_left">Daniel Pitomac</td>
-      <td class="gt_row gt_right">21.00</td>
-      <td class="gt_row gt_left">10</td>
-      <td class="gt_row gt_right">1</td>
-      <td class="gt_row gt_right">53.0</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">151173</td>
+      <td class="gt_row gt_right">43762</td>
       <td class="gt_row gt_left">QLD</td>
-      <td class="gt_row gt_left">Rockhampton</td>
-      <td class="gt_row gt_left">Meddlesome Miss</td>
-      <td class="gt_row gt_left">Chris Mc Iver</td>
-      <td class="gt_row gt_right">51.00</td>
-      <td class="gt_row gt_left">5</td>
-      <td class="gt_row gt_right">8</td>
+      <td class="gt_row gt_left">Deagon</td>
+      <td class="gt_row gt_left">Monashee Ridge</td>
+      <td class="gt_row gt_left">Vishan Venkaya</td>
+      <td class="gt_row gt_right">NA</td>
+      <td class="gt_row gt_left">7</td>
+      <td class="gt_row gt_right">1</td>
+      <td class="gt_row gt_right">0.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">34461</td>
+      <td class="gt_row gt_left">QLD</td>
+      <td class="gt_row gt_left">Chinchilla</td>
+      <td class="gt_row gt_left">Fields Of Oxley</td>
+      <td class="gt_row gt_left">Ian Coombes</td>
+      <td class="gt_row gt_right">15.0</td>
+      <td class="gt_row gt_left">7</td>
+      <td class="gt_row gt_right">9</td>
       <td class="gt_row gt_right">55.0</td>
     </tr>
     <tr>
-      <td class="gt_row gt_right">162287</td>
-      <td class="gt_row gt_left">VIC</td>
-      <td class="gt_row gt_left">Seymour</td>
-      <td class="gt_row gt_left">Lonberg</td>
-      <td class="gt_row gt_left">Daniel Moor</td>
-      <td class="gt_row gt_right">41.00</td>
-      <td class="gt_row gt_left">2</td>
-      <td class="gt_row gt_right">1</td>
-      <td class="gt_row gt_right">57.0</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">7866</td>
+      <td class="gt_row gt_right">48236</td>
       <td class="gt_row gt_left">QLD</td>
-      <td class="gt_row gt_left">Atherton</td>
-      <td class="gt_row gt_left">Sir Roland</td>
-      <td class="gt_row gt_left">Frank R Edwards</td>
-      <td class="gt_row gt_right">6.50</td>
-      <td class="gt_row gt_left">7</td>
-      <td class="gt_row gt_right">3</td>
-      <td class="gt_row gt_right">60.0</td>
+      <td class="gt_row gt_left">Doomben</td>
+      <td class="gt_row gt_left">Sea Red</td>
+      <td class="gt_row gt_left">Matthew McGillivray</td>
+      <td class="gt_row gt_right">10.0</td>
+      <td class="gt_row gt_left">4</td>
+      <td class="gt_row gt_right">6</td>
+      <td class="gt_row gt_right">52.0</td>
     </tr>
     <tr>
-      <td class="gt_row gt_right">130495</td>
-      <td class="gt_row gt_left">WA</td>
-      <td class="gt_row gt_left">Northam</td>
-      <td class="gt_row gt_left">Right Island</td>
-      <td class="gt_row gt_left">Alan Kennedy</td>
-      <td class="gt_row gt_right">51.00</td>
+      <td class="gt_row gt_right">171554</td>
+      <td class="gt_row gt_left">NSW</td>
+      <td class="gt_row gt_left">Tamworth</td>
+      <td class="gt_row gt_left">Rachels Own</td>
+      <td class="gt_row gt_left">Clare Pettigrew</td>
+      <td class="gt_row gt_right">7.0</td>
       <td class="gt_row gt_left">9</td>
-      <td class="gt_row gt_right">9</td>
-      <td class="gt_row gt_right">58.0</td>
+      <td class="gt_row gt_right">12</td>
+      <td class="gt_row gt_right">54.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">90018</td>
+      <td class="gt_row gt_left">QLD</td>
+      <td class="gt_row gt_left">Julia Creek</td>
+      <td class="gt_row gt_left">Hi Mackay</td>
+      <td class="gt_row gt_left">Rachel Shred</td>
+      <td class="gt_row gt_right">5.0</td>
+      <td class="gt_row gt_left">6</td>
+      <td class="gt_row gt_right">7</td>
+      <td class="gt_row gt_right">53.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">143954</td>
+      <td class="gt_row gt_left">NSW</td>
+      <td class="gt_row gt_left">Queanbeyan</td>
+      <td class="gt_row gt_left">Lovespeed Girl</td>
+      <td class="gt_row gt_left">Jon Grisedale</td>
+      <td class="gt_row gt_right">7.0</td>
+      <td class="gt_row gt_left">5</td>
+      <td class="gt_row gt_right">2</td>
+      <td class="gt_row gt_right">55.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">41261</td>
+      <td class="gt_row gt_left">QLD</td>
+      <td class="gt_row gt_left">Dalby</td>
+      <td class="gt_row gt_left">Alucard</td>
+      <td class="gt_row gt_left">Matthew McGillivray</td>
+      <td class="gt_row gt_right">9.0</td>
+      <td class="gt_row gt_left">5</td>
+      <td class="gt_row gt_right">11</td>
+      <td class="gt_row gt_right">53.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">150978</td>
+      <td class="gt_row gt_left">QLD</td>
+      <td class="gt_row gt_left">Rockhampton</td>
+      <td class="gt_row gt_left">Real French Saga</td>
+      <td class="gt_row gt_left">Micheal Hellyer</td>
+      <td class="gt_row gt_right">21.0</td>
+      <td class="gt_row gt_left">10</td>
+      <td class="gt_row gt_right">3</td>
+      <td class="gt_row gt_right">55.5</td>
     </tr>
   </tbody>
   
@@ -665,7 +665,7 @@ mc_sample <- function(data, times, prop) {
 plan(multisession, workers = availableCores() - 1)
 
 # Parallel sampling
-number_samples <- 2 
+number_samples <- 800
 hr_mccv <- future_map(
     1:number_samples,
     ~{ mc_sample(hr_results, times = 1, prop = .005) },
@@ -745,7 +745,7 @@ hr_random_accuracy %>%
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 
 
-So it's an mean accuracy of 10%, with 95% range of [10.10% - 10.21%]. That's about a 1 in 10 chance of picking the winning horse. At first I thought this was a little low, as the average number of horses in a race was about 6, so I naively assumed that the random method would give us a 1 in 6 chance of picking the winnow, or 17% accuracy level. But this assumption assumes a uniform probability of winning for each horse, which of course is not correct.
+So it's an mean accuracy of 11%, with 95% range of [9.1% - 13.5%]. That's about a 1 in 9 chance of picking the winning horse. At first I thought this was a little low, as the average number of horses in a race was about 6, so I naively assumed that the random method would give us a 1 in 6 chance of picking the winnow, or 17% accuracy level. But this assumption assumes a uniform probability of winning for each horse, which of course is not correct.
 
 Accuracy is one thing, but what about our returns? Let's take a look at the at the cumulative return over time and its distribution. 
 
@@ -784,7 +784,7 @@ hr_random %>%
 
 
 
-The result isn't great: in the long run we're definitely losing money. You can see some occasional big jumps where we've managed to pick the long shot and pull our PPR into positive terriroty, but over time we trend back down into the red. In the long run our average profit per race -\$0.38 per race, and 95% of profits per race are in the range of [-\$0.41 - -\$0.34].  
+The result isn't great: in the long run we're definitely losing money. You can see some occasional big jumps where we've managed to pick the long shot and pull our PPR into positive terriroty, but over time we trend back down into the red. In the long run our average profit per race -\$0.30 per race, and 95% of profits per race are in the range of [-\$0.49 - -\$0.07].  
 
 # Approach 2 - Favourite
 
@@ -826,7 +826,7 @@ hr_favourite_accuracy %>%
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
 
 i
-This is looking much better - we've got a mean accuracy across all of the samples of 34% wih a 95% range of 33.97% - 34.25%. These accuracy percentages look pretty good, and gut feel is that they would be pretty difficult to even get close to with any sort of predictive model. Picking the favourite is around 336 times better than when picking a random horse.
+This is looking much better - we've got a mean accuracy across all of the samples of 35% wih a 95% range of 31.9% - 38.3%. These accuracy percentages look pretty good, and gut feel is that they would be pretty difficult to even get close to with any sort of predictive model. Picking the favourite is around 309 times better than when picking a random horse.
 
 Let's take a look at the cumulative returns over time:
 
@@ -864,17 +864,17 @@ hr_favourite %>%
 
 
 
-This is much better than picking a random horse, but it's certainly no slam dunk. We've got longer stretches with a positive return on our investment, but again in the long run our PPR trends to negative. The mean PPR is -$0.09, with the 95% of PPRs in the range of [-\$0.11 - -\$0.08].
+This is much better than picking a random horse, but it's certainly no slam dunk. We've got longer stretches with a positive return on our investment, but again in the long run our PPR trends to negative. The mean PPR is -$0.06, with the 95% of PPRs in the range of [-\$0.15 - \$0.04].
 
 # Conclusion 
 
 In this article we baselined two different approaches to betting on horse races: picking a random horse, and picking the favourite. Our aim was determine the mean accuracy , and the profits per race, for each of these approaches.
 
-We found the accuracy of picking a random horse is 10% and the mean profits per race for a dollar bet are -$0.38.
+We found the accuracy of picking a random horse is 11% and the mean profits per race for a dollar bet are -$0.30.
 
-Betting of the favourite is of course markedly better, with a mean accuracy of %34%, however the mean profits per race for a dollar bet are -$0.09, so betting on the favourite does not guarantee us a profit. This makes sense: if this method of betting did guarantee us a profit, everyone would be doing it and the bookies would go out of business.
+Betting of the favourite is of course markedly better, with a mean accuracy of %35%, however the mean profits per race for a dollar bet are -$0.06, so betting on the favourite does not guarantee us a profit. This makes sense: if this method of betting did guarantee us a profit, everyone would be doing it and the bookies would go out of business.
 
-What we don't take into account here is the utility, or enjoyment, that is gained from the bet. If you think cost of the enjoyment you receive  betting on a random horse is worth around 38% of your stake, or betting on the favourite is worth 9% of your stake, then go for it. As long as you're not betting more than you can afford, then I say analyses be damned and simply enjoy the thrill of the punt.
+What we don't take into account here is the utility, or enjoyment, that is gained from the bet. If you think cost of the enjoyment you receive  betting on a random horse is worth around 30% of your stake, or betting on the favourite is worth 6% of your stake, then go for it. As long as you're not betting more than you can afford, then I say analyses be damned and simply enjoy the thrill of the punt.
 
 
 
