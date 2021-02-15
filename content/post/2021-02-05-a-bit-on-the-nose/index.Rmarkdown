@@ -230,7 +230,7 @@ mc_sample <- function(data, times, prop) {
 plan(multisession, workers = availableCores() - 1)
 
 # Parallel sampling
-number_samples <- 800 
+number_samples <- 2 
 hr_mccv <- future_map(
     1:number_samples,
     ~{ mc_sample(hr_results, times = 1, prop = .005) },
@@ -245,7 +245,7 @@ hr_mccv <- hr_mccv %>%
     bind_rows() %>% 
     mutate(sample_id = 1:n()) %>% 
     unnest(cols = analysis) %>% 
-    unnest(cols = ata)
+    unnest(cols = data)
 ```
 
 

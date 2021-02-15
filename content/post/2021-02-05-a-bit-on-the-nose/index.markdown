@@ -1,22 +1,24 @@
 ---
 title: 'A Bit on the Nose (Draft)'
 author: Greg Foletta
-date: '2021-02-04'
+date: '2021-0215'
 slug: a-bit-on-the-nose
 categories: [R]
 ---
 
-I've never been particularly interested in horse racing, but I married into a family that loves it. Each in-law has their own ideas and combinations of factors that lead them to bet on a particular horse, be it form, barrier position, track condition, trainer, or jockey.
+I've never been particularly interested in horse racing, but I married into a family that loves it. Each in-law has their own ideas and combinations of factors that lead them to bet on a particular horse; be it form, barrier position, track condition, trainer, jockey, or or more.
 
-After being drawn into conversations about their preferred selection methods, I wanted come at the problem from a data driven perspective. I must admit I had an initial feeling of arrogance, thinking "of course I can do this better". In fact I've seen this in many places where 'data scientists' stroll into fields of enquiry armed with data and a swag of models, but lacking an understanding of the problem space. Poor assumptions abound, and incorrect conclusions are almost certainly reached.
+After being drawn into conversations about their preferred selection methods, I wanted come at the problem backed with data. I must admit I had an initial feeling of arrogance, thinking "of course I can do this better". In fact I've seen this in many places where 'data scientists' stroll into fields of enquiry armed with data and a swag of models, but lacking an understanding of the problem space. Poor assumptions abound, and incorrect conclusions are almost certainly reached.
 
-I was determined not to fall into the same traps, and after quashing my misplaced sense of superiority, I started to think about how to approach the problem at hand. Rather than diving straight into prediction - models akimbo - the best place to start is to create naive baseline models of the data. This gives us something to compare the performance of any complicated models. 
+I was determined not to fall into the same traps, and after quashing my misplaced sense of superiority, I started to think about how to approach the problem at hand. Rather than diving straight into prediction - models akimbo - I thought the best place to start would be to create naive baseline models of the data. This would give me something to compare the performance of any subsequent models created.
 
-The first naive model we will create is simply to pick a random horse in each race. This is the lower bound for model predictive accuracy. The second naive model is to pick the favourite in each race. The favourite has many of the factors that we would be using in the model already built in: form, barrier position, trainer, jockey, etc. Any model we create needs to do better than this, otherwise we're no better than consensus.
+In this article I will look at two naive 'models'. The first is to simply to pick a random horse in each race. This is the lower bound for model predictive accuracy. The second is to pick the favourite in each race. The favourite has many of the factors that we would be using in the model already built in via the consensus of all of the bettors: form, barrier position, trainer, jockey, etc. Any model we create needs to approach the accuracy of this method.
 
-To put it simply, we want to answer the following question:
+Simply put, we want to answer the following questions for both of these two methods:
 
-> What is the mean and distribution of returns, and the predictive accuracy, of betting on a random and the favourite respectively in a horse race?
+> What is the mean and middle ninety-five percentile accuracy?
+
+> What is the mean and middle ninety-five percentile profit per race?
 
 
 
@@ -26,17 +28,9 @@ To put it simply, we want to answer the following question:
 
 
 
-The data was acquired by using [rvest](https://rvest.tidyverse.org/) to scrape a website that contained the information I needed. I was able to iterate across each each , pulling out specific variables using CSS selectors and XPaths. The dataset is for my own personal use, and I have encrypted the data that us used in this article.
+The data was acquired by using [rvest](https://rvest.tidyverse.org/) to scrape a website that contained historical information on horse races. I was able to iterate across each race, pulling out specific variables using CSS selectors and XPaths. The dataset is for my own personal use, and I have encrypted the data that us used in this article.
 
-The dataset contains information on around 180,000 horse races over the period of 2011 to 2020. The data is in a tidy format, with each row containing information on each horse in each race. This information includes the name and state that the track, the date of the race, the name of the horse, jockey and trainer, the weight the horse is carrying, race length, duration, barrier position, etc.
-
-Most of this information won't be used, instead we'll be focusing on the following key variables:
-
-- *race_id* - a unique identifier for each race. There are multiple rows with the same *race_id*, each representing a horse that ran in that race.
-- *odds.sp* - the 'starting price', which is are the "odds prevailing on a particular horse in the on-course fixed-odds betting market at the time a race begins.".
-- *position* - the finishing position of the horse.
-
-For readability I won't show all of the code used, however as always the full source of this page (and the entire website) is available on [github](https://github.com/gregfoletta/articles.foletta.org). The dataset is downloaded, decrypted, unzipped, the loaded into the variable `hr_results`:
+The dataset contains information on around 180,000 horse races over the period from 2011 to 2020. The data is in a tidy format, with each row containing information on each horse in each race. This information includes the name and state that the track, the date of the race, the name of the horse, jockey and trainer, the weight the horse is carrying, race length, duration, barrier position. Here's an random sample from the dataset:
 
 
 ```r
@@ -50,7 +44,7 @@ hr_results %>%
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#pejjdcxvrr .gt_table {
+#zkaichuvlx .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -75,7 +69,7 @@ hr_results %>%
   border-left-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_heading {
+#zkaichuvlx .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -87,7 +81,7 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_title {
+#zkaichuvlx .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -97,7 +91,7 @@ hr_results %>%
   border-bottom-width: 0;
 }
 
-#pejjdcxvrr .gt_subtitle {
+#zkaichuvlx .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -107,13 +101,13 @@ hr_results %>%
   border-top-width: 0;
 }
 
-#pejjdcxvrr .gt_bottom_border {
+#zkaichuvlx .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_col_headings {
+#zkaichuvlx .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -128,7 +122,7 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_col_heading {
+#zkaichuvlx .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -148,7 +142,7 @@ hr_results %>%
   overflow-x: hidden;
 }
 
-#pejjdcxvrr .gt_column_spanner_outer {
+#zkaichuvlx .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -160,15 +154,15 @@ hr_results %>%
   padding-right: 4px;
 }
 
-#pejjdcxvrr .gt_column_spanner_outer:first-child {
+#zkaichuvlx .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#pejjdcxvrr .gt_column_spanner_outer:last-child {
+#zkaichuvlx .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#pejjdcxvrr .gt_column_spanner {
+#zkaichuvlx .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -180,7 +174,7 @@ hr_results %>%
   width: 100%;
 }
 
-#pejjdcxvrr .gt_group_heading {
+#zkaichuvlx .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -202,7 +196,7 @@ hr_results %>%
   vertical-align: middle;
 }
 
-#pejjdcxvrr .gt_empty_group_heading {
+#zkaichuvlx .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -217,15 +211,15 @@ hr_results %>%
   vertical-align: middle;
 }
 
-#pejjdcxvrr .gt_from_md > :first-child {
+#zkaichuvlx .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#pejjdcxvrr .gt_from_md > :last-child {
+#zkaichuvlx .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#pejjdcxvrr .gt_row {
+#zkaichuvlx .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -244,7 +238,7 @@ hr_results %>%
   overflow-x: hidden;
 }
 
-#pejjdcxvrr .gt_stub {
+#zkaichuvlx .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -256,7 +250,7 @@ hr_results %>%
   padding-left: 12px;
 }
 
-#pejjdcxvrr .gt_summary_row {
+#zkaichuvlx .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -266,7 +260,7 @@ hr_results %>%
   padding-right: 5px;
 }
 
-#pejjdcxvrr .gt_first_summary_row {
+#zkaichuvlx .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -276,7 +270,7 @@ hr_results %>%
   border-top-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_grand_summary_row {
+#zkaichuvlx .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -286,7 +280,7 @@ hr_results %>%
   padding-right: 5px;
 }
 
-#pejjdcxvrr .gt_first_grand_summary_row {
+#zkaichuvlx .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -296,11 +290,11 @@ hr_results %>%
   border-top-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_striped {
+#zkaichuvlx .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#pejjdcxvrr .gt_table_body {
+#zkaichuvlx .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -309,7 +303,7 @@ hr_results %>%
   border-bottom-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_footnotes {
+#zkaichuvlx .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -323,13 +317,13 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_footnote {
+#zkaichuvlx .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#pejjdcxvrr .gt_sourcenotes {
+#zkaichuvlx .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -343,46 +337,46 @@ hr_results %>%
   border-right-color: #D3D3D3;
 }
 
-#pejjdcxvrr .gt_sourcenote {
+#zkaichuvlx .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#pejjdcxvrr .gt_left {
+#zkaichuvlx .gt_left {
   text-align: left;
 }
 
-#pejjdcxvrr .gt_center {
+#zkaichuvlx .gt_center {
   text-align: center;
 }
 
-#pejjdcxvrr .gt_right {
+#zkaichuvlx .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#pejjdcxvrr .gt_font_normal {
+#zkaichuvlx .gt_font_normal {
   font-weight: normal;
 }
 
-#pejjdcxvrr .gt_font_bold {
+#zkaichuvlx .gt_font_bold {
   font-weight: bold;
 }
 
-#pejjdcxvrr .gt_font_italic {
+#zkaichuvlx .gt_font_italic {
   font-style: italic;
 }
 
-#pejjdcxvrr .gt_super {
+#zkaichuvlx .gt_super {
   font-size: 65%;
 }
 
-#pejjdcxvrr .gt_footnote_marks {
+#zkaichuvlx .gt_footnote_marks {
   font-style: italic;
   font-size: 65%;
 }
 </style>
-<div id="pejjdcxvrr" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
+<div id="zkaichuvlx" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;"><table class="gt_table">
   
   <thead class="gt_col_headings">
     <tr>
@@ -399,113 +393,113 @@ hr_results %>%
   </thead>
   <tbody class="gt_table_body">
     <tr>
-      <td class="gt_row gt_right">145004</td>
-      <td class="gt_row gt_left">NSW</td>
-      <td class="gt_row gt_left">Quirindi</td>
-      <td class="gt_row gt_left">Zerchois</td>
-      <td class="gt_row gt_left">Andrew Gibbons</td>
-      <td class="gt_row gt_right">10.0</td>
-      <td class="gt_row gt_left">4</td>
-      <td class="gt_row gt_right">1</td>
-      <td class="gt_row gt_right">56.0</td>
+      <td class="gt_row gt_right">101025</td>
+      <td class="gt_row gt_left">TAS</td>
+      <td class="gt_row gt_left">Launceston</td>
+      <td class="gt_row gt_left">Bon Bonito</td>
+      <td class="gt_row gt_left">Ismail Toker</td>
+      <td class="gt_row gt_right">4.25</td>
+      <td class="gt_row gt_left">14</td>
+      <td class="gt_row gt_right">7</td>
+      <td class="gt_row gt_right">53.0</td>
     </tr>
     <tr>
-      <td class="gt_row gt_right">121475</td>
-      <td class="gt_row gt_left">SA</td>
-      <td class="gt_row gt_left">Murray Bridge</td>
-      <td class="gt_row gt_left">Perfect Yank</td>
-      <td class="gt_row gt_left">Jake Toeroek</td>
-      <td class="gt_row gt_right">2.0</td>
-      <td class="gt_row gt_left">6</td>
-      <td class="gt_row gt_right">2</td>
-      <td class="gt_row gt_right">53.5</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">105534</td>
-      <td class="gt_row gt_left">QLD</td>
-      <td class="gt_row gt_left">Mackay</td>
-      <td class="gt_row gt_left">Kachada</td>
-      <td class="gt_row gt_left">Tasha Chambers</td>
-      <td class="gt_row gt_right">15.0</td>
-      <td class="gt_row gt_left">6</td>
-      <td class="gt_row gt_right">6</td>
-      <td class="gt_row gt_right">57.5</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">16887</td>
+      <td class="gt_row gt_right">7527</td>
       <td class="gt_row gt_left">WA</td>
-      <td class="gt_row gt_left">Belmont Park</td>
-      <td class="gt_row gt_left">Melody Lady</td>
-      <td class="gt_row gt_left">Ben Paterson</td>
-      <td class="gt_row gt_right">11.0</td>
-      <td class="gt_row gt_left">9</td>
-      <td class="gt_row gt_right">11</td>
-      <td class="gt_row gt_right">52.0</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">137347</td>
-      <td class="gt_row gt_left">WA</td>
-      <td class="gt_row gt_left">Pinjarra</td>
-      <td class="gt_row gt_left">Sulphur Crested</td>
-      <td class="gt_row gt_left">Clint Johnston-Porter</td>
-      <td class="gt_row gt_right">9.0</td>
-      <td class="gt_row gt_left">4</td>
-      <td class="gt_row gt_right">8</td>
+      <td class="gt_row gt_left">Ascot</td>
+      <td class="gt_row gt_left">Fleming Son</td>
+      <td class="gt_row gt_left">M Grantham</td>
+      <td class="gt_row gt_right">11.00</td>
+      <td class="gt_row gt_left">7</td>
+      <td class="gt_row gt_right">3</td>
       <td class="gt_row gt_right">56.5</td>
     </tr>
     <tr>
-      <td class="gt_row gt_right">9412</td>
-      <td class="gt_row gt_left">SA</td>
-      <td class="gt_row gt_left">Balaklava</td>
-      <td class="gt_row gt_left">Wise And Happy</td>
-      <td class="gt_row gt_left">Jason Holder</td>
-      <td class="gt_row gt_right">10.0</td>
-      <td class="gt_row gt_left">6</td>
-      <td class="gt_row gt_right">8</td>
-      <td class="gt_row gt_right">58.0</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">176251</td>
+      <td class="gt_row gt_right">173552</td>
       <td class="gt_row gt_left">NSW</td>
-      <td class="gt_row gt_left">Tomingley</td>
-      <td class="gt_row gt_left">Gorgeous Boy</td>
-      <td class="gt_row gt_left">Katelyn Jenkinson</td>
-      <td class="gt_row gt_right">6.0</td>
-      <td class="gt_row gt_left">6</td>
-      <td class="gt_row gt_right">5</td>
-      <td class="gt_row gt_right">63.0</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">87895</td>
-      <td class="gt_row gt_left">QLD</td>
-      <td class="gt_row gt_left">Ipswich</td>
-      <td class="gt_row gt_left">Sequoia Miss</td>
-      <td class="gt_row gt_left">James Orman</td>
-      <td class="gt_row gt_right">8.0</td>
-      <td class="gt_row gt_left">5</td>
-      <td class="gt_row gt_right">5</td>
-      <td class="gt_row gt_right">56.0</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_right">163399</td>
-      <td class="gt_row gt_left">VIC</td>
-      <td class="gt_row gt_left">Stony Creek</td>
-      <td class="gt_row gt_left">O'Tauto</td>
-      <td class="gt_row gt_left">Nikita Beriman</td>
-      <td class="gt_row gt_right">NA</td>
+      <td class="gt_row gt_left">Taree</td>
+      <td class="gt_row gt_left">Timing's Essential</td>
+      <td class="gt_row gt_left">Scott Thurlow</td>
+      <td class="gt_row gt_right">7.50</td>
       <td class="gt_row gt_left">3</td>
-      <td class="gt_row gt_right">3</td>
-      <td class="gt_row gt_right">NA</td>
+      <td class="gt_row gt_right">7</td>
+      <td class="gt_row gt_right">56.5</td>
     </tr>
     <tr>
-      <td class="gt_row gt_right">155259</td>
+      <td class="gt_row gt_right">70688</td>
+      <td class="gt_row gt_left">QLD</td>
+      <td class="gt_row gt_left">Gold Coast</td>
+      <td class="gt_row gt_left">FAB FEVOLA</td>
+      <td class="gt_row gt_left">D Tanti</td>
+      <td class="gt_row gt_right">4.25</td>
+      <td class="gt_row gt_left">10</td>
+      <td class="gt_row gt_right">2</td>
+      <td class="gt_row gt_right">58.5</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">46517</td>
+      <td class="gt_row gt_left">VIC</td>
+      <td class="gt_row gt_left">Donald</td>
+      <td class="gt_row gt_left">Everyone's Girl</td>
+      <td class="gt_row gt_left">Jack Hill</td>
+      <td class="gt_row gt_right">21.00</td>
+      <td class="gt_row gt_left">13</td>
+      <td class="gt_row gt_right">10</td>
+      <td class="gt_row gt_right">54.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">36863</td>
       <td class="gt_row gt_left">NSW</td>
-      <td class="gt_row gt_left">Rosehill</td>
-      <td class="gt_row gt_left">Rarer Than Rubies</td>
-      <td class="gt_row gt_left">Kayla Nisbet</td>
-      <td class="gt_row gt_right">6.5</td>
+      <td class="gt_row gt_left">Coonamble</td>
+      <td class="gt_row gt_left">El Win</td>
+      <td class="gt_row gt_left">Daniel Pitomac</td>
+      <td class="gt_row gt_right">21.00</td>
+      <td class="gt_row gt_left">10</td>
+      <td class="gt_row gt_right">1</td>
+      <td class="gt_row gt_right">53.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">151173</td>
+      <td class="gt_row gt_left">QLD</td>
+      <td class="gt_row gt_left">Rockhampton</td>
+      <td class="gt_row gt_left">Meddlesome Miss</td>
+      <td class="gt_row gt_left">Chris Mc Iver</td>
+      <td class="gt_row gt_right">51.00</td>
       <td class="gt_row gt_left">5</td>
-      <td class="gt_row gt_right">5</td>
+      <td class="gt_row gt_right">8</td>
+      <td class="gt_row gt_right">55.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">162287</td>
+      <td class="gt_row gt_left">VIC</td>
+      <td class="gt_row gt_left">Seymour</td>
+      <td class="gt_row gt_left">Lonberg</td>
+      <td class="gt_row gt_left">Daniel Moor</td>
+      <td class="gt_row gt_right">41.00</td>
+      <td class="gt_row gt_left">2</td>
+      <td class="gt_row gt_right">1</td>
+      <td class="gt_row gt_right">57.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">7866</td>
+      <td class="gt_row gt_left">QLD</td>
+      <td class="gt_row gt_left">Atherton</td>
+      <td class="gt_row gt_left">Sir Roland</td>
+      <td class="gt_row gt_left">Frank R Edwards</td>
+      <td class="gt_row gt_right">6.50</td>
+      <td class="gt_row gt_left">7</td>
+      <td class="gt_row gt_right">3</td>
+      <td class="gt_row gt_right">60.0</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_right">130495</td>
+      <td class="gt_row gt_left">WA</td>
+      <td class="gt_row gt_left">Northam</td>
+      <td class="gt_row gt_left">Right Island</td>
+      <td class="gt_row gt_left">Alan Kennedy</td>
+      <td class="gt_row gt_right">51.00</td>
+      <td class="gt_row gt_left">9</td>
+      <td class="gt_row gt_right">9</td>
       <td class="gt_row gt_right">58.0</td>
     </tr>
   </tbody>
@@ -513,8 +507,16 @@ hr_results %>%
   
 </table></div>
 
+We won't use most of the variables in the data set, only a select few:
 
-# An Explore
+- *race_id* - a unique identifier for each race. There are multiple rows with the same *race_id*, each representing a horse that ran in that race.
+- *odds.sp* - the 'starting price', which is are the "odds prevailing on a particular horse in the on-course fixed-odds betting market at the time a race begins.".
+- *position* - the finishing position of the horse.
+
+The code to load the data is not shown, however the full source of this article (and the entire website) is available at [github](https://github.com/gregfoletta/articles.foletta.org). The data is contained in the variable `hr_results`.
+
+
+# Exploration
 
 Let's take a look at the dataset from a few different perspectives to give us some context. First up we take a look at the number of races per month per state. We can clearly see the yearly cyclic nature, with the rise into the spring racing carnivals and a drop off over winter.
 
@@ -604,22 +606,20 @@ hr_results %>%
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-7-1.png" width="672" />
 
-
 # Data Sampling
 
-With a high level handle on the data we're working with, let's move on to answering the questions. The process is reasonably simple: we simulate placing a dollar bet on a horse, and either collect our return (the starting price odds) in the event that in won, or lose the dollar in the event that it lost. But we want to do this a number of times on different races so we can gauge the variance of our returns.
+With a high level handle on the data we're working with, let's move on to answering the questions.  The process used is as follows:
 
-The process we will use is:
 - A sample of races across the time period is taken.
-    - I'll be using 0.5% of all races, which works out to be ~800 races, or about 1.5 races bet on per week.
+    - We will use 0.5% of all races, which works out to be ~800 races.
 - A dollar 'bet' is placed (based on the two criteria) on a horse in each race.
-- The return is determined.
-- The cumulative return is calculated.
-- This process is repeated a number of times. 
+- The profit is determined, i.e. return - stake.
+- The cumulative return per race is calculated. 
+- The accuracy across the races is calculated.
 
-This in effect allows us to live a number of 'lives' over the period, with each life varying in the races that were bet on.
+This process is repeated a number of times across different samples, a la bootstrapping but without replacement. This allows us to determine not just the mean accuracy and profit per race, but also their distributions.
 
-The first step is to nest the data for each race together, allowing us to easily sample on a per race basis, rather than on a per horse basis.
+We first nest the data for each race together, allowing us to sample on a per race basis, rather than on a per horse basis:
 
 
 ```r
@@ -645,11 +645,11 @@ head(hr_results)
 ```
 
 
-We then use the `mc_cv()` (Monte-Carlo cross validation) function to create our sampled data sets. Technically we're not performing the cross-validation part, only using the 'analysis' or 'training' set that comes back from the cross-validation function. 
+The the `mc_cv()` (Monte-Carlo cross validation) function to create our sampled data sets. Technically we're not performing the cross-validation part, only using the training set that comes back from the function and throwing away the test set.
 
-We create a worker function `mc_sample()` that we can pass it to `future_map()`. This which allows us to spread the workload across multiple cores on the system, speeding up the process.
+The worker function `mc_sample()` is created to be passed to `future_map()`. The sampling is an 'embarrassingly parallel' task, so we would remiss to not use all the compute available to us.
 
-We generate 20 samples (to be increased in the final version of this artucle) of .5% of the total races (~800). The returned results are then unnested, returning us back to our original tidy format, with each sample identified by the *sample_id* variable.
+We generate 20 samples (to be increased in the final version of this artucle) of .5% of the total races (~800). The returned results are unnested, returning us back to our original tidy format, with each sample identified by the *sample_id* variable:
 
 
 ```r
@@ -661,10 +661,11 @@ mc_sample <- function(data, times, prop) {
         select(-c(id, splits))
 }
 
+# Set up out workers
 plan(multisession, workers = availableCores() - 1)
 
-# Parallel Monte Carlo cross-validation
-number_samples <- 20 
+# Parallel sampling
+number_samples <- 2 
 hr_mccv <- future_map(
     1:number_samples,
     ~{ mc_sample(hr_results, times = 1, prop = .005) },
@@ -682,22 +683,26 @@ hr_mccv <- hr_mccv %>%
     unnest(cols = data)
 ```
 
-A `dollar_bet_profit()` function is created which places a dollar bet 'on the nose' (i.e. for the win only) on each horse, then determines the profit of our bet based on the starting price odds. The data set uses decimal (also known as continental) odds, so if we placed a \$1 bet on a horse with odds of 3.0, and the horse won, our *return* would be $3. But taking away our stake, our *profit* would be \$2. If the horse didn't win, our return is \$0 but our profit is $-1. 
 
-As our stake is constant over time, we remove it and focus on profit to give us a clearer idea of the performance of our betting strategy.
+The `bet_ppr()` function places - by default a \$1 bet -  'on the nose' (i.e. for the win only) on each horse. It then determines the profit of our bet based on the starting price odds. The data set uses decimal (also known as continental) odds, so if we placed a \$1 bet on a horse with odds of 3.0 and the horse wins, our *return* is \$3, but our *profit* is \$2 (stake - \$1 be). If the horse doesn't win, our return is \$0 and our profit is -$1. 
 
 
 ```r
-# Places a dollar bet for the win on each horse and calculates the profit.
+# Places a bet for the win on each horse and calculates the profit.
 # For each sample of races it creates an index variable, and calculates
-# the cumulative profit.
-dollar_bet_profit <- function(data) {
+# the cumulative profit per race (ppr)
+bet_ppr <- function(data, bet = 1) {
     data %>% 
-        mutate(bet.profit= if_else(position == 1, odds.sp - 1, -1)) %>% 
+        mutate(bet.profit = if_else(
+                position == 1,
+                (bet * odds.sp) - bet,
+                -bet
+            )
+        ) %>% 
         group_by(sample_id) %>% 
         mutate(
             sample_race_index = 1:n(),
-            cumulative.profit = cumsum(bet.profit)
+            cumulative.ppr = cumsum(bet.profit) / sample_race_index 
         ) %>% 
         ungroup()
 }
@@ -717,7 +722,7 @@ hr_random <- hr_mccv %>%
     ungroup()
 
 # Place our bets
-hr_random <-dollar_bet_profit(hr_random)
+hr_random <- bet_ppr(hr_random)
 ```
 
 What kind of accuracy does this give us?
@@ -740,7 +745,7 @@ hr_random_accuracy %>%
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 
 
-So it's an mean accuracy of 11%, with 95% range of [9.7% - 13.4%]. That's about a 1 in 9 chance of picking the winning horse. At first I thought this was a little low, as the average number of horses in a race was about 6, so I naively assumed that the random method would give us a 1 in 6 chance of picking the winnow, or 17% accuracy level. But this assumption assumes a uniform probability of winning for each horse, which of course is not correct.
+So it's an mean accuracy of 10%, with 95% range of [10.10% - 10.21%]. That's about a 1 in 10 chance of picking the winning horse. At first I thought this was a little low, as the average number of horses in a race was about 6, so I naively assumed that the random method would give us a 1 in 6 chance of picking the winnow, or 17% accuracy level. But this assumption assumes a uniform probability of winning for each horse, which of course is not correct.
 
 Accuracy is one thing, but what about our returns? Let's take a look at the at the cumulative return over time and its distribution. 
 
@@ -749,9 +754,10 @@ Accuracy is one thing, but what about our returns? Let's take a look at the at t
 hr_random %>% 
     filter(sample_id %in% 1:40) %>% 
     ggplot() +
-    geom_line(aes(sample_race_index, cumulative.profit, group = sample_id), alpha = .5) +
+    geom_line(aes(sample_race_index, cumulative.ppr, group = sample_id), alpha = .5) +
     labs(
-        title = "Dollar Bets - Random",
+        title = "Dollar Bet - Random Horse per Race",
+        subtitle = 'Cumulative Profit per Race',
         x = 'Race Index',
         y = 'Dollars'
     )
@@ -762,24 +768,23 @@ hr_random %>%
 ```r
 hr_random %>% 
     group_by(sample_id) %>% 
-    summarise(profit = sum(bet.profit)) %>%
+    summarise(total_ppr = sum(bet.profit / n())) %>%
     ggplot() +
-    geom_histogram(aes(profit), binwidth = 5) +
-    geom_vline(aes(xintercept = mean(profit))) +
+    geom_histogram(aes(total_ppr), binwidth = .01) +
+    geom_vline(aes(xintercept = mean(total_ppr))) +
     labs(
-        title = 'Dollar Bet - Random Horse - Total Profit Counts',
-        subtitle = 'Bin Width = 5',
+        title = 'Dollar Bet - Random Horse - Profit per Race Distribution',
+        subtitle = 'Bin Width = .01',
         x = 'Total Profit',
         y = 'Count'
     )
 ```
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-2.png" width="672" />
-The result isn't great: in the long run we've lost a fair amount of money. You can see some occasional big jumps where we've managed to pick the long shot, but over time, bit-by-by, we're losing money.
 
 
 
-The mean profit on the random bet is -$257.16 and 95% of profits are in the range of [-$364.17 - -$75.59].  
+The result isn't great: in the long run we're definitely losing money. You can see some occasional big jumps where we've managed to pick the long shot and pull our PPR into positive terriroty, but over time we trend back down into the red. In the long run our average profit per race -\$0.38 per race, and 95% of profits per race are in the range of [-\$0.41 - -\$0.34].  
 
 # Approach 2 - Favourite
 
@@ -796,7 +801,7 @@ hr_favourite <- hr_mccv %>%
     ungroup()
     
 # Place out bets
-hr_favourite <- dollar_bet_profit(hr_favourite)
+hr_favourite <- bet_ppr(hr_favourite)
 ```
 
 What's our accuracy look like for this kind of bet?
@@ -821,7 +826,7 @@ hr_favourite_accuracy %>%
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
 
 i
-This is looking much better - we've got a mean accuracy across all of the samples of 35% wih a 95% range of 33.2% - 37.5%. These accuracy percentages look pretty good, and gut feel is that they would be pretty difficult to even get close to with any sort of predictive model. Picking the favourite is around 314 times better than when picking a random horse.
+This is looking much better - we've got a mean accuracy across all of the samples of 34% wih a 95% range of 33.97% - 34.25%. These accuracy percentages look pretty good, and gut feel is that they would be pretty difficult to even get close to with any sort of predictive model. Picking the favourite is around 336 times better than when picking a random horse.
 
 Let's take a look at the cumulative returns over time:
 
@@ -830,11 +835,11 @@ Let's take a look at the cumulative returns over time:
 hr_favourite %>%
     filter(sample_id %in% 1:40) %>% 
     ggplot() +
-    geom_line(aes(sample_race_index, cumulative.profit, group = sample_id), alpha = .5) +
+    geom_line(aes(sample_race_index, cumulative.ppr, group = sample_id), alpha  = .5) +
     labs(
-        title = "Dollar Bets - Favourites",
+        title = "Dollar Bet - Favourite - Cumulative Profits per Race",
         x = 'Race Index',
-        y = 'Cumulative Profit'
+        y = 'Dollars'
     )
 ```
 
@@ -859,16 +864,17 @@ hr_favourite %>%
 
 
 
-This is much better than picking a random horse, but it's certainly no slam dunk. The mean profit is $-$47.40, with the 95% of returns in the range of [-$81.76 - $1.64]. In general, even betting on the favourite is not going to get you close to generating a profit over time. 
+This is much better than picking a random horse, but it's certainly no slam dunk. We've got longer stretches with a positive return on our investment, but again in the long run our PPR trends to negative. The mean PPR is -$0.09, with the 95% of PPRs in the range of [-\$0.11 - -\$0.08].
 
 # Conclusion 
 
-In this article we baselined two different approaches to betting on horse races: picking a random horse, and picking the favourite. Oum was determine the mean accuracy and profits for each of these approaches.
+In this article we baselined two different approaches to betting on horse races: picking a random horse, and picking the favourite. Our aim was determine the mean accuracy , and the profits per race, for each of these approaches.
 
-We found the accuracy of picking a random horse is 11% and the mean profits over time for a dollar bet are -$257.16. Betting of the favourite is of course markedly better, with a mean accuracy of %35%, however the mean profits a dollar bet are -$47.40, so betting on the favourite does not guarantee us a profit.
+We found the accuracy of picking a random horse is 10% and the mean profits per race for a dollar bet are -$0.38.
 
-This of course makes sense, because if this method of betting did guarantee us a profit, everyone would be doing it and the bookies would go out of business. It looks like I'm not going to be able to quit my day job just yet.
-.
+Betting of the favourite is of course markedly better, with a mean accuracy of %34%, however the mean profits per race for a dollar bet are -$0.09, so betting on the favourite does not guarantee us a profit. This makes sense: if this method of betting did guarantee us a profit, everyone would be doing it and the bookies would go out of business.
+
+What we don't take into account here is the utility, or enjoyment, that is gained from the bet. If you think cost of the enjoyment you receive  betting on a random horse is worth around 38% of your stake, or betting on the favourite is worth 9% of your stake, then go for it. As long as you're not betting more than you can afford, then I say analyses be damned and simply enjoy the thrill of the punt.
 
 
 
