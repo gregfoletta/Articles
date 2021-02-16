@@ -1,7 +1,7 @@
 ---
 title: 'A Bit on the Nose (Draft)'
 author: Greg Foletta
-date: '2021-0215'
+date: '2021-02-15'
 slug: a-bit-on-the-nose
 categories: [R]
 ---
