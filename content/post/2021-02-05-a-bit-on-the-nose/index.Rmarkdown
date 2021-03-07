@@ -1,7 +1,7 @@
 ---
-title: 'A Bit on the Nose (Draft)'
+title: 'A Bit on the Nose'
 author: Greg Foletta
-date: '2021-02-15'
+date: '2021-03-07'
 slug: a-bit-on-the-nose
 categories: [R]
 ---
@@ -98,7 +98,7 @@ file.remove('hr_results.csv.zip')
 
 The data was acquired by using [rvest](https://rvest.tidyverse.org/) to scrape a website that contained historical information on horse races. I was able to iterate across each race, pulling out specific variables using CSS selectors and XPaths. The dataset is for my own personal use, and I have encrypted the data that us used in this article.
 
-The dataset contains information on around 180,000 horse races over the period from 2011 to 2020. Its in a tidy format, with each row containing information on each horse in each race. It includes, but isn't limited to, the name and state that the track, the date of the race, the name of the horse, jockey and trainer, the weight the horse is carrying, race length, duration, barrier position. Here's an random sample from the dataset with some of the key variables selected:
+The dataset contains information on around 180,000 horse races over the period from 2011 to 2020. It's in a tidy format, with each row containing information on each horse in each race. It includes, but isn't limited to, the name and state that the track, the date of the race, the name of the horse, jockey and trainer, the weight the horse is carrying, race length, duration, barrier position. Here's an random sample from the dataset with some of the key variables selected:
 
 ```{r}
 hr_results %>% 
@@ -117,7 +117,7 @@ We won't use most of the variables in the data set, only a select few:
 - *odds.sp* - the 'starting price', which is are the "odds prevailing on a particular horse in the on-course fixed-odds betting market at the time a race begins.".
 - *position* - the finishing position of the horse.
 
-I've omitted the code to load the data is not shown, however the full source of this article (and the entire website) is available at [github](https://github.com/gregfoletta/articles.foletta.org). The data is contained in the variable `hr_results`.
+I've omitted the code to load the data, however the full source of this article (and the entire website) is available on [github](https://github.com/gregfoletta/articles.foletta.org). The data is contained in the variable `hr_results`.
 
 
 # Exploration
@@ -142,10 +142,14 @@ Next we take a look at the top 10 winning horses and trainers over this period:
 ```{r echo=FALSE}
 hr_results %>%
     filter(position == 1) %>%  
-    pivot_longer(c(horse.name, trainer)) %>% 
+    rename(
+        `Horse Name` = horse.name,
+        `Trainer` = trainer
+    ) %>% 
+    pivot_longer(c(`Horse Name`, `Trainer`)) %>% 
     count(name, value, name = 'wins') %>% 
     group_by(name) %>%
-    slice_max(wins, n = 10) %>% 
+    slice_max(wins, n = 10) %>%
     ggplot() +
     geom_col(aes(fct_reorder(value, wins), wins), fill = 'darkgreen') +
     facet_wrap(vars(name), scales = 'free') +
@@ -174,7 +178,7 @@ hr_results %>%
     )
 ```
 
-Finally, what is the distribution of the starting price odds? This distribution has a very long tail, so I've removed the long odds above 100 to provide a better view of the most common values. What's interesting is the bias towards odds with round numbers after around the the 20 mark.
+Finally, what is the distribution of the starting price odds? This distribution has a very long tail, so I've removed the long odds above 100 to provide a better view of the most common values. What's interesting is the bias towards odds with round numbers after the 20 mark.
 
 ```{r, message=FALSE,, warning=FALSE, echo=FALSE}
 hr_results %>%
@@ -183,8 +187,7 @@ hr_results %>%
     geom_histogram(aes(odds.sp), binwidth = 1) +
     scale_x_continuous(limits = c(0, 100), breaks = seq(0, 100, 5)) +
     labs(
-        title = 'Starting Price Odds (2011 - 2021)',
-        subtitle = 'Histogram',
+        title = 'Histogram - Starting Price Odds (2011 - 2021)',
         x = 'Odds',
         y = 'Count'
     )
@@ -197,14 +200,15 @@ With a high level handle on the data we're working with, let's move on to answer
 1. Take a sample of races across the time period.
     - We will use 0.5% or ~800 races.
 1. Place a dollar 'bet' on a horse in each race, determined by one of our methods.
-1. Calculate our return for each race (payout - stake).
-1. Calculate our return per race. 
-1. Calculate our accuracy across the races in the sample.
+1. Calculate our return (payout - stake).
+1. Calculate our cumulative return.
+1. Calculate our accuracy across all the races.
+1. Calculate our return per race.
 1. Return to 1. and repeat.
 
-After the process is complete, we can then look at the mean and distributions for the return per race and accuracy metrics. This process is similar to a bootstrap except we're performing it *without* replacement instead of *with* replacement.
+After the process is complete, we can look at the mean and distributions for the return per race and accuracy metrics. This process is similar to a bootstrap except within the sample we're performing it *without* replacement instead of *with* replacement.
 
-We nest the data for each race together, allowing us to sample on a per race basis, rather than on a per horse basis:
+We select only the variables that we need, so we're not moving huge amounts of unused data between to our worker processes. (Before I realised I should be pruning the data, I was spinning up large AWS instances with 128Gb of memory to perform the sampling. After the pruning I could run it on my laptop with 16GB of memory!) The data is nested based on its race ID, allowing us to sample per race rather than per horse.
 
 ```{r}
 # Nest per race
@@ -217,15 +221,13 @@ head(hr_results)
 ```
 
 
-The the `mc_cv()` (Monte-Carlo cross validation) function is used to create our sampled data sets. We're not actually performing the cross-validation part, only using the training set that comes back from the function and throwing away the test set.
+The the `mc_cv()` (Monte-Carlo cross validation) function from the [rsample](https://rsample.tidymodels.org/) package is used to create our sampled data sets. We're not actually performing the cross-validation part, only using the training set that comes back from the function and throwing away the test set.
 
 The worker function `mc_sample()` is created to be passed to `future_map()` so we can spread the sampling work across multiple cores. 
 
-We generate 800 samples of .5% (~800) of the total races in the dataset. The returned results are unnested, returning us back to our original tidy format, with each sample identified by the *sample_id* variable:
+We generate 2000 samples of .5% of the total races in the dataset, or around 800 races per sample. The returned results are unnested, returning us back to our original tidy format, with each sample identified by the *sample_id* variable:
 
 ```{r}
-library(tictoc)
-tic()
 # Sampling function that creates a Monte-Carlo CV set
 # and returns the analysis portion.
 mc_sample <- function(data, times, prop) {
@@ -239,7 +241,7 @@ mc_sample <- function(data, times, prop) {
 plan(multisession, workers = availableCores() - 1)
 
 # Parallel sampling
-number_samples <- 200 
+number_samples <- 2000 
 hr_mccv <- future_map(
     1:number_samples,
     ~{ mc_sample(hr_results, times = 1, prop = .005) },
@@ -255,19 +257,18 @@ hr_mccv <- hr_mccv %>%
     mutate(sample_id = 1:n()) %>% 
     unnest(cols = analysis) %>% 
     unnest(cols = data)
-toc()
 ```
 
 
-A `bet_returns()` function is created which places - by default a \\$1 dollar bet -  'on the nose' (i.e. for the win only) on each horse. It then determines the return based on the starting price odds. The data set uses decimal (also known as continental) odds, so if we placed a \\$1 bet on a horse with odds of 3.0 and the horse wins, our *payout* is \\$3, but our *return* is \\$2 (payout - \\$1). If the horse doesn't win, our payout is \\$0 and our return is -\\$1. 
+A `bet_returns()` function is created which places a bet (default \$1) for the win on each horse in the dataset it's provided. It determines the return based on the starting price odds. The data set uses decimal (also known as continental) odds, so if we placed a \$1 bet on a horse with odds of 3.0 and the horse wins, our *payout* is \$3, but our *return* is \$2 (payout - \$1). If the horse doesn't win, our payout is \$0 and our return is -\$1. 
 
 ```{r}
-# Places a bet for the win on each horse and calculates the return.
-# For each sample of races it creates an index variable, and calculates
-# the cumulative profit per race (ppr)
+# Places a bet for the win on each horse and calculates the return,
+# the cumulative return, and the cumulative return per race.
 bet_returns <- function(data, bet = 1) {
     data %>% 
-        mutate(bet_profit = if_else(
+        mutate(
+            bet_return = if_else(
                 position == 1,
                 (bet * odds.sp) - bet,
                 -bet
@@ -276,7 +277,7 @@ bet_returns <- function(data, bet = 1) {
         group_by(sample_id) %>% 
         mutate(
             sample_race_index = 1:n(),
-            cumulative_return = cumsum(bet_profit),
+            cumulative_return = cumsum(bet_return),
             cumulative_rpr = cumulative_return / sample_race_index 
         ) %>% 
         ungroup()
@@ -299,24 +300,28 @@ hr_random <- hr_mccv %>%
 hr_random <- bet_returns(hr_random)
 ```
 
-What kind of accuracy does this give us?
+Let's first calculate the accuracy per sample, and view this as a histogram. The solid line is the mean, and the dashed lines are the 2.5% and 97.5% quantiles, showing the middle 95% range of the accuracy.
 
-```{r, message=FALSE, echo = FALSE}
+```{r message=FALSE}
 hr_random_accuracy <- 
     hr_random %>%
     mutate(win = if_else(position == 1, 1, 0)) %>% 
     group_by(sample_id) %>% 
     summarise(accuracy = mean(win))
+```
 
+```{r, message=FALSE, echo = FALSE}
 hr_random_accuracy %>% 
     ggplot() +
     geom_histogram(aes(accuracy), binwidth = .001) +
     geom_vline(aes(xintercept = mean(accuracy))) +
     geom_vline(aes(xintercept = quantile(accuracy, prob = c(.025))[1]), linetype = 'dashed') +
     geom_vline(aes(xintercept = quantile(accuracy, prob = c(.975))[1]), linetype = 'dashed') +
+    geom_label(aes(mean(accuracy), 0, label = percent(mean(accuracy)))) +
+    scale_x_continuous(labels = scales::percent_format()) +
     labs(
-        title = 'Dollar Bet - Random Horse',
-        subtitle = 'Accuracy Distribution (Bin Width = .001',
+        title = 'Accuracy Histogram - Dollar Bet - Random Horse',
+        subtitle = 'Bin Width = .001%',
         x = 'Accuracy',
         y = 'Count'
     )
@@ -329,37 +334,43 @@ random_accuracy_ninefive <- hr_random_accuracy$accuracy %>%
     percent()
 ```
 
-So it's an mean accuracy of `r percent(random_accuracy_percent)`, with 95% range between `r random_accuracy_ninefive[1]` and `r random_accuracy_ninefive[2]`. That's about a 1 in `r round(1/random_accuracy_percent)` chance of picking the winning horse. At first I thought this was a little low, as the average number of horses in a race was about 6. I naively assumed that the random method would give us a 1 in 6 chance of picking the winnow, or `r percent(1/6)` accuracy level. But this assumption assumes a uniform probability of winning for each horse, which of course is not correct.
+The random method gives us a mean accuracy of `r percent(random_accuracy_percent)`, with 95% range between `r random_accuracy_ninefive[1]` and `r random_accuracy_ninefive[2]`. That's about a 1 in `r round(1/random_accuracy_percent)` chance of picking the winning horse. At first I thought this was a little low, as the average number of horses in a race was about 6. I naively assumed that the random method would give us a 1 in 6 chance of picking the winnow, or `r percent(1/6)` accuracy level. But this assumption assumes a uniform probability of winning for each horse, which of course is not correct.
 
-Accuracy is one thing, but what about our returns? Let's take a look at the 
+Accuracy is one thing, but what about our returns? Let's take a look at our cumulative returns over time. It's difficult to graph the entire 2000 samples as it becomes one big blob on the graph, so we look at the first 40 samples which gives us a reasonable representation:
 
 ```{r, message=FALSE, echo = FALSE}
 hr_random %>% 
     filter(sample_id %in% 1:40) %>% 
     ggplot() +
     geom_line(aes(sample_race_index, cumulative_return, group = sample_id), alpha = .5) +
+    scale_y_continuous(labels = scales::dollar_format()) +
     labs(
-        title = "Dollar Bet - Random Horse per Race",
-        subtitle = 'Cumulative Profit per Race',
+        title = 'Cumulative Profit over Time',
+        subtitle = "Dollar Bet - Random Horse per Race",
         x = 'Race Index',
-        y = 'Dollars'
+        y = 'Cumulative Return'
     )
 ```
+
+The result is a general trend downwards. We see some big jumps where our chosen horse is the long shot that came home, and some of our samples manage to pull themselves back into the black for periods of time. But they quickly regress trend back into the red. 
+
+The number of races may vary slightly per sample, so instead of looking at the cumulative return, let's look at the returns per race, i.e. (cumulative return / number of races).
 
 ```{r message = FALSE, echo = FALSE}
 hr_random %>% 
     group_by(sample_id) %>% 
-    summarise(total_ppr = sum(bet_profit / n())) %>%
+    summarise(return_per_race = sum(bet_return / n())) %>%
     ggplot() +
-    geom_histogram(aes(total_ppr), binwidth = .01) +
-    geom_vline(aes(xintercept = mean(total_ppr))) +
-    geom_vline(aes(xintercept = quantile(total_ppr, prob = c(.025))[1]), linetype = 'dashed') +
-    geom_vline(aes(xintercept = quantile(total_ppr, prob = c(.975))[1]), linetype = 'dashed') +
+    geom_histogram(aes(return_per_race), binwidth = .01) +
+    geom_vline(aes(xintercept = mean(return_per_race))) +
+    geom_vline(aes(xintercept = quantile(return_per_race, prob = c(.025))[1]), linetype = 'dashed') +
+    geom_vline(aes(xintercept = quantile(return_per_race, prob = c(.975))[1]), linetype = 'dashed') +
+    geom_label(aes(mean(return_per_race), 0, label = dollar(mean(return_per_race)))) +
     scale_x_continuous(labels = scales::dollar_format()) +
     labs(
-        title = 'Dollar Bet - Random Horse',
-        subtitle = 'Profit per Race Distribution (Bin Width = $0.01)',
-        x = 'Returns',
+        title = 'Histogram - Returns per Race',
+        subtitle = 'Dollar Bet - Random Horse - Bin Width $0.01',
+        x = 'Return',
         y = 'Count'
     )
 ```
@@ -367,7 +378,7 @@ hr_random %>%
 ```{r include = FALSE}
 random_sample_profits <- hr_random %>%
     group_by(sample_id) %>% 
-    summarise(ppr = sum(bet_profit) / n()) %>%
+    summarise(ppr = sum(bet_return) / n()) %>%
     pull(ppr)
 
 random_mean_profit <- mean(random_sample_profits)
@@ -377,7 +388,7 @@ ninefive_percent_range <- random_sample_profits %>%
     dollar()
 ```
 
-The result isn't great: in the long run we're definitely losing money. You can see some occasional big jumps where we've managed to pick the long shot and pull our cumualtive returns into positive terriroty, but over time we trend back down into the red. In the long run our average return per race is `r escape_latex(dollar(random_mean_profit))` per race, and 95% of returns per race are in the range of `r escape_latex(ninefive_percent_range[1])` to `r escape_latex(ninefive_percent_range[2])`.  
+In the long run our average return per race is `r escape_latex(dollar(random_mean_profit))`, and 95% of our returns are within the range of `r escape_latex(ninefive_percent_range[1])` to `r escape_latex(ninefive_percent_range[2])`. As we've used a dollar bet, this translates nicely to a percentage. What we can say is that in the long run we're on average losing `r percent(abs(random_mean_profit))` of our stake each time we use this method of betting. 
 
 # Approach 2 - Favourite
 
@@ -396,22 +407,33 @@ hr_favourite <- hr_mccv %>%
 hr_favourite <- bet_returns(hr_favourite)
 ```
 
-What's our accuracy look like for this kind of bet?
+Let's again take a look at the accuracy of this approach, viewed as a histogram of accuracy per sample.
 
-```{r, message=FALSE, echo = FALSE}
+```{r message=FALSE}
 # Calculate the accuracy
 hr_favourite_accuracy <- 
     hr_favourite %>%
     mutate(win = if_else(position == 1, 1, 0)) %>% 
     group_by(sample_id) %>% 
     summarise(accuracy = mean(win))
+```
 
+```{r, message=FALSE, echo = FALSE}
 # Graph
 hr_favourite_accuracy %>%  
     ggplot() +
     geom_histogram(aes(accuracy), binwidth = .001) +
     geom_vline(aes(xintercept = mean(accuracy))) +
-    geom_label(aes(mean(accuracy), 1, label = round(mean(accuracy), 3)))
+    geom_vline(aes(xintercept = quantile(accuracy, prob = c(.025))[1]), linetype = 'dashed') +
+    geom_vline(aes(xintercept = quantile(accuracy, prob = c(.975))[1]), linetype = 'dashed') +
+    geom_label(aes(mean(accuracy), 0, label = percent(mean(accuracy)))) +
+    scale_x_continuous(labels = scales::percent_format()) +
+    labs(
+        title = 'Accuracy Histogram - Dollar Bet - Favourite',
+        subtitle = 'Bin Width = .001%',
+        x = 'Accuracy',
+        y = 'Count'
+    )
 ```
 ```{r, include=FALSE}
 # Accuracy for printing in paragraph below
@@ -423,9 +445,9 @@ favourite_accuracy_ninefive <- hr_favourite_accuracy$accuracy %>%
     glue_collapse(sep = ' - ')
 ```
 
-This is looking much better - we've got a mean accuracy across all of the samples of `r percent(favourite_accuracy_percent)` wih a 95% range of `r favourite_accuracy_ninefive`. These accuracy percentages look pretty good, and gut feel is that they would be pretty difficult to even get close to with any sort of predictive model. Picking the favourite is around `r round(favourite_accuracy_percent / random_accuracy_percent) * 100` times better than when picking a random horse.
+This is looking much better - we've got a mean accuracy across all of the samples of `r percent(favourite_accuracy_percent)`,  with 95% of our accuracy in the range of `r favourite_accuracy_ninefive`. These accuracy percentages look pretty good, and my gut feel is that they would be pretty difficult to approach with any sort of predictive model. Picking the favourite is around `r round(favourite_accuracy_percent / random_accuracy_percent)` times better than picking a random horse.
 
-Let's take a look at the cumulative returns over time:
+What do our returns over time look like? Again we take the first 40 samples and graph the cumulative return.
 
 ```{r, message=FALSE, echo = FALSE}
 hr_favourite %>%
@@ -434,33 +456,41 @@ hr_favourite %>%
     geom_line(aes(sample_race_index, cumulative_return, group = sample_id), alpha  = .5) +
     scale_y_continuous(labels = scales::dollar_format()) +
     labs(
-        title = "Dollar Bet - Favourite - Cumulative Profits per Race",
+        title = 'Cumulative Profit over Time',
+        subtitle = "Dollar Bet - Favourite in Each Race - Bin Width $0.01",
         x = 'Race Index',
-        y = 'Dollars'
+        y = 'Cumulative Return'
     )
 ```
 
+There is still a general trend downwards, however it's certainly not as pronounced as the random method. There are longer periods of time where we're trending sideways, and some of our samples even manage to eke out a profit.
+
+Taking a look again at the distributions of our returns per race:
+
 ```{r message = FALSE, echo = FALSE}
 
-hr_favourite %>% 
+hr_favourite %>%
     group_by(sample_id) %>% 
-    summarise(profit = sum(bet_profit)) %>%
+    summarise(return_per_race = sum(bet_return / n())) %>%
     ggplot() +
-    geom_histogram(aes(profit), binwidth = 5) +
-    geom_vline(aes(xintercept = mean(profit))) +
+    geom_histogram(aes(return_per_race), binwidth = .01) +
+    geom_vline(aes(xintercept = mean(return_per_race))) +
+    geom_vline(aes(xintercept = quantile(return_per_race, prob = c(.025))[1]), linetype = 'dashed') +
+    geom_vline(aes(xintercept = quantile(return_per_race, prob = c(.975))[1]), linetype = 'dashed') +
+    geom_label(aes(mean(return_per_race), 1, label = dollar(mean(return_per_race)))) +
     scale_x_continuous(labels = scales::dollar_format()) +
     labs(
-        title = 'Dollar Bet - Favourite Bet - Returns',
-        subtitle = 'Bin Width = 5',
-        x = 'Total Profit',
+        title = 'Histogram - Returns per Race',
+        subtitle = 'Dollar Bet - Favourite - Bin Width $0.01',
+        x = 'Return',
         y = 'Count'
-    )
+    ) 
 ```
 
 ```{r include = FALSE}
 favourite_sample_profit <- hr_favourite %>%
     group_by(sample_id) %>% 
-    summarise(ppr = sum(bet_profit) / n()) %>%
+    summarise(ppr = sum(bet_return) / n()) %>%
     pull(ppr)
 
 favourite_mean_profit <- mean(favourite_sample_profit)
@@ -470,15 +500,15 @@ ninefive_percent_range <- favourite_sample_profit %>%
     dollar()
 ```
 
-This is much better than picking a random horse, but it's certainly no slam dunk. We've got longer stretches with a positive return on our investment, but again in the long run our PPR trends to negative. The mean PPR is `r escape_latex(dollar(favourite_mean_profit))`, with the 95% of PPRs in the range of `r escape_latex(escape_latex(ninefive_percent_range[1]))` to `r escape_latex(escape_latex(ninefive_percent_range[2]))`.
+Picking the favourite is much better than picking a random horse but it's certainly no slam dunk. The long run average return per race is still negative at `r escape_latex(dollar(favourite_mean_profit))`. The 95% of returns per race are in the range of `r escape_latex(ninefive_percent_range[1])` to `r escape_latex(ninefive_percent_range[2])`.
 
 # Conclusion 
 
-In this article we baselined two different approaches to betting on horse races: picking a random horse, and picking the favourite. Our aim was determine the mean accuracy , and the profits per race, for each of these approaches.
+In this article we baselined two different approaches to betting on horse races: picking a random horse, and picking the favourite. Our aim was determine the mean accuracy  and mean returns per race for each of the approaches.
 
-We found the accuracy of picking a random horse is `r percent(random_accuracy_percent)` and the mean profits per race for a dollar bet are `r escape_latex(dollar(random_mean_profit))`.
+We found the accuracy of picking a random horse is `r percent(random_accuracy_percent)` and the mean returns per race for a dollar bet are `r escape_latex(dollar(random_mean_profit))`. You're losing thirty cents on the dollar per bet.
 
-Betting of the favourite is of course markedly better, with a mean accuracy of `r percent(favourite_accuracy_percent)`, however the mean profits per race for a dollar bet are `r escape_latex(dollar(favourite_mean_profit))`, so betting on the favourite does not guarantee us a profit. This makes sense: if this method of betting did guarantee us a profit, everyone would be doing it and the bookies would go out of business.
+Betting of the favourite is unsurprisingly much better, with a mean accuracy of `r percent(favourite_accuracy_percent)` and mean returns per race for a dollar bet being `r escape_latex(dollar(favourite_mean_profit))`, or a loss a five cents on the dollar. I'm impressed with the bookies ability to get so close to parity. 
 
 What we don't take into account here is the utility, or enjoyment, that is gained from the bet. If you think cost of the enjoyment you receive  betting on a random horse is worth around `r percent(abs(random_mean_profit))` of your stake, or betting on the favourite is worth `r percent(abs(favourite_mean_profit))` of your stake, then go for it. As long as you're not betting more than you can afford, then I say analyses be damned and simply enjoy the thrill of the punt.
 
