@@ -1,6 +1,6 @@
-baseurl = "https://articles.foletta.org"
+baseurl = "https://stage.articles.foletta.org"
 title = "Greg Foletta - Technical Articles"
-copyright = "Copyright 2020 - Greg Foletta"
+copyright = "Copyright 2021 - Greg Foletta"
 canonifyurls = true
 theme = "hugo-kiera"
 
@@ -50,5 +50,7 @@ pygmentsCodeFences = true
     url = "/categories"
     weight = 1
 
-[markup.goldmark.renderer]
-    unsafe= true
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true

@@ -262,8 +262,8 @@ afl_ht_fit %>%
 The model coefficients are as such:
 
 * The intercept (\\(\beta_0\\)) tells us the log-odds of winning in the AFL with a halftime differential of zero.
-* `HT.Diff` (\\(\beta_0\\)) is the change in log-odds of a win in the AFL for every one point of halftime differential.
-* `LeagueVFL` (\\(\beta_1\\)) tells us the *difference* in log-odds of winning with a differential of zero in the VFL as compared to the AFL.
+* `HT.Diff` (\\(\beta_1\\)) is the change in log-odds of a win in the AFL for every one point of halftime differential.
+* `LeagueVFL` (\\(\beta_2\\)) tells us the *difference* in log-odds of winning with a differential of zero in the VFL as compared to the AFL.
     * This needs to be added to the intercept to when considering VFL games.
 * `HT.Diff:LeagueVFL` (\\(\beta_3\\)) is the difference in the change in log-odds of a win for every one point of halftime differential in the VFL.
     * Again, this needs to be added to the `HT.Diff` variable when considering VFL games.

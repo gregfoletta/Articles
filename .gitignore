@@ -1,4 +1,8 @@
-public/
-blogdown/
+/public/
+/resources/
 .Rhistory
 *.swp
+id_rsa
+id_rsa.pub
+.DS_Store
+Thumbs.db
