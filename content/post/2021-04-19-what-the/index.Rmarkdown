@@ -8,6 +8,11 @@ tags: []
 images: []
 ---
 
+```{r}
+knitr::opts_chunk$set(comment = '')
+```
+
+
 Whenever you work with computers, you take an incredible amount of things for granted: your press of the keyboard will bubble up through the kernel to your terminal; the HTTP request will remain intact after travelling halfway across the globe; or the stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. All of the abstractions and indirections that hide the internal details allow us to focus on other important aspects like aesthetics, speed or accuracy, rather than wondering how exactly how re-implement TCP.
 
 But at the same time in can be a very unsatisfying feeling to not know how something is working, and you need to peek behind the curtains. For me that happened recently when writing a script and adding the obligatory "shebang" or "hashbang" (#!) to the first line. Of course I know that this specifies the interpreter that will run the rest of the file, but how does that work? Is it a user space or kernel space component that does this?  
@@ -16,7 +21,7 @@ So in this article we're going to answer the question:
 
 > How is an interpreter caled when specified using a shebang in the first line of a script? 
 
-```{sh, comment = '', prompt = TRUE}
+```{sh}
 uname -sor
 ```
 
@@ -36,7 +41,7 @@ The first tool we go for is `strace`, which attaches itself to a process and int
 We spin up a bash process, then execute our script within that process.
 
 
-```{sh }
+```{sh}
 strace -f -e trace=vfork,fork,clone,execve bash -c './data/foo.pl'
 ```
 

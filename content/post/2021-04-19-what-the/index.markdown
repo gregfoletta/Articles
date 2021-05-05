@@ -8,6 +8,12 @@ tags: []
 images: []
 ---
 
+
+```r
+knitr::opts_chunk$set(comment = '')
+```
+
+
 Whenever you work with computers, you take an incredible amount of things for granted: your press of the keyboard will bubble up through the kernel to your terminal; the HTTP request will remain intact after travelling halfway across the globe; or the stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. All of the abstractions and indirections that hide the internal details allow us to focus on other important aspects like aesthetics, speed or accuracy, rather than wondering how exactly how re-implement TCP.
 
 But at the same time in can be a very unsatisfying feeling to not know how something is working, and you need to peek behind the curtains. For me that happened recently when writing a script and adding the obligatory "shebang" or "hashbang" (#!) to the first line. Of course I know that this specifies the interpreter that will run the rest of the file, but how does that work? Is it a user space or kernel space component that does this?  
@@ -18,7 +24,7 @@ So in this article we're going to answer the question:
 
 
 ```sh
-> uname -sor
+uname -sor
 ```
 
 ```
@@ -38,13 +44,13 @@ chmod u+x data/foo.pl
 ```
 
 ```
-## #!/usr/bin/perl
-## 
-## use strict;
-## use warnings;
-## use 5.010;
-## 
-## say "Foobar";
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use 5.010;
+
+say "Foobar";
 ```
 
 The first tool we go for is `strace`, which attaches itself to a process and intercepts system calls. In the below code snippet, we run strace with two arguments: the '-f' means that any child processes spawned by the original traced process are traced as well. The -e argument filters out specific system calls that we're interested in. I've done this for brevity within the article, but you'd likely want to look through the whole trace to get a firm idea about what the process is doing.
@@ -58,10 +64,10 @@ strace -f -e trace=vfork,fork,clone,execve bash -c './data/foo.pl'
 ```
 
 ```
-## execve("/bin/bash", ["bash", "-c", "./data/foo.pl"], 0x7ffcf624a2a8 /* 100 vars */) = 0
-## execve("./data/foo.pl", ["./data/foo.pl"], 0x55634ed6d880 /* 100 vars */) = 0
-## Foobar
-## +++ exited with 0 +++
+execve("/bin/bash", ["bash", "-c", "./data/foo.pl"], 0x7ffe3421e568 /* 100 vars */) = 0
+execve("./data/foo.pl", ["./data/foo.pl"], 0x560732133880 /* 100 vars */) = 0
+Foobar
++++ exited with 0 +++
 ```
 
 The strace utility shows us two processes executions: the bash shell executing (which will have followed the `clone()` call from the original shell and not captured), then the path of our script being passed directly to the `execve()` system call. This is a system call that executes processes. It's prototype is:
@@ -86,11 +92,11 @@ ldd $(which bash)
 ```
 
 ```
-## 	linux-vdso.so.1 (0x00007ffedaf99000)
-## 	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007f023bfab000)
-## 	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f023bda7000)
-## 	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f023b9b6000)
-## 	/lib64/ld-linux-x86-64.so.2 (0x00007f023c4ef000)
+	linux-vdso.so.1 (0x00007ffcf5bce000)
+	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007f02a93c1000)
+	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f02a91bd000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f02a8dcc000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f02a9905000)
 ```
 
 We now use `objdump` to disassemble the shared library, and we extract out the section that's related to `execve()`.
@@ -101,20 +107,20 @@ objdump -d /lib/x86_64-linux-gnu/libc.so.6 | sed -n '/^[[:xdigit:]]\+ <execve/,/
 ```
 
 ```
-## 00000000000e4c00 <execve@@GLIBC_2.2.5>:
-##    e4c00:	b8 3b 00 00 00       	mov    $0x3b,%eax
-##    e4c05:	0f 05                	syscall 
-##    e4c07:	48 3d 01 f0 ff ff    	cmp    $0xfffffffffffff001,%rax
-##    e4c0d:	73 01                	jae    e4c10 <execve@@GLIBC_2.2.5+0x10>
-##    e4c0f:	c3                   	retq   
-##    e4c10:	48 8b 0d 51 62 30 00 	mov    0x306251(%rip),%rcx        # 3eae68 <h_errlist@@GLIBC_2.2.5+0xdc8>
-##    e4c17:	f7 d8                	neg    %eax
-##    e4c19:	64 89 01             	mov    %eax,%fs:(%rcx)
-##    e4c1c:	48 83 c8 ff          	or     $0xffffffffffffffff,%rax
-##    e4c20:	c3                   	retq   
-##    e4c21:	66 2e 0f 1f 84 00 00 	nopw   %cs:0x0(%rax,%rax,1)
-##    e4c28:	00 00 00 
-##    e4c2b:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
+00000000000e4c00 <execve@@GLIBC_2.2.5>:
+   e4c00:	b8 3b 00 00 00       	mov    $0x3b,%eax
+   e4c05:	0f 05                	syscall 
+   e4c07:	48 3d 01 f0 ff ff    	cmp    $0xfffffffffffff001,%rax
+   e4c0d:	73 01                	jae    e4c10 <execve@@GLIBC_2.2.5+0x10>
+   e4c0f:	c3                   	retq   
+   e4c10:	48 8b 0d 51 62 30 00 	mov    0x306251(%rip),%rcx        # 3eae68 <h_errlist@@GLIBC_2.2.5+0xdc8>
+   e4c17:	f7 d8                	neg    %eax
+   e4c19:	64 89 01             	mov    %eax,%fs:(%rcx)
+   e4c1c:	48 83 c8 ff          	or     $0xffffffffffffffff,%rax
+   e4c20:	c3                   	retq   
+   e4c21:	66 2e 0f 1f 84 00 00 	nopw   %cs:0x0(%rax,%rax,1)
+   e4c28:	00 00 00 
+   e4c2b:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
 ```
 
 As expected, the standard library doesn't do much. It places 0x3b (decimal 59) into the `eax` register, which is the [execve system call number](https://elixir.bootlin.com/linux/latest/source/arch/x86/entry/syscalls/syscall_64.tbl#L70) and calls the [fast system call x86 instruction](https://www.felixcloutier.com/x86/syscall). 
