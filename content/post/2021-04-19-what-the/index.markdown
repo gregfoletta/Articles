@@ -9,9 +9,6 @@ images: []
 ---
 
 
-```r
-knitr::opts_chunk$set(comment = '')
-```
 
 
 Whenever you work with computers, you take an incredible amount of things for granted: your press of the keyboard will bubble up through the kernel to your terminal; the HTTP request will remain intact after travelling halfway across the globe; or the stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. All of the abstractions and indirections that hide the internal details allow us to focus on other important aspects like aesthetics, speed or accuracy, rather than wondering how exactly how re-implement TCP.
@@ -64,16 +61,20 @@ strace -f -e trace=vfork,fork,clone,execve bash -c './data/foo.pl'
 ```
 
 ```
-execve("/bin/bash", ["bash", "-c", "./data/foo.pl"], 0x7ffe3421e568 /* 100 vars */) = 0
-execve("./data/foo.pl", ["./data/foo.pl"], 0x560732133880 /* 100 vars */) = 0
+execve("/bin/bash", ["bash", "-c", "./data/foo.pl"], 0x7ffdd132b468 /* 100 vars */) = 0
+execve("./data/foo.pl", ["./data/foo.pl"], 0x55e85a355880 /* 100 vars */) = 0
 Foobar
 +++ exited with 0 +++
 ```
 
 The strace utility shows us two processes executions: the bash shell executing (which will have followed the `clone()` call from the original shell and not captured), then the path of our script being passed directly to the `execve()` system call. This is a system call that executes processes. It's prototype is:
 
-```
-int execve(const char *filename, char *const argv[], char *const envp[]);
+```c
+int execve(
+    const char *filename,
+    char *const argv[],
+    char *const envp[]
+);
 ```
 
 with `*filename` containing the path to the program to run, `*argv[]` containing the command line arguements, and `*envp[]` containing the environment variables.
@@ -92,11 +93,11 @@ ldd $(which bash)
 ```
 
 ```
-	linux-vdso.so.1 (0x00007ffcf5bce000)
-	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007f02a93c1000)
-	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f02a91bd000)
-	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f02a8dcc000)
-	/lib64/ld-linux-x86-64.so.2 (0x00007f02a9905000)
+	linux-vdso.so.1 (0x00007ffe8186d000)
+	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007fce22cdb000)
+	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007fce22ad7000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007fce226e6000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007fce2321f000)
 ```
 
 We now use `objdump` to disassemble the shared library, and we extract out the section that's related to `execve()`.
@@ -208,33 +209,57 @@ This comment doesn't fill me with confidence:
 
 ## Parsing the Interpreter
 
+
 ```c
+//Add a NUL to the end
 bprm->buf[BINPRM_BUF_SIZE - 1] = '\0';
+
+//If theres no newline, we start at
+//the end of the buffer
 	if ((cp = strchr(bprm->buf, '\n')) == NULL)
 		cp = bprm->buf+BINPRM_BUF_SIZE-1;
+		
+	//Add the NUL again?
 	*cp = '\0';
+	
+	//Work our way backwards through the buffer
 	while (cp > bprm->buf) {
 		cp--;
+		//If the character is whitespace, replace it with
+		//a NUL
 		if ((*cp == ' ') || (*cp == '\t'))
 			*cp = '\0';
+		//Otherwise, we've found the end of the interpreter
+		//string
 		else
 			break;
 	}
+	
+
+    //After the hashbang (the buf + 2), remove any whitespace
 	for (cp = bprm->buf+2; (*cp == ' ') || (*cp == '\t'); cp++);
+	//If we hit a NUL, the line only contains a hashbang
+	//with no interpreter
 	if (*cp == '\0')
 		return -ENOEXEC; /* No interpreter name found */
+	//i_name (and cp) points to the start of the interpreter string
 	i_name = cp;
 ```
 
 
-## Parsing the Arguments
+## Splitting the Interpreter and Arguments
 
 ```c
 i_arg = NULL;
+    //Move along the interpreter string until we either hit
+    //the end or hit some whitespace
 	for ( ; *cp && (*cp != ' ') && (*cp != '\t'); cp++)
 		/* nothing */ ;
+	//Replace the whitespace with NUL characters
 	while ((*cp == ' ') || (*cp == '\t'))
 		*cp++ = '\0';
+	//If there are bytes after the whitespace, these become
+	//the arguments to the interpreter
 	if (*cp)
 		i_arg = cp;
 ```

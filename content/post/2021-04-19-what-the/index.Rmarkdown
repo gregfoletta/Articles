@@ -8,7 +8,7 @@ tags: []
 images: []
 ---
 
-```{r}
+```{r, include = FALSE}
 knitr::opts_chunk$set(comment = '')
 ```
 
@@ -47,8 +47,12 @@ strace -f -e trace=vfork,fork,clone,execve bash -c './data/foo.pl'
 
 The strace utility shows us two processes executions: the bash shell executing (which will have followed the `clone()` call from the original shell and not captured), then the path of our script being passed directly to the `execve()` system call. This is a system call that executes processes. It's prototype is:
 
-```
-int execve(const char *filename, char *const argv[], char *const envp[]);
+```c
+int execve(
+    const char *filename,
+    char *const argv[],
+    char *const envp[]
+);
 ```
 
 with `*filename` containing the path to the program to run, `*argv[]` containing the command line arguements, and `*envp[]` containing the environment variables.
@@ -156,33 +160,57 @@ This comment doesn't fill me with confidence:
 
 ## Parsing the Interpreter
 
+
 ```c
+//Add a NUL to the end
 bprm->buf[BINPRM_BUF_SIZE - 1] = '\0';
+
+//If theres no newline, we start at
+//the end of the buffer
 	if ((cp = strchr(bprm->buf, '\n')) == NULL)
 		cp = bprm->buf+BINPRM_BUF_SIZE-1;
+		
+	//Add the NUL again?
 	*cp = '\0';
+	
+	//Work our way backwards through the buffer
 	while (cp > bprm->buf) {
 		cp--;
+		//If the character is whitespace, replace it with
+		//a NUL
 		if ((*cp == ' ') || (*cp == '\t'))
 			*cp = '\0';
+		//Otherwise, we've found the end of the interpreter
+		//string
 		else
 			break;
 	}
+	
+
+    //After the hashbang (the buf + 2), remove any whitespace
 	for (cp = bprm->buf+2; (*cp == ' ') || (*cp == '\t'); cp++);
+	//If we hit a NUL, the line only contains a hashbang
+	//with no interpreter
 	if (*cp == '\0')
 		return -ENOEXEC; /* No interpreter name found */
+	//i_name (and cp) points to the start of the interpreter string
 	i_name = cp;
 ```
 
 
-## Parsing the Arguments
+## Splitting the Interpreter and Arguments
 
 ```c
 i_arg = NULL;
+    //Move along the interpreter string until we either hit
+    //the end or hit some whitespace
 	for ( ; *cp && (*cp != ' ') && (*cp != '\t'); cp++)
 		/* nothing */ ;
+	//Replace the whitespace with NUL characters
 	while ((*cp == ' ') || (*cp == '\t'))
 		*cp++ = '\0';
+	//If there are bytes after the whitespace, these become
+	//the arguments to the interpreter
 	if (*cp)
 		i_arg = cp;
 ```
