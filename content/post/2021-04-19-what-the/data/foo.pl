@@ -1,7 +1,8 @@
-#!/usr/bin/perl
+#!    /usr/bin/env perl
 
 use strict;
 use warnings;
 use 5.010;
+use Data::Dumper;
 
-say "Foobar";
+print Dumper [@ARGV];

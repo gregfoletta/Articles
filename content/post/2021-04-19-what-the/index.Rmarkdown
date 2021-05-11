@@ -13,7 +13,7 @@ knitr::opts_chunk$set(comment = '')
 ```
 
 
-Whenever you work with computers, you take an incredible amount of things for granted: your press of the keyboard will bubble up through the kernel to your terminal; the HTTP request will remain intact after travelling halfway across the globe; or the stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. All of the abstractions and indirections that hide the internal details allow us to focus on other important aspects like aesthetics, speed or accuracy, rather than wondering how exactly how re-implement TCP.
+Whenever you work with computers, you take an incredible amount of things for granted: your press of the keyboard will bubble up through the kernel to your terminal, the HTTP request will remain intact after travelling halfway across the globe; or the stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. All of the abstractions and indirections that hide the internal details allow us to focus on other important aspects like aesthetics, speed or accuracy, rather than wondering how exactly how re-implement TCP.
 
 But at the same time in can be a very unsatisfying feeling to not know how something is working, and you need to peek behind the curtains. For me that happened recently when writing a script and adding the obligatory "shebang" or "hashbang" (#!) to the first line. Of course I know that this specifies the interpreter that will run the rest of the file, but how does that work? Is it a user space or kernel space component that does this?  
 
@@ -42,7 +42,7 @@ We spin up a bash process, then execute our script within that process.
 
 
 ```{sh}
-strace -f -e trace=vfork,fork,clone,execve bash -c './data/foo.pl'
+strace -f -e trace=vfork,fork,clone,execve bash -c './data/foo.pl argument_1 argument_2'
 ```
 
 The strace utility shows us two processes executions: the bash shell executing (which will have followed the `clone()` call from the original shell and not captured), then the path of our script being passed directly to the `execve()` system call. This is a system call that executes processes. It's prototype is:
@@ -83,19 +83,23 @@ I could write another whole article on the process of jumping from user space in
 
 # Delving into the kernel
 
-Come in to [SYSCALL_DEFINE3(execve)](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1923), which then calls [do_execve](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1841), which calls [do_exexveat_common](https://elixir.bootlin.com/linux/v4.15/C/ident/do_execveat_common).
+We'll start our journey in the kernel at [SYSCALL_DEFINE3(execve)](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1923), which calls [do_execve()](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1841), which calls [do_execveat_common()](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1694). This function initialises the [linux_binprm](https://elixir.bootlin.com/linux/v4.15/source/include/linux/binfmts.h#L17) structure. The members relevant to the calling of a script are:
 
-Important thing that happens here is the allocation of a [linux_binprom](https://elixir.bootlin.com/linux/latest/source/include/linux/binfmts.h#L17) structure. Also the bprm is prepared (different from version 5)
-The `prepare_binprm()` function zeros out and then copies `BINPRM_BUF_SIZE` (current 256 bytes) of the file to be executed into the `bprm->buf`.
+- `char buf[BINPRM_BUF_SIZE]`, which will hold the first 128 bytes of the file.
+- `unsigned int recursion_depth`, which tracks how far deep our binary handler search goes.
+- `int argc, envc`: our command line argument and environment counts
+- `const char * filename` - the name of the binary that's seen by the 'ps' utility. 
+- `const char * interp` - name of the binary that was really executed.
 
-Argument and environment counts and strings are copied into this structure. [bprm_execve](https://elixir.bootlin.com/linux/latest/source/fs/exec.c#L1792) is then called, which then calls [exec_binprm](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1669).
+Both the `filename` and `interp` members are set to the path of the file to be executed, and the `argc` and `envc` members are set to the respective counts. The `buf` member is then zeroed out and the first `BINPRM_BUF_SIZE` bytes (which is 128 in this version of the kernel) of the file is copied into it.
 
-Within `exec_binrpm()` there is a call to [search_binary_handler](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1616). 
+At this stage, the `argv` and `envp` pointers still point to the stack of calling process. Memory is allocated for the new process's stack, and these strings are copied into it.
+
+The [exec_binprm](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1669) function is then called. The main responsibility of this function is to call [search_binary_handler](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1616). This is where things get interesting.
 
 # Binary Handler Search
 
-
-The key pieces of code are here:
+The binary handler is responsible for iterating through the list of supported binary formats, and dispatching the `load_binary()` function of each one. I've included the code below, minus some tangential items like locking and security checks:
 
 ```c
 int search_binary_handler(struct linux_binprm *bprm)
@@ -120,18 +124,29 @@ int search_binary_handler(struct linux_binprm *bprm)
 }
 ```
 
- It then iterates across a linked list of supported binary executable formats and calls the `load_binary()` function pointer for each format. It's the responsibility of each binary handler's `load_binary()` function to use the first 255 bytes to determine whether or not it can execute the file. If it can't it returns `-ENOXEC` and the search continues.
+The `formats` is a linked list of [linux_binfmt](https://elixir.bootlin.com/linux/v4.15/source/include/linux/binfmts.h#L92) structures. Some of these are defined in the kernel, but they can also be loaded via loadable kernel modules. These are registered using the [register_binfmt()](https://elixir.bootlin.com/linux/v4.15/C/ident/register_binfmt) function. The built-in These include the common ELF format, the older a.out format, but the one we are most interested in is the 'script' format.
 
-The binary handlers are registered using the [register_binfmt()](https://elixir.bootlin.com/linux/v4.15/C/ident/register_binfmt) function. They can be dynamically added at runtime using kernel modules, but there are some that are built in to the kernel. These include the common ELF format, the older a.out format, but the one we are most interested in is the 'script' format.
+Here's the structure and the code code that registers the script format:
 
+```c
+static struct linux_binfmt script_format = {
+	.module		= THIS_MODULE,
+	.load_binary	= load_script,
+};
 
-Then iterate across `&formats` and `retval = fmt->load_binary(bprm)`. For scripts, load_binary is a pointer to `load_script()`. This is registered as a format by `init_script_binfmt()`, which is registered as a `core_initcall()`. The core initcalls are called in `do_initcalls()` which is called during `do_basic_setup()`, `kernel_init_freeable(void)`, `kernel_init(void *unused)` -> `rest_init()` ->
+static int __init init_script_binfmt(void)
+{
+	register_binfmt(&script_format);
+	return 0;
+}
+```
+
+We can see that the `load_binary` function pointer that the `search_binary_handler()` function will dispath is the `load_script()` function. Let's now turn our attention to this.
+
 
 # Script Binary Format
 
-In the script binary format, the `load_binary` function pointer points to the [load_script()](https://elixir.bootlin.com/linux/v4.15/source/fs/binfmt_script.c#L17) function. Let's go through this and see how it works.
-
-It's first task is to determine whether it is the appropriate handler for the file that's being executed. It looks at the first two bytes and checks whether they are the hash-bang. If not then it returns `-ENOEXEC`.
+The `load_script()` function must first determine whether it is the appropriate handler for the file that's being executed. The `binprm` structure has the first 128 bytes of the file to be executed in the `buf` member. It looks at the first two bytes and checks whether they are the hash-bang. If not then it returns `-ENOEXEC`.
 
 ```c
 static int load_script(struct linux_binprm *bprm)
@@ -145,32 +160,30 @@ static int load_script(struct linux_binprm *bprm)
 		return -ENOEXEC;
 ```
 
-If there is a hash-bang, it needs to parse the first line to pull out the interpreter to run, and any arguments to pass to it.
+The rest of the function can be broken down into three parts:
 
-The next step is to parse the hashbang line and pull out the interpreter and any command line arguments.
+1. Parsing the interpreter and arguments
+1. Splitting the interpreter and arguments
+1. Updating the command line arguments
 
-This comment doesn't fill me with confidence:
 
-```c
-	/*
-	 * This section does the #! interpretation.
-	 * Sorta complicated, but hopefully it will work.  -TYT
-	 */
-```
+## Parsing the Interpreter & Arguments
 
-## Parsing the Interpreter
-
+At this point the function knows it's a script, so now it has to extract the interpreter and any arguments out of the 128 byte buffer. I've commented each line of this processes below:
 
 ```c
-//Add a NUL to the end
+//Add a NUL to the end so the string is NUL terminated.
 bprm->buf[BINPRM_BUF_SIZE - 1] = '\0';
 
-//If theres no newline, we start at
-//the end of the buffer
+//The end of the string is either:
+// a) A newline character, or
+// b) The end of the buffer
 	if ((cp = strchr(bprm->buf, '\n')) == NULL)
 		cp = bprm->buf+BINPRM_BUF_SIZE-1;
 		
-	//Add the NUL again?
+	//For a) above, replaces the newline with a NUL.
+	//If it was b) above, it redundantly replaces a NUL
+	//with another NUL
 	*cp = '\0';
 	
 	//Work our way backwards through the buffer
@@ -197,25 +210,60 @@ bprm->buf[BINPRM_BUF_SIZE - 1] = '\0';
 	i_name = cp;
 ```
 
+At the end of this process, `i_name` points to the first character of a NUL terminated string containing the path to the interpreter and arguments, with whitespace before and after being removed.
+
+```
++---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+----+
+| / | u | s | r | / | b | i | n | / | e | n | v |   | p | e | r | l | \0 |
++---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+----+
+  ^
+  |
++------+
+|i_name|         
++------+ 
+```
 
 ## Splitting the Interpreter and Arguments
 
+The string now needs to be split into its components: the path to the interpreter, and any arguments to that interpreter:
+
 ```c
 i_arg = NULL;
-    //Move along the interpreter string until we either hit
-    //the end or hit some whitespace
-	for ( ; *cp && (*cp != ' ') && (*cp != '\t'); cp++)
-		/* nothing */ ;
-	//Replace the whitespace with NUL characters
-	while ((*cp == ' ') || (*cp == '\t'))
-		*cp++ = '\0';
-	//If there are bytes after the whitespace, these become
-	//the arguments to the interpreter
-	if (*cp)
-		i_arg = cp;
+//cp still points to the start of the interpreter string,
+//exlcluding any whitespace.
+//
+//Move along the string until we either hit
+// a) A NUL character, or
+// b) A space or a tab
+for ( ; *cp && (*cp != ' ') && (*cp != '\t'); cp++)
+    /* nothing */ ;
+//If there is whitespace, replace it with a NUL character
+while ((*cp == ' ') || (*cp == '\t'))
+    *cp++ = '\0';
+//If there are bytes after the whitespace, these become
+//the arguments to the interpreter.
+if (*cp)
+    i_arg = cp;
 ```
 
-## Updating the BINPM
+Again, taking our example script, the pointers now point to the following pieces of memory:
+
+```
++---+---+---+---+---+---+---+---+---+---+---+---+----+---+---+---+---+----+
+| / | u | s | r | / | b | i | n | / | e | n | v | \0 | p | e | r | l | \0 |
++---+---+---+---+---+---+---+---+---+---+---+---+----+---+---+---+---+----+
+  ^                                                    ^
+  |                                                    |
++------+                                             +-----+
+|i_name|                                             |i_arg|          
++------+                                             +-----+
+```
+
+One of the main implications of this code is that you cannot have whitespace in the interpreter path, as anything after the whitespace is considered arguments to the interpreter.
+
+## Updating the Bprm
+
+We now know the path to the interpreter, and any arguments that need to be passed to it. 
 
 ```c
 	retval = remove_arg_zero(bprm);
