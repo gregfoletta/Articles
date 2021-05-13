@@ -11,13 +11,15 @@ images: []
 
 
 
-Whenever you work with computers, you take an incredible amount of things for granted: your press of the keyboard will bubble up through the kernel to your terminal, the HTTP request will remain intact after travelling halfway across the globe; or the stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. All of the abstractions and indirections that hide the internal details allow us to focus on other important aspects like aesthetics, speed or accuracy, rather than wondering how exactly how re-implement TCP.
+Working with computers, you take a lot for granted: your press of the keyboard will bubble up through the kernel to your terminal, the HTTP request will remain intact after travelling halfway across the globe; or the stream of a cat video will be decoded and rendered on your screen. This isn't a negtive, in fact quite the opposite. The countless abstractions and indirections that hide the internal details allow us to focus on other important aspects like aesthetics, speed, and accuracy.
 
-But at the same time in can be a very unsatisfying feeling to not know how something is working, and you need to peek behind the curtains. For me that happened recently when writing a script and adding the obligatory "shebang" or "hashbang" (#!) to the first line. Of course I know that this specifies the interpreter that will run the rest of the file, but how does that work? Is it a user space or kernel space component that does this?  
+But at the same time in can be a very unsatisfying feeling to not know how something is working, and a feeling that you need to peek behind the curtains. That happened recently when writing a script and adding the obligatory hashbang '#!' to the first line. I've done this hundreds of times, and know that this specifies the interpreter (and optional arguments) that will run the rest of the file, but how does that work? Is it a user space or kernel space component that does this?  
 
-So in this article we're going to answer the question:
+In this article we're going to answer the question:
 
-> How is an interpreter caled when specified using a shebang in the first line of a script? 
+> How is an interpreter caled when specified using a hashbang in the first line of a script? 
+
+There are some kernel components to consider in this article, and I'll be focusing on the version running on my laptop:
 
 
 ```sh
@@ -41,7 +43,7 @@ chmod u+x data/foo.pl
 ```
 
 ```
-#!    /usr/bin/env perl
+#!/usr/bin/perl
 
 use strict;
 use warnings;
@@ -51,26 +53,20 @@ use Data::Dumper;
 print Dumper [@ARGV];
 ```
 
-The first tool we go for is `strace`, which attaches itself to a process and intercepts system calls. In the below code snippet, we run strace with two arguments: the '-f' means that any child processes spawned by the original traced process are traced as well. The -e argument filters out specific system calls that we're interested in. I've done this for brevity within the article, but you'd likely want to look through the whole trace to get a firm idea about what the process is doing.
+The first tool we go for is `strace`, which attaches itself to a process and intercepts system calls. In the below code snippet, we run strace with the -e argument to focus on the system calls we're interested in. I've done this for brevity within the article, but you'd likely want to look through the whole trace to get a firm idea about what the process is doing.
 
 We spin up a bash process, then execute our script within that process.
 
 
-
 ```sh
-strace -f -e trace=vfork,fork,clone,execve bash -c './data/foo.pl argument_1 argument_2'
+strace -e trace=vfork,fork,clone,execve bash -c './data/foo.pl argument_1'
 ```
 
 ```
-execve("/bin/bash", ["bash", "-c", "./data/foo.pl argument_1 argumen"...], 0x7ffe06963d68 /* 100 vars */) = 0
-execve("./data/foo.pl", ["./data/foo.pl", "argument_1", "argument_2"], 0x55ea30b54890 /* 100 vars */) = 0
-execve("/usr/local/sbin/perl", ["perl", "./data/foo.pl", "argument_1", "argument_2"], 0x7ffe282f7318 /* 100 vars */) = -1 ENOENT (No such file or directory)
-execve("/usr/local/bin/perl", ["perl", "./data/foo.pl", "argument_1", "argument_2"], 0x7ffe282f7318 /* 100 vars */) = -1 ENOENT (No such file or directory)
-execve("/usr/sbin/perl", ["perl", "./data/foo.pl", "argument_1", "argument_2"], 0x7ffe282f7318 /* 100 vars */) = -1 ENOENT (No such file or directory)
-execve("/usr/bin/perl", ["perl", "./data/foo.pl", "argument_1", "argument_2"], 0x7ffe282f7318 /* 100 vars */) = 0
+execve("/bin/bash", ["bash", "-c", "./data/foo.pl argument_1"], 0x7ffe171f6c90 /* 100 vars */) = 0
+execve("./data/foo.pl", ["./data/foo.pl", "argument_1"], 0x564830ed1890 /* 100 vars */) = 0
 $VAR1 = [
-          'argument_1',
-          'argument_2'
+          'argument_1'
         ];
 +++ exited with 0 +++
 ```
@@ -85,15 +81,15 @@ int execve(
 );
 ```
 
-with `*filename` containing the path to the program to run, `*argv[]` containing the command line arguements, and `*envp[]` containing the environment variables.
+with `*filename` containing the path to the program to run, `*argv[]` containing the command line arguments, and `*envp[]` containing the environment variables.
 
 What does this tell us? It tells us that the scripts are passed directly this system call, and there's no userspace aspect to the parsing of the hash-bang line.
 
-# A Quick Look in GLIBC
+# A Quick Look in glibc 
 
-The bash process doesn't call the system call directly; the `execve()` function is part of the standard C library (on my machine it's glibc or GNU LibC), to which bash is dynamically linked. While it's unlikely that anything of significance is ocurring in the library, we'd better take a look.
+The bash process doesn't call the system call directly; the `execve()` function is part of the standard C library (on my machine it's glibc), to which bash is dynamically linked. While it's unlikely that anything of significance is occurring in the library, let's be rigorous and take a look.
 
-We can use the `ldd` utility to print out the shared libraries required a program, and the paths to these shared libraries.
+We can use the `ldd` utility to print out the dynamic libraries linked at runtime by the dynamic linker:
 
 
 ```bash
@@ -101,14 +97,14 @@ ldd $(which bash)
 ```
 
 ```
-	linux-vdso.so.1 (0x00007ffde5e5b000)
-	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007fcd2f40e000)
-	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007fcd2f20a000)
-	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007fcd2ee19000)
-	/lib64/ld-linux-x86-64.so.2 (0x00007fcd2f952000)
+	linux-vdso.so.1 (0x00007ffd1bffa000)
+	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007f07ce59b000)
+	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f07ce397000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f07cdfa6000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f07ceadf000)
 ```
 
-We now use `objdump` to disassemble the shared library, and we extract out the section that's related to `execve()`.
+We can see that libc on my machine is located at */lib/x86_64-linux-gnu/libc.so.6*. Using `objdump` we can disassemble the shared library, and we extract out the section that's related to `execve()`.
 
 
 ```bash
@@ -134,23 +130,23 @@ objdump -d /lib/x86_64-linux-gnu/libc.so.6 | sed -n '/^[[:xdigit:]]\+ <execve/,/
 
 As expected, the standard library doesn't do much. It places 0x3b (decimal 59) into the `eax` register, which is the [execve system call number](https://elixir.bootlin.com/linux/latest/source/arch/x86/entry/syscalls/syscall_64.tbl#L70) and calls the [fast system call x86 instruction](https://www.felixcloutier.com/x86/syscall). 
 
-I could write another whole article on the process of jumping from user space into the kernel through a system call. You'll find a brief description of the steps in the appendix at the bottom of this article.
-
-
+I could write another whole article on the process of jumping from user space into the kernel through a system call. I've provided a brief overview in an appendix at the bottom of this article.
 
 # Delving into the kernel
 
-We'll start our journey in the kernel at [SYSCALL_DEFINE3(execve)](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1923), which calls [do_execve()](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1841), which calls [do_execveat_common()](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1694). This function initialises the [linux_binprm](https://elixir.bootlin.com/linux/v4.15/source/include/linux/binfmts.h#L17) structure. The members relevant to the calling of a script are:
+Skipping over the kernel system call handler, we start our journey in the kernel at at [SYSCALL_DEFINE3(execve)](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1923). This calls [do_execve()](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1841), which calls [do_execveat_common()](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1694). This is where we start to see some items of interest. This function allocates the [linux_binprm](https://elixir.bootlin.com/linux/v4.15/source/include/linux/binfmts.h#L17) structure, which is the primary structure we'll be concerned with in this article. The members we're focused on are:
 
-- `char buf[BINPRM_BUF_SIZE]`, which will hold the first 128 bytes of the file.
-- `unsigned int recursion_depth`, which tracks how far deep our binary handler search goes.
-- `int argc, envc`: our command line argument and environment counts
+- `char buf[BINPRM_BUF_SIZE]` - holds first 128 bytes of the file being executed.
+- `unsigned long p` - current top of the processes memory.
+- `int argc, envc` - our command line argument and environment counts
 - `const char * filename` - the name of the binary that's seen by the 'ps' utility. 
 - `const char * interp` - name of the binary that was really executed.
+- `unsigned int recursion_depth`, which tracks how far deep our binary handler search goes.
 
-Both the `filename` and `interp` members are set to the path of the file to be executed, and the `argc` and `envc` members are set to the respective counts. The `buf` member is then zeroed out and the first `BINPRM_BUF_SIZE` bytes (which is 128 in this version of the kernel) of the file is copied into it.
 
-At this stage, the `argv` and `envp` pointers still point to the stack of calling process. Memory is allocated for the new process's stack, and these strings are copied into it.
+Both the `filename` and `interp` members are set to the path of the file to be executed. A temporary stack is allocated, and the `p` member is set to the top of it. The `argc` and `envc` members are set to the respective counts. The `buf` member is then zeroed out and the first `BINPRM_BUF_SIZE` bytes (which is 128 in this version of the kernel) of the file is copied into it.
+
+At this stage, the `argv` and `envp` pointers still point to the stack of calling process. These strings are copied across into the new stack that has been allocated. 
 
 The [exec_binprm](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1669) function is then called. The main responsibility of this function is to call [search_binary_handler](https://elixir.bootlin.com/linux/v4.15/source/fs/exec.c#L1616). This is where things get interesting.
 
@@ -198,7 +194,7 @@ static int __init init_script_binfmt(void)
 }
 ```
 
-We can see that the `load_binary` function pointer that the `search_binary_handler()` function will dispath is the `load_script()` function. Let's now turn our attention to this.
+We can see that the `load_binary` function pointer that the `search_binary_handler()` function will dispatch is the [load_script()](https://elixir.bootlin.com/linux/v4.15/source/fs/binfmt_script.c#L17) function. Let's now turn our attention to this.
 
 
 # Script Binary Format
@@ -222,6 +218,7 @@ The rest of the function can be broken down into three parts:
 1. Parsing the interpreter and arguments
 1. Splitting the interpreter and arguments
 1. Updating the command line arguments
+1. Recalling binary handler
 
 
 ## Parsing the Interpreter & Arguments
@@ -318,32 +315,35 @@ Again, taking our example script, the pointers now point to the following pieces
 
 One of the main implications of this code is that you cannot have whitespace in the interpreter path, as anything after the whitespace is considered arguments to the interpreter.
 
-## Updating the Bprm
+## Updating the Arguments
 
-We now know the path to the interpreter, and any arguments that need to be passed to it. 
+The arguments and argument counts now need to be updated. If we ran our script as `./foo.pl foo_arg`, and the hashbang line was `#!/usr/bin/perl perl_arg`, the new command line arguments need to be `./usr/bin/perl perl_arg ./foo.pl foo_arg`. Because of the way the stack is laid out, this is done in reverse order. 
 
 ```c
-	retval = remove_arg_zero(bprm);
-	if (retval)
-		return retval;
-	retval = copy_strings_kernel(1, &bprm->interp, bprm);
-	if (retval < 0)
-		return retval;
+//The current argv[0] (the filename of our script) is removed
+//from the temporary stack
+retval = remove_arg_zero(bprm);
+...
+//Add in the filename of the script being executed.
+retval = copy_strings_kernel(1, &bprm->interp, bprm);
+...
+bprm->argc++;
+if (i_arg) {
+//If the interpreter line has arguments, add these in to the stack.
+	retval = copy_strings_kernel(1, &i_arg, bprm);
+	...
 	bprm->argc++;
-	if (i_arg) {
-		retval = copy_strings_kernel(1, &i_arg, bprm);
-		if (retval < 0)
-			return retval;
-		bprm->argc++;
-	}
-	retval = copy_strings_kernel(1, &i_name, bprm);
-	if (retval)
-		return retval;
-	bprm->argc++;
-	retval = bprm_change_interp(i_name, bprm);
-	if (retval < 0)
-		return retval;
+}
+//Finallly, add the interpreter, which becomes arg[0].
+retval = copy_strings_kernel(1, &i_name, bprm);
+...
+bprm->argc++;
+//Update the 'interp` bprm member, which will now
+//be difference to the 'filename' member.
+retval = bprm_change_interp(i_name, bprm);
 ```
+
+Now that the the interpreter has been parsed and the bprm structure updated, the interpreter is opened as a file, and the `search_binary_hander()` is called again. Except this time it will be searching for a binary handler for our interpreter.
 
 ```c
 file = open_exec(i_name);
@@ -356,24 +356,44 @@ file = open_exec(i_name);
 		return retval;
 	return search_binary_handler(bprm);
 ```
+The interpreter is of this type:
 
 
+```sh
+file /usr/bin/perl
+```
+
+```
+/usr/bin/perl: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=e865d791bb4b89f4ab5e7ec1217e38ff6c31f3ed, stripped
+```
+
+Thus the ELF binary handler will be called, doing what it needs to do to load the binary and add it to the kernel scheduler, eventually running the process.
 
 # Summary
 
+We started this article out with a question: how is an interpreter called when used in a hashbang line of script. We used some tools to determine whether it was performed in userspace, but found that it was the kernel that performed this task.
 
+We went through the kernel, starting at the `execve()` system call, working our way down to the binary handlers. We then went through the 'script' binary handler, which matches files that have '#!' as their first two bytes. We could see how this handler parsed the interpreter line, extracting the interpreter path and optional arguments, and updating the binary to be called by the kernel. 
 
-
-
+This is an example of an elegant and generalised solution by the Linux kernel.
 
 # Appendix - System Calls
 
-It's out of scope to go deep on the system call entry, but at a high level:
+When we started delving into the kernel, we skipped over the `syscall` instruction and the system call handler in the kernel; this appendix summarises what happens between. There's a number of different variables that change the code path (page table isolation, slow and fast paths), so it's a simplification.
+
+As with the rest of this article, we only consider an x86_64 processor architecture, and I'm also going to ignore the *page table isolation* feature introduced to mitigate against the [Meltdown](https://meltdownattack.com/) vulnerability.
 
 - The `syscall` instruction:
     - Saves the address of the following instruction to the `rcx` register
     - Loads a new instruction pointer from the `IA32_LSTAR` model specific register.
     - Jumps to the new instruction at a ring 0 privilege level.
-- The `IA32_LSTAR` register holds the address if [entry_SYSCALL_64](https://elixir.bootlin.com/linux/latest/source/arch/x86/entry/entry_64.S#L87)
-    - This is set at boot time in [syscall_init()](https://elixir.bootlin.com/linux/latest/source/arch/x86/kernel/cpu/common.c#L1752)
-- 
+- The `IA32_LSTAR` register holds the address if [entry_SYSCALL_64](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/entry_64.S#L206), which is our system call handler.
+    - This is set (per-CPU) at boot time in [syscall_init()](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/kernel/cpu/common.c#L1373).
+- The `entry_SYSCALL_64` handler performs re-organisation required to transition from userspace to kernel space.
+    - Main task is to push all the current registers on to some new stack space.
+    - There's loads of other things, but let's consider them out of scope for this summarisation.
+- The system call is then called using its number (in the `rax` register) as an index into the [sys_call_table](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/syscall_64.c#L21) array.
+    - This is an array of function pointers to each of the system calls.
+    - The file in the `#include <asm/syscalls_64.h>` line is generated dynamically.
+- It's generated from the [syscall table file](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/syscalls/syscall_64.tbl).
+- This is converted into a header via a simple [shell script](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/syscalls/syscallhdr.sh).
