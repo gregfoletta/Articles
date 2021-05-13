@@ -1,11 +1,10 @@
 ---
 title: 'What the #!'
 author: Greg Foletta
-date: '2021-04-19'
-slug: []
-categories: []
-tags: []
-images: []
+date: '2021-05-11'
+slug: [what-the-hashbang]
+categories: [Linux, Kernel]
+description: "How do hashbangs work?"
 ---
 
 ```{r, include = FALSE}
@@ -340,3 +339,4 @@ As with the rest of this article, we only consider an x86_64 processor architect
     - The file in the `#include <asm/syscalls_64.h>` line is generated dynamically.
 - It's generated from the [syscall table file](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/syscalls/syscall_64.tbl).
 - This is converted into a header via a simple [shell script](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/syscalls/syscallhdr.sh).
+

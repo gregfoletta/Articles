@@ -1,11 +1,10 @@
 ---
 title: 'What the #!'
 author: Greg Foletta
-date: '2021-04-19'
-slug: []
-categories: []
-tags: []
-images: []
+date: '2021-05-11'
+slug: [what-the-hashbang]
+categories: [Linux, Kernel]
+description: "How do hashbangs work?"
 ---
 
 
