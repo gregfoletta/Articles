@@ -62,8 +62,8 @@ strace -e trace=vfork,fork,clone,execve bash -c './data/foo.pl argument_1'
 ```
 
 ```
-execve("/bin/bash", ["bash", "-c", "./data/foo.pl argument_1"], 0x7ffe106a38e0 /* 100 vars */) = 0
-execve("./data/foo.pl", ["./data/foo.pl", "argument_1"], 0x559090557890 /* 100 vars */) = 0
+execve("/bin/bash", ["bash", "-c", "./data/foo.pl argument_1"], 0x7ffe171f6c90 /* 100 vars */) = 0
+execve("./data/foo.pl", ["./data/foo.pl", "argument_1"], 0x564830ed1890 /* 100 vars */) = 0
 $VAR1 = [
           'argument_1'
         ];
@@ -96,11 +96,11 @@ ldd $(which bash)
 ```
 
 ```
-	linux-vdso.so.1 (0x00007ffdf511e000)
-	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007fd51c2da000)
-	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007fd51c0d6000)
-	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007fd51bce5000)
-	/lib64/ld-linux-x86-64.so.2 (0x00007fd51c81e000)
+	linux-vdso.so.1 (0x00007ffd1bffa000)
+	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007f07ce59b000)
+	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f07ce397000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f07cdfa6000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f07ceadf000)
 ```
 
 We can see that libc on my machine is located at */lib/x86_64-linux-gnu/libc.so.6*. Using `objdump` we can disassemble the shared library, and we extract out the section that's related to `execve()`.
