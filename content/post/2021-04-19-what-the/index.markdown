@@ -6,10 +6,10 @@ slug: [what-the-hashbang]
 categories: [Linux, Kernel]
 description: "How do hashbangs work?"
 ---
-
 Working with computers you take a lot for granted. You assume your press of the keyboard will bubble up through the kernel to your terminal, your HTTP request will remain intact after travelling halfway across the globe, and that your stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. The countless abstractions and indirections that hide the internal details of a computer are the reason that people - computer science degree or not - can use them in some shape or form.
 
 But at times it's an unsatisfying feeling not knowing how something is working under the hood, and there's a want to "pay some attention to the person behind the curtain". This happened recently to me when writing a script and adding the obligatory hashbang (#!) to the first line. I've done this hundreds of times before and know that this specifies the interpreter (and optional arguments) that run the rest of the file, but I wanted to understand how this worked: where is the line parsed, and how is the interpreter run?
+
 
 So in this article, join me for a dive through user and kernel space in order to answer the question:
 
@@ -62,6 +62,7 @@ strace -e trace=vfork,fork,clone,execve bash -c './data/foo.pl argument_1'
 ```
 execve("/bin/bash", ["bash", "-c", "./data/foo.pl argument_1"], 0x7fff6e6a4d40 /* 100 vars */) = 0
 execve("./data/foo.pl", ["./data/foo.pl", "argument_1"], 0x55fee3bc4890 /* 100 vars */) = 0
+
 $VAR1 = [
           'argument_1'
         ];
