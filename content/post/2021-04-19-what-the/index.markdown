@@ -6,10 +6,9 @@ slug: [what-the-hashbang]
 categories: [Linux, Kernel]
 description: "How do hashbangs work?"
 ---
+Working with computers you take a lot for granted. You assume your press of the keyboard will bubble up through the kernel to your terminal, your HTTP request will remain intact after travelling halfway across the globe, and that your stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. The countless abstractions and indirections that hide the internal details of a computer are the reason that people - computer science degree or not - can use them in some shape or form.
 
-Working with computers you take a lot for granted. You assume your press of the keyboard will bubble up through the kernel to your terminal, the HTTP request will remain intact after travelling halfway across the globe, and that your stream of a cat video will be decoded and rendered on your screen. Taking these things for granted isn't a negative, in fact quite the opposite. The countless abstractions and indirections that hide the internal details are the reason that people - computer science degree or not - can use computers in some shape or form.
-
-But at times it can be a very unsatisfying feeling to not know how something is working, it there's a want to "pay some attention to the person behind the curtain". This happened recently to me when writing a script and adding the obligatory hashbang (#!) to the first line. I've done this hundreds of times before, and know that this specifies the interpreter (and optional arguments) that will run the rest of the file. But I wanted to understand how this worked. Where is the line parsed, and how is the interpreter run?
+But at times it's an unsatisfying feeling not knowing how something is working under the hood, and there's a want to "pay some attention to the person behind the curtain". This happened recently to me when writing a script and adding the obligatory hashbang (#!) to the first line. I've done this hundreds of times before and know that this specifies the interpreter (and optional arguments) that run the rest of the file, but I wanted to understand how this worked: where is the line parsed, and how is the interpreter run?
 
 So in this article, join me for a dive through user and kernel space in order to answer the question:
 
@@ -60,8 +59,8 @@ strace -e trace=vfork,fork,clone,execve bash -c './data/foo.pl argument_1'
 ```
 
 ```
-execve("/bin/bash", ["bash", "-c", "./data/foo.pl argument_1"], 0x7ffe017d7b70 /* 100 vars */) = 0
-execve("./data/foo.pl", ["./data/foo.pl", "argument_1"], 0x563becc65890 /* 100 vars */) = 0
+execve("/bin/bash", ["bash", "-c", "./data/foo.pl argument_1"], 0x7ffffdf84020 /* 100 vars */) = 0
+execve("./data/foo.pl", ["./data/foo.pl", "argument_1"], 0x563c6922a890 /* 100 vars */) = 0
 $VAR1 = [
           'argument_1'
         ];
@@ -92,11 +91,11 @@ ldd $(which bash)
 ```
 
 ```
-	linux-vdso.so.1 (0x00007ffed146d000)
-	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007f517e707000)
-	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f517e503000)
-	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f517e112000)
-	/lib64/ld-linux-x86-64.so.2 (0x00007f517ec4b000)
+	linux-vdso.so.1 (0x00007ffea7d8c000)
+	libtinfo.so.5 => /lib/x86_64-linux-gnu/libtinfo.so.5 (0x00007f289d576000)
+	libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f289d372000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f289cf81000)
+	/lib64/ld-linux-x86-64.so.2 (0x00007f289daba000)
 ```
 We can see that libc on my machine is located at */lib/x86_64-linux-gnu/libc.so.6*. Using `objdump` we can disassemble the shared library, and we extract out the section that's related to `execve()`.
 
@@ -453,3 +452,4 @@ As with the rest of this article, we only consider an x86_64 processor architect
     - The file in the `#include <asm/syscalls_64.h>` line is generated dynamically.
 - It's generated from the [syscall table file](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/syscalls/syscall_64.tbl).
 - This is converted into a header via a simple [shell script](https://elixir.bootlin.com/linux/v4.15/source/arch/x86/entry/syscalls/syscallhdr.sh).
+
