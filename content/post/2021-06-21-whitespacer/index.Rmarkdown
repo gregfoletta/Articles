@@ -1,0 +1,73 @@
+---
+title: Whitespacer
+author: Greg Foletta
+date: '2021-06-20'
+slug: [whitespacer]
+categories: []
+tags:
+  - C
+images: []
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(
+    comment = '',
+    class.output = 'sh'
+)
+```
+
+
+Intro paragraph
+
+
+# The Program
+
+```{sh}
+git clone https://github.com/gregfoletta/whitespacer
+
+gcc -O3 -Wpedantic -o ws whitespacer/whitespacer.c
+```
+
+```{sh}
+curl -O --silent https://gregfoletta.s3.ap-southeast-2.amazonaws.com/articles-data/sample_text.txt
+cat sample_text.txt
+```
+
+```{sh}
+./ws < sample_text.txt | head -n8
+```
+
+```{sh random_test}
+# Create a 1Gb file full of random data
+dd if=/dev/urandom of=urandom bs=1MB count=256
+
+# Is the file in the cache?
+fincore --pages=false urandom
+
+# What's our throughput
+cat urandom | ./ws | ./ws -d | pv -fa > urandom.transfer
+
+# Are the two files the same?
+md5sum urandom*
+
+```
+
+```{sh}
+nc -l 8080 | ./ws -d & 
+cat sample_text.txt | ./ws | nc -N localhost 8080
+```
+
+
+
+# The Code
+
+
+
+
+
+
+
+```{sh cleanup, include = FALSE}
+rm -rf whitespacer ws sample_text.txt urandom urandom.transfer
+```
+
