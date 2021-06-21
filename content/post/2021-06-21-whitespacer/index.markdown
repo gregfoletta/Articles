@@ -24,7 +24,7 @@ git clone https://github.com/gregfoletta/whitespacer
 gcc -O3 -Wpedantic -o ws whitespacer/whitespacer.c
 ```
 
-```{.bash}
+```{bash}
 Cloning into 'whitespacer'...
 ```
 
@@ -39,11 +39,11 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i
 ```
 
 
-```sh
+```bash
 ./ws < sample_text.txt | head -n8
 ```
 
-```
+```{bash}
 	
 	
 			
@@ -70,15 +70,16 @@ md5sum urandom*
 
 ```
 
-```{.bash}
+```{bash}
 256+0 records in
 256+0 records out
-256000000 bytes (256 MB, 244 MiB) copied, 7.28328 s, 35.1 MB/s
+256000000 bytes (256 MB, 244 MiB) copied, 7.69295 s, 33.3 MB/s
 filename size	total pages	cached pages	cached size	cached percentage
 urandom 256000000 62500 62500 256000000 100.000000
-[ 276MiB/s]
-a29502929634e600a3c71a065b5d0c56  urandom
-a29502929634e600a3c71a065b5d0c56  urandom.transfer
+[ 192MiB/s]
+[ 198MiB/s]
+cdb2600d0b785358b10c7db0c89874a4  urandom
+cdb2600d0b785358b10c7db0c89874a4  urandom.transfer
 ```
 
 
@@ -91,14 +92,87 @@ cat sample_text.txt | ./ws | nc -N localhost 8080
 Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
 ```
 
+![Wireshark TCP Follow](tcp_follow.png)
 
 
 # The Code
 
+## Encoding
+
+```
+Foo Bar
+```
 
 
+```C
+//Lookup table for each of the 2-bit values
+char ws_lookup[] = {'\b', '\t', '\n', '\v'};
 
+//Encode each 2 bits of the byte into whitespace
+int ws_encode(const unsigned char *bytes_in, unsigned char *ws_out, const ssize_t bytes) {
+    int x;
 
+    for (x = 0; x < bytes; x++) {
+    ¦   *ws_out++ = (bytes_in[x] & 0x03) + ws_lookup[0];
+    ¦   *ws_out++ = (bytes_in[x] >> 2 & 0x03) + ws_lookup[0];
+    ¦   *ws_out++ = (bytes_in[x] >> 4 & 0x03) + ws_lookup[0];
+    ¦   *ws_out++ = (bytes_in[x] >> 6 & 0x03) + ws_lookup[0];
+    }
+
+    return x * 4;
+}
+
+```
+
+## Read Loop
+
+```C
+ssize_t bytes_read = 0, total_bytes_read = 0, num_bytes_write = 0;
+unsigned char *bytes_in, *bytes_out;
+
+int decoding = is_decoder(argc, argv);
+
+bytes_in = malloc(READ_BUFFER * sizeof(*bytes_in));
+bytes_out = malloc(OUTPUT_BUFFER * sizeof(*bytes_out));
+
+```
+
+```C
+unsigned char *buffer_pos = bytes_in;
+
+while ( (bytes_read = read(STDIN, buffer_pos, READ_BUFFER - total_bytes_read)) ) {
+¦   if (bytes_read < 0) {
+¦   ¦   fprintf(stderr, "- read() error\n");
+¦   ¦   return -1;
+¦   }
+
+¦   total_bytes_read += bytes_read;
+
+¦   if (decoding) {
+¦   ¦   //If decoding we need a multiple of four bytes.
+¦   ¦   if (!total_bytes_read & 4) {
+¦   ¦   ¦   fprintf(stderr, "%ld\n", total_bytes_read);
+¦   ¦   ¦   //Move our buffer along
+¦   ¦   ¦   buffer_pos += bytes_read;
+¦   ¦   ¦   continue;
+¦   ¦   }
+
+¦   ¦   num_bytes_write = ws_decode(bytes_in, bytes_out, total_bytes_read);
+¦   } else {
+¦   ¦   num_bytes_write = ws_encode(bytes_in, bytes_out, total_bytes_read);
+¦   }
+
+¦   //Write out to stdout
+¦   if ( write(STDOUT, bytes_out, num_bytes_write) < 0 ) {
+¦   ¦   fprintf(stderr, "- write() error\n");
+¦   ¦   return -1;
+¦   }
+
+¦   //Reset buffer position and total bytes read.
+¦   buffer_pos = bytes_in;
+¦   total_bytes_read = 0;
+}
+```
 
 
 
