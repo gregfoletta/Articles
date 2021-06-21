@@ -11,8 +11,7 @@ images: []
 
 ```{r include=FALSE}
 knitr::opts_chunk$set(
-    comment = '',
-    class.output = 'sh'
+    comment = ''
 )
 ```
 
@@ -22,13 +21,13 @@ Intro paragraph
 
 # The Program
 
-```{sh}
+```{bash, class.output = 'bash'}
 git clone https://github.com/gregfoletta/whitespacer
 
 gcc -O3 -Wpedantic -o ws whitespacer/whitespacer.c
 ```
 
-```{sh}
+```{bash, attr.output = c('data-lang' = 'bash')}
 curl -O --silent https://gregfoletta.s3.ap-southeast-2.amazonaws.com/articles-data/sample_text.txt
 cat sample_text.txt
 ```
@@ -37,7 +36,7 @@ cat sample_text.txt
 ./ws < sample_text.txt | head -n8
 ```
 
-```{sh random_test}
+```{bash, class.output = 'bash'}
 # Create a 1Gb file full of random data
 dd if=/dev/urandom of=urandom bs=1MB count=256
 
