@@ -1,0 +1,52 @@
+---
+title: Bandwidth Seasonal Decomposition
+author: 'Greg Foletta'
+date: '2021-07-05'
+slug: []
+categories: []
+tags: []
+images: []
+---
+
+
+```{r include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(tsibble)
+library(fable)
+library(fabletools)
+library(feasts)
+```
+
+```{r message=FALSE, warning=FALSE}
+throughput <-
+    read_delim('throughput.csv', delim = ';') %>%
+    clean_names() %>% 
+    as_tsibble(index = time, key = direction)
+```
+
+```{r echo=FALSE}
+throughput %>% 
+    ggplot() +
+    geom_line(aes(index, bps)) +
+    labs(
+        title = "Router Throughput",
+        x = "Date/Time (30m increments)",
+        y = "Bits per Second",
+    )
+```
+
+# Classical Decomposition
+
+```{r warning=FALSE}
+throughput %>% 
+    model(
+        classical = classical_decomposition(bps ~ season('1 day'))
+    ) %>% 
+    components() %>% 
+    autoplot()
+```
+
+
+
