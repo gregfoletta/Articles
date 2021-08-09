@@ -6,18 +6,7 @@ slug: [decomposition]
 categories: [R, Time Series]
 ---
 
-```{r include=FALSE}
-library(tidyverse)
-library(lubridate)
-library(janitor)
-library(tsibble)
-library(fable)
-library(fabletools)
-library(feasts)
-library(scales)
-library(gt)
-library(cowplot)
-```
+
 
 The most satisfying aspect of study I find is when you're see a links between two different areas.
 
@@ -44,7 +33,8 @@ Some time series data exhibit patterns, and it is therefore possible to split or
 
 # The Data
 
-```{r echo=TRUE, warning=FALSE}
+
+```r
 throughput <-
     read_csv(
         'throughput.csv',
@@ -58,45 +48,27 @@ throughput <-
     as_tsibble(index = time, key = direction)
 ```
 
+```
+## Date in ISO8601 format; converting timezone from UTC to "Australia/Melbourne".
+```
+
 Let's get an understanding of the data and perform some diagnostics on it. It's a a time series table or [tsibble](https://github.com/tidyverts/tsibble) called `throughput`. It consists of `nrow(throughput)/2` observations of the ingress and egress bandwidth through a router averaged over a 30 minute interval for approximately 30 days.
 
 As we're going to be forecasting, we immediately split out data into a training set and a test set. The training set will contain the first 23 days of data, and the training set will contain the last 7. We'll predominantly use the training set in this article, and only use the test set to test our forecasts later on:
 
-```{r}
+
+```r
 throughput_train <- throughput %>% filter_index(. ~ '2021-06-24')
 throughput_test <- throughput %>% filter_index('2021-06-25' ~ '2021-07-01')
 ```
 
 We can now take a look at the first week of the training data:
 
-```{r echo=FALSE}
-throughput_train %>% 
-    filter_index(~ '2021-06-08') %>% 
-    ggplot() +
-    geom_line(aes(time, Mbps, colour = direction)) +
-    labs(
-        title = "Router Throughput",
-        subtitle = '30 Minute Observation Interval',
-        x = "Date/Time (30m)",
-        y = "Megabits per Second",
-        colour = 'Direction'
-    ) +
-    scale_x_datetime(date_breaks = '1 day') +
-    theme(axis.text.x = element_text(angle = 20, hjust = 1))
-```
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" />
 
 We see a very clear pattern with a daily "seasonal period" for both the ingress and egress directions. We can use a seasonal plot to get a better view of the seasonality, which we are pretty confident is one day. The chart plots each day over the top of each other, giving us a view of how it varies over time. 
 
-```{r echo=FALSE}
-throughput_train %>% 
-    gg_season(Mbps, period = 48) +
-    labs(
-        title = "Router Throughput - Seasonal Plot",
-        subtitle = "Period: 1 day",
-        x = "Time of Day",
-        y = "Megabits per Second"
-    )
-```
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-5-1.png" width="672" />
 
 This gives us a really good view of the daily 'seasonality'. For both ingress and egress traffic we see traffic dropping overnight and reaching a minimum around 4 am in the morning. It rises slowly at first, increasing at 9am when everyone starts work. It continues to rise throughput the day, peaking at around 9pm at night.
 
@@ -108,7 +80,8 @@ We're going to use 'Seasonal and Trend decomposition using LOESS' (STL) to decom
 
 We're pretty confident that the seasonal period is one day given our knowledge of the data and the graphs we've rendered. But it would be nice to put a quantative number around that. We can use the `feat_stl()` function to pull out some STL specific features. As our data is measured every 30 minutes, a period of 48 is one day.
 
-```{r}
+
+```r
 throughput_train %>% 
     features(Mbps, list(~{ feat_stl(.x, .period = 48) })) %>% 
     select(
@@ -116,9 +89,18 @@ throughput_train %>%
     )
 ```
 
+```
+## # A tibble: 2 x 3
+##   direction trend_strength seasonal_strength_48
+##   <chr>              <dbl>                <dbl>
+## 1 egress             0.659                0.934
+## 2 ingress            0.583                0.980
+```
+
 Both the *trend strength* and *seasonal strength* are statistics between 0 and 1, giving a measure of the strength of the components that the STL decomposition has extracted. We see a reasonable trend, but a very large seasonal strength, comfirming our inuition of a daily seasonal pattern. We can now run our model over the data and extract out the components.
 
-```{r}
+
+```r
 # Define out STL model
 STL_tp <- STL(
     Mbps ~ trend() + season(period = 48),
@@ -136,75 +118,17 @@ tp_dcmp_stl <- tp_stl %>% components()
 
 Let's take a look at each of the components in both the ingress and egress directions:
 
-```{r echo=FALSE}
-tp_dcmp_stl %>%
-    pivot_longer(c(trend, season_48, remainder), names_to = 'component') %>%
-    ggplot() +
-    geom_line(aes(time, value, colour = component)) +
-    facet_grid(rows = vars(direction), scales = 'free_y') +
-    scale_colour_discrete(name = 'Component', labels = c('Remainder', 'Season', 'Trend-Cycle')) +
-    labs(
-        title = 'Throughput Decomposition',
-        subtitle = 'Season, Trend and Remainder Components',
-        x = 'Date/Time (30m)',
-        y = 'Megabits per Second'
-    )
-```
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
 Looks reasonable. The trend-cycle looks pretty flat which is to be expected given the relatively short time frame of the data. The ebbs and flows of the trend-cycle could be cyclic, or could be some longer term seasonality that we haven't captured.
 
 The remainder being small is a good sign, meaning that we've hopefully pulled out most of the 'signal' in the trend-cycle and seasonal components. Let's focus in on the remainder, also known as the residual.
 
-```{r echo=FALSE}
-# Residual line
-plot_stl_resid_line <-
-    tp_stl %>% 
-    augment() %>% 
-    ggplot() +
-    geom_line(aes(time, .resid, colour = direction)) +
-    labs(
-        x = 'Date/Time (30m)',
-        y = 'Megabits per Second',
-        colour = 'Direction'
-    )
-
-# Residual Histogram
-plot_stl_resid_hist <-
-    tp_stl %>% 
-    augment() %>% 
-    ggplot() +
-    geom_histogram(aes(.resid), binwidth = 1) +
-    labs(
-        x = 'Megabits per Second (Bin Width: 1 Mbps)',
-        y = 'Frequency',
-    )
-
-plot_grid(
-    ggdraw() + draw_label("Router Throughput - STL Model - Residual Diagnostics"),
-    plot_stl_resid_line,
-    plot_stl_resid_hist,
-    nrow = 3,
-    rel_heights = c(0.15, 1, 1)
-) 
-```
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" />
 
  There still appears to be some seasonality that hasn't been completely captured by the model, but that's not surprising given our simple model. The residuals have a reasonably Gaussian distribution, albeit with long tails. This means our prediction intervals should be pretty reasonable. A *QQ* plot will show us more detail.
 
-```{r echo=FALSE}
-tp_stl %>% 
-    augment() %>% 
-    ggplot(aes(sample = .resid, colour = direction)) +
-    geom_qq(alpha = .2) +
-    geom_qq_line() +
-    facet_grid(vars(direction), scales = 'free') +
-    labs(
-        title = 'STL Residuals - Quantile-Quantile Plot',
-        subtitle = 'Comparison: Normal Distribution',
-        x = 'Standard Deviations',
-        y = 'Megabits per Second',
-        colour = 'Direction'
-    )
-```
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" />
 
 For the first two standard deviations each side of the mean our residuals follow a normal distribution quote well. After that the long tails become very apparent. What this implies is that our 95% predication intervals should be good, but we can't count on anything above that.
 
@@ -212,7 +136,8 @@ For the first two standard deviations each side of the mean our residuals follow
 
 Now that we've decomposed out series, we can use this as a way to forecast our series into the future. This is done by applying a forecasting 
 
-```{r}
+
+```r
 tp_dcmp_stl %>% 
     ggplot() +
     geom_line(aes(time, season_adjust)) +
@@ -225,8 +150,11 @@ tp_dcmp_stl %>%
     )
 ```
 
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
-```{r}
+
+
+```r
 # Two decomposition models
 throughput_dcmp_mdl <-
     throughput_train %>%
@@ -242,15 +170,27 @@ throughput_dcmp_fc <-
     forecast(h = '7 days')
 ```
 
-```{r}
+
+```r
 throughput_dcmp_fc %>% 
     autoplot(throughput_test)
 ```
 
-```{r}
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+
+
+```r
 throughput_dcmp_fc %>% 
     accuracy(throughput_test) %>% 
     select(.model, direction, MAE) 
+```
+
+```
+## # A tibble: 2 x 3
+##   .model direction   MAE
+##   <chr>  <chr>     <dbl>
+## 1 SNAIVE egress     10.5
+## 2 SNAIVE ingress    16.0
 ```
 
 
