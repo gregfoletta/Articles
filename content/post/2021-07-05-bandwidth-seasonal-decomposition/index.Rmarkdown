@@ -2,11 +2,8 @@
 title: Bandwidth Seasonal Decomposition
 author: 'Greg Foletta'
 date: '2021-07-05'
-slug: []
-categories: []
-tags: []
-images: []
-output: md_document
+slug: bandwidth-decomposition
+categories: [R, Time Series]
 ---
 
 ```{r include=FALSE}
