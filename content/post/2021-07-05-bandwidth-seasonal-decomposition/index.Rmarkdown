@@ -64,7 +64,7 @@ throughput <-
 
 Let's get an understanding of the data and perform some diagnostics on it. The data we're using is contained in a time series table or [tsibble](https://github.com/tidyverts/tsibble) called `throughput`. It consists of `r nrow(throughput)/2` observations of the ingress and egress throughput through a router over 30 days. Each observation is the average throughput through the router over a 30 minute interval.
 
-As we're going to be forecasting, we immediately split out data into a training set and a test set. The training set will contain the first 23 days of data, and the training set will contain the last 7. We'll perform discovery and train our model on the training set, leaving the test set to ascertain the accuracy of our model.
+As we're going to be forecasting, we immediately split out data into a training set and a test set. The training set will contain the first 23 days of data, and the test set will contain the last 7. We'll perform discovery and train our model on the training set, leaving the test set to ascertain the accuracy of our model.
 
 ```{r}
 # Training set

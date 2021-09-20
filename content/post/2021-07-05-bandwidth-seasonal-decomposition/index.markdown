@@ -37,7 +37,7 @@ Often the trend and cycle components are combined into a single component called
 
 Let's get an understanding of the data and perform some diagnostics on it. The data we're using is contained in a time series table or [tsibble](https://github.com/tidyverts/tsibble) called `throughput`. It consists of 1440 observations of the ingress and egress throughput through a router over 30 days. Each observation is the average throughput through the router over a 30 minute interval.
 
-As we're going to be forecasting, we immediately split out data into a training set and a test set. The training set will contain the first 23 days of data, and the training set will contain the last 7. We'll perform discovery and train our model on the training set, leaving the test set to ascertain the accuracy of our model.
+As we're going to be forecasting, we immediately split out data into a training set and a test set. The training set will contain the first 23 days of data, and the test set will contain the last 7. We'll perform discovery and train our model on the training set, leaving the test set to ascertain the accuracy of our model.
 
 
 ```r
@@ -79,7 +79,7 @@ throughput_train %>%
 ```
 
 ```
-# A tibble: 2 x 3
+# A tibble: 2 × 3
   direction trend_strength seasonal_strength_48
   <chr>              <dbl>                <dbl>
 1 egress             0.659                0.934
@@ -175,7 +175,7 @@ throughput_dcmp_fc %>%
 ```
 
 ```
-# A tibble: 2 x 5
+# A tibble: 2 × 5
   .model direction .type   MAE  MAPE
   <chr>  <chr>     <chr> <dbl> <dbl>
 1 SNAIVE egress    Test   9.95 14.8 
