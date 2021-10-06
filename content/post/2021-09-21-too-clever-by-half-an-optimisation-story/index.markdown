@@ -1,8 +1,8 @@
 ---
-title: 'Too Clever By Half: An Optimisation Story'
+title: 'A Tale Of Two Optimisations'
 author: 'Greg Foletta'
 date: '2021-09-20'
-slug: 'too-clever-by-half'
+slug: 'tale-of-two-optimisations'
 categories: [R, C]
 ---
 
@@ -14,9 +14,19 @@ This article has somewhat of a multiple personality. In the first half I’ll wo
 
 I’m hoping that the two sections aren’t too disjointed.
 
-# Translation Function
+# Attempt 1: A Mathematical Function
 
-In the first iteration of the whitespacer program I used lookup tables to encode/decode the bytes. One lookup table took a dibit (two bits) of value 0 - 3 and mapped this to a whitespace character. Another lookup table did the inverse.
+In the first iteration of the whitespacer program I used lookup tables to encode/decode the bytes. One lookup table took a dibit (two bits) of value 0 - 3 and mapped this to a whitespace character. Another lookup table did the inverse. Here’s the lookup table encoder function, which I’ve factored out:
+
+``` c
+//Dibit to whitesapce lookup table
+char encode_lookup_tbl[] = { '\t', '\n', '\r', ' ' };
+
+//Given a dibit, returns the whitespace encoding
+unsigned char lookup_encode(const unsigned char dibit) {
+    return encode_lookup_tbl[ dibit ];
+}
+```
 
 I thought if I could find a mathematical function to perform this mapping, rather than a lookup table, I might be able to save some time on memory accesses in the hot encoding and decoding loop.
 
@@ -26,12 +36,12 @@ $$ f(x) = \beta_0 + \beta_1 x + \beta_2 x^2 + \beta_3 x^3 $$
 
 which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace character. I can also define the inverse function (with differing `\(\beta\)` coefficients) which does the inverse. Outside of the `\([0, 3]\)` range the function won’t make much sense, but that fine for our use case.
 
-<div id="xgywowsntd" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<div id="qfaplaeuft" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
 <style>html {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#xgywowsntd .gt_table {
+#qfaplaeuft .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -56,7 +66,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-left-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_heading {
+#qfaplaeuft .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -68,7 +78,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-right-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_title {
+#qfaplaeuft .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -78,7 +88,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-bottom-width: 0;
 }
 
-#xgywowsntd .gt_subtitle {
+#qfaplaeuft .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -88,13 +98,13 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-top-width: 0;
 }
 
-#xgywowsntd .gt_bottom_border {
+#qfaplaeuft .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_col_headings {
+#qfaplaeuft .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -109,7 +119,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-right-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_col_heading {
+#qfaplaeuft .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -129,7 +139,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   overflow-x: hidden;
 }
 
-#xgywowsntd .gt_column_spanner_outer {
+#qfaplaeuft .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -141,15 +151,15 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   padding-right: 4px;
 }
 
-#xgywowsntd .gt_column_spanner_outer:first-child {
+#qfaplaeuft .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#xgywowsntd .gt_column_spanner_outer:last-child {
+#qfaplaeuft .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#xgywowsntd .gt_column_spanner {
+#qfaplaeuft .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -161,7 +171,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   width: 100%;
 }
 
-#xgywowsntd .gt_group_heading {
+#qfaplaeuft .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -183,7 +193,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   vertical-align: middle;
 }
 
-#xgywowsntd .gt_empty_group_heading {
+#qfaplaeuft .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -198,15 +208,15 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   vertical-align: middle;
 }
 
-#xgywowsntd .gt_from_md > :first-child {
+#qfaplaeuft .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#xgywowsntd .gt_from_md > :last-child {
+#qfaplaeuft .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#xgywowsntd .gt_row {
+#qfaplaeuft .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -225,7 +235,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   overflow-x: hidden;
 }
 
-#xgywowsntd .gt_stub {
+#qfaplaeuft .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -237,7 +247,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   padding-left: 12px;
 }
 
-#xgywowsntd .gt_summary_row {
+#qfaplaeuft .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -247,7 +257,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   padding-right: 5px;
 }
 
-#xgywowsntd .gt_first_summary_row {
+#qfaplaeuft .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -257,7 +267,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-top-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_grand_summary_row {
+#qfaplaeuft .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -267,7 +277,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   padding-right: 5px;
 }
 
-#xgywowsntd .gt_first_grand_summary_row {
+#qfaplaeuft .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -277,11 +287,11 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-top-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_striped {
+#qfaplaeuft .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#xgywowsntd .gt_table_body {
+#qfaplaeuft .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -290,7 +300,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-bottom-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_footnotes {
+#qfaplaeuft .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -304,13 +314,13 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-right-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_footnote {
+#qfaplaeuft .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#xgywowsntd .gt_sourcenotes {
+#qfaplaeuft .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -324,41 +334,41 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
   border-right-color: #D3D3D3;
 }
 
-#xgywowsntd .gt_sourcenote {
+#qfaplaeuft .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#xgywowsntd .gt_left {
+#qfaplaeuft .gt_left {
   text-align: left;
 }
 
-#xgywowsntd .gt_center {
+#qfaplaeuft .gt_center {
   text-align: center;
 }
 
-#xgywowsntd .gt_right {
+#qfaplaeuft .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#xgywowsntd .gt_font_normal {
+#qfaplaeuft .gt_font_normal {
   font-weight: normal;
 }
 
-#xgywowsntd .gt_font_bold {
+#qfaplaeuft .gt_font_bold {
   font-weight: bold;
 }
 
-#xgywowsntd .gt_font_italic {
+#qfaplaeuft .gt_font_italic {
   font-style: italic;
 }
 
-#xgywowsntd .gt_super {
+#qfaplaeuft .gt_super {
   font-size: 65%;
 }
 
-#xgywowsntd .gt_footnote_marks {
+#qfaplaeuft .gt_footnote_marks {
   font-style: italic;
   font-weight: normal;
   font-size: 65%;
@@ -387,7 +397,7 @@ which takes a dibit of 0, 1, 2 or 3 and returns the appropriate whitespace chara
 </table>
 </div>
 
-I now create two models: one for encoding, and one for decoding. I’m using a linear regression rather than the Lagrange polynomial formula, but the results are the same.
+I now create two models: one for encoding, and one for decoding. I’m using a linear regression rather than the Lagrange polynomial formula, but the `\(\beta\)` coefficients end up the same.
 
 ``` r
 encode_model <-
@@ -419,12 +429,12 @@ tibble(
     )
 ```
 
-<div id="xpitxqzhnd" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<div id="nynybfbrwg" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
 <style>html {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#xpitxqzhnd .gt_table {
+#nynybfbrwg .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -449,7 +459,7 @@ tibble(
   border-left-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_heading {
+#nynybfbrwg .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -461,7 +471,7 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_title {
+#nynybfbrwg .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -471,7 +481,7 @@ tibble(
   border-bottom-width: 0;
 }
 
-#xpitxqzhnd .gt_subtitle {
+#nynybfbrwg .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -481,13 +491,13 @@ tibble(
   border-top-width: 0;
 }
 
-#xpitxqzhnd .gt_bottom_border {
+#nynybfbrwg .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_col_headings {
+#nynybfbrwg .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -502,7 +512,7 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_col_heading {
+#nynybfbrwg .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -522,7 +532,7 @@ tibble(
   overflow-x: hidden;
 }
 
-#xpitxqzhnd .gt_column_spanner_outer {
+#nynybfbrwg .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -534,15 +544,15 @@ tibble(
   padding-right: 4px;
 }
 
-#xpitxqzhnd .gt_column_spanner_outer:first-child {
+#nynybfbrwg .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#xpitxqzhnd .gt_column_spanner_outer:last-child {
+#nynybfbrwg .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#xpitxqzhnd .gt_column_spanner {
+#nynybfbrwg .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -554,7 +564,7 @@ tibble(
   width: 100%;
 }
 
-#xpitxqzhnd .gt_group_heading {
+#nynybfbrwg .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -576,7 +586,7 @@ tibble(
   vertical-align: middle;
 }
 
-#xpitxqzhnd .gt_empty_group_heading {
+#nynybfbrwg .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -591,15 +601,15 @@ tibble(
   vertical-align: middle;
 }
 
-#xpitxqzhnd .gt_from_md > :first-child {
+#nynybfbrwg .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#xpitxqzhnd .gt_from_md > :last-child {
+#nynybfbrwg .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#xpitxqzhnd .gt_row {
+#nynybfbrwg .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -618,7 +628,7 @@ tibble(
   overflow-x: hidden;
 }
 
-#xpitxqzhnd .gt_stub {
+#nynybfbrwg .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -630,7 +640,7 @@ tibble(
   padding-left: 12px;
 }
 
-#xpitxqzhnd .gt_summary_row {
+#nynybfbrwg .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -640,7 +650,7 @@ tibble(
   padding-right: 5px;
 }
 
-#xpitxqzhnd .gt_first_summary_row {
+#nynybfbrwg .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -650,7 +660,7 @@ tibble(
   border-top-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_grand_summary_row {
+#nynybfbrwg .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -660,7 +670,7 @@ tibble(
   padding-right: 5px;
 }
 
-#xpitxqzhnd .gt_first_grand_summary_row {
+#nynybfbrwg .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -670,11 +680,11 @@ tibble(
   border-top-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_striped {
+#nynybfbrwg .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#xpitxqzhnd .gt_table_body {
+#nynybfbrwg .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -683,7 +693,7 @@ tibble(
   border-bottom-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_footnotes {
+#nynybfbrwg .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -697,13 +707,13 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_footnote {
+#nynybfbrwg .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#xpitxqzhnd .gt_sourcenotes {
+#nynybfbrwg .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -717,41 +727,41 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#xpitxqzhnd .gt_sourcenote {
+#nynybfbrwg .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#xpitxqzhnd .gt_left {
+#nynybfbrwg .gt_left {
   text-align: left;
 }
 
-#xpitxqzhnd .gt_center {
+#nynybfbrwg .gt_center {
   text-align: center;
 }
 
-#xpitxqzhnd .gt_right {
+#nynybfbrwg .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#xpitxqzhnd .gt_font_normal {
+#nynybfbrwg .gt_font_normal {
   font-weight: normal;
 }
 
-#xpitxqzhnd .gt_font_bold {
+#nynybfbrwg .gt_font_bold {
   font-weight: bold;
 }
 
-#xpitxqzhnd .gt_font_italic {
+#nynybfbrwg .gt_font_italic {
   font-style: italic;
 }
 
-#xpitxqzhnd .gt_super {
+#nynybfbrwg .gt_super {
   font-size: 65%;
 }
 
-#xpitxqzhnd .gt_footnote_marks {
+#nynybfbrwg .gt_footnote_marks {
   font-style: italic;
   font-weight: normal;
   font-size: 65%;
@@ -785,15 +795,22 @@ tibble(
 </table>
 </div>
 
-We have a bit of a problem. I’ll be honest, I was hoping - somewhat optimistically - that I would get some nice, clean integer coefficients to work work.
+We’ve got a bit of a problem. I’ll be honest, I was hoping - somewhat optimistically - that I would get some nice, clean integer coefficients to work work.
+
+Let’s persist and create encoding and decoding functions based on polynomial functions.
 
 ``` c
 unsigned char poly_encode(const unsigned char dibit) {
-    return 9.0 + 4.666667 * dibit - 6.0 * (dibit * dibit) + 2.333333333333 * (dibit * dibit * dibit);
+    return 9.0 + 
+    4.666667 * dibit - 
+    6.0 * (dibit * dibit) + 
+    2.333333333333 * (dibit * dibit * dibit);
 }
 ```
 
-# What About a Switch?
+The cast from floating point to unsigned char gi
+
+# Attempt 2: A Switch
 
 While working on the polynomial functions, I the thought that, rather than using a lookup table or a mathematical function, I simply use a switch statement. It looks at the value of the dibit and simply returns the whitespace character. Here’s the implementation of the encoding function:
 
@@ -838,7 +855,7 @@ profiling_results <-
         algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
     ) %>% 
     mutate(
-            command = glue('cat urandom_32M | ./ws -a { algo } | ./ws -d -a { algo } > /dev/null'),
+            command = glue('cat urandom_32M | ./ws_debug -a { algo } | ./ws_debug -d -a { algo } > /dev/null'),
             time = system_profile(command)
     ) %>% 
     select(-command)
@@ -848,48 +865,52 @@ Rather than simply looking at the means or medians for each of the algorithms, w
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
+As I kind-of expected, the polynomial encoding/decoding is slower than the lookup table. But what is really surprising is that the switch statement is even slower. On average it’s taking over one second more to encode and decode the 32M file. I love a good surprise, so let’s dive in and find out what happening.
+
 # What’s With The Switch?
 
-So what is going on with this switch implementation? I took a bottom-up approach to trying to solve this mystery. This made sense because:
+I took a bottom-up approach to trying to solve this mystery. This made sense because:
 
 1.  I was the one that wrote it.
-2.  It was a very simple, and
-3.  I was using this as a learning experience.
+2.  The cod is simple and
+3.  This is a learning experience.
 
-I would recommend a more top-down approach in any other situation.
+In most other scenarios I think a top-down approach would be the more efficient.
 
-This bottom up appraoch was to first take a look at the instructions that were being executed on the CPU as the program was running. This can be done using `perf record`:
+The approach taken was to first take a look at the instructions that were being executed on the CPU as the program was running. We can use `perf record` execute the program take samples of it’s state, which on my machine will use the *Precise Event Based Sampling (PEBS)* Intel feature. At a certain frequency (default 4000Hz, based on an overflowing counter) the PEBS will write processor state (CPU ID, instruction pointer, register values, etc) to a buffer, issue an interrupt, and perf will read these values.
+
+By using the `-b` switch, perf also captures the *Last Branch Record (LBR) stack*. With the LBR processor feature, the CPU logs a set of *from* and *to* address of branches taken (predicted and mispredicted) to a set of special purpose registers in a ring buffer (my CPU has 32 entries in the ruing buffer). With this information perf can reconstitute the history of instructions executed on the CPU, rather than only having a single point - the instruction pointer - to use from the sample.
+
+Perf runs the whitespacer encoding half of the pipeline, and is fed 32Mb of random bytes.
 
 ``` sh
-perf record -b -o switch -e cycles ./ws_debug -a switch < urandom_32M > /dev/null
+perf record -b -o switch.data -e cycles:pp ./ws_debug -a switch < urandom_32M > /dev/null
 [ perf record: Woken up 22 times to write data ]
 [ perf record: Captured and wrote 5.345 MB switch.data (6833 samples) ]
 ```
 
-This is sampling the CPU 4000 times a second (the default, changed with the -F argument) and determining where the instruction pointer is, and approximately how many CPU cycles have ocurred since the last sample.
+Looking at the trace data (saved in *switch.data*), the *brstackins* field allows us to see the assembly instructions executed along the branches of the branch stack. Perf has captures around 43,000 executions of our `switch_encode()` function. Here’s the output from one of them:
 
 ``` sh
-perf script -F +brstackinsn -f -i switch.data
+perf script -F +brstackinsn -i switch.data
 ```
 
 ``` asm
-        switch_encode:
-        0000556e3cfa7ddd        insn: 55 
-        0000556e3cfa7dde        insn: 48 89 e5 
-        0000556e3cfa7de1        insn: 89 f8 
-        0000556e3cfa7de3        insn: 88 45 fc 
-        0000556e3cfa7de6        insn: 0f b6 45 fc 
-        0000556e3cfa7dea        insn: 83 f8 01 
-        0000556e3cfa7ded        insn: 74 1e 
-        0000556e3cfa7def        insn: 83 f8 01 
-        0000556e3cfa7df2        insn: 7f 06                     # PRED 6 cycles 1.33 IPC
-        0000556e3cfa7dfa        insn: 83 f8 02 
-        0000556e3cfa7dfd        insn: 74 15                     # MISPRED 1 cycles 1.00 IPC
-        0000556e3cfa7e14        insn: b8 0d 00 00 00 
-        0000556e3cfa7e19        insn: eb 07                     # PRED 18 cycles 0.06 IPC
-        0000556e3cfa7e22        insn: 5d 
-        0000556e3cfa7e23        insn: c3                        # PRED 5 cycles 0.20 IPC
+switch_encode:
+0000560dd2bffddd        insn: 55 
+0000560dd2bffdde        insn: 48 89 e5 
+0000560dd2bffde1        insn: 89 f8 
+0000560dd2bffde3        insn: 88 45 fc 
+0000560dd2bffde6        insn: 0f b6 45 fc 
+0000560dd2bffdea        insn: 83 f8 01 
+0000560dd2bffded        insn: 74 1e                     # MISPRED 4 cycles 1.50 IPC
+0000560dd2bffe0d        insn: b8 0a 00 00 00 
+0000560dd2bffe12        insn: eb 0e                     # PRED 22 cycles 0.05 IPC
+0000560dd2bffe22        insn: 5d 
+0000560dd2bffe23        insn: c3                        # PRED 5 cycles 0.20 IPC
 ```
+
+The thing that stands out immediately is the misprediction, and the wopping 22 cycles in the other predicted branch. Let’s take a step back and run the `perf stat` command to pull out to pull out some summaries:
 
 ``` sh
 # Perf stat with 32Mb urandom bytes
@@ -899,25 +920,22 @@ perf stat ./ws_debug -a switch < urandom_32M > /dev/null
     ## 
     ##  Performance counter stats for './ws_debug -a switch':
     ## 
-    ##        1931.190343      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  8      context-switches          #    0.004 K/sec                  
+    ##        1660.048586      task-clock (msec)         #    1.000 CPUs utilized          
+    ##                  3      context-switches          #    0.002 K/sec                  
     ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,851      page-faults               #    0.007 M/sec                  
-    ##      6,532,690,881      cycles                    #    3.383 GHz                    
-    ##      5,775,121,648      instructions              #    0.88  insn per cycle         
-    ##        968,227,349      branches                  #  501.363 M/sec                  
-    ##        122,583,603      branch-misses             #   12.66% of all branches        
+    ##             12,852      page-faults               #    0.008 M/sec                  
+    ##      6,314,282,417      cycles                    #    3.804 GHz                    
+    ##      5,772,420,360      instructions              #    0.91  insn per cycle         
+    ##        967,717,288      branches                  #  582.945 M/sec                  
+    ##        121,801,823      branch-misses             #   12.59% of all branches        
     ## 
-    ##        1.933769770 seconds time elapsed
+    ##        1.660692551 seconds time elapsed
 
-``` zsh
-# Create a 32M file of all zero bytes
-dd if=/dev/zero of=zero_32M bs=1MB count=32
-```
+The first statistic that should conern us is the instructions per cycle, which is just under one. The second is the numbner of branch misses, which is up at 12.56%. Put simply, we’re not getting much bang for our buck when it comes to predicting branches.
 
-    ## 32+0 records in
-    ## 32+0 records out
-    ## 32000000 bytes (32 MB, 31 MiB) copied, 0.0201193 s, 1.6 GB/s
+The hypothesis at this point is that given our data is random and uniformly distributed, combined with the branching (the C switch statement) used to encode the data, the branch predictor is performing poorly, and so is our performance.
+
+To confirm this hypothesis, let’s create an input file of all zeros and see how it performs.
 
 ``` zsh
 # Run the perf stat
@@ -927,95 +945,71 @@ perf stat ./ws_debug -a switch < zero_32M > /dev/null
     ## 
     ##  Performance counter stats for './ws_debug -a switch':
     ## 
-    ##         547.240778      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  2      context-switches          #    0.004 K/sec                  
+    ##         455.616288      task-clock (msec)         #    1.000 CPUs utilized          
+    ##                  0      context-switches          #    0.000 K/sec                  
     ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,850      page-faults               #    0.023 M/sec                  
-    ##      1,819,721,576      cycles                    #    3.325 GHz                    
-    ##      5,836,770,862      instructions              #    3.21  insn per cycle         
-    ##        999,771,210      branches                  # 1826.931 M/sec                  
-    ##            217,576      branch-misses             #    0.02% of all branches        
+    ##             12,853      page-faults               #    0.028 M/sec                  
+    ##      1,770,972,691      cycles                    #    3.887 GHz                    
+    ##      5,835,066,403      instructions              #    3.29  insn per cycle         
+    ##        999,466,423      branches                  # 2193.658 M/sec                  
+    ##            148,811      branch-misses             #    0.01% of all branches        
     ## 
-    ##        0.547518297 seconds time elapsed
+    ##        0.455830290 seconds time elapsed
 
-# Why The Lookup?
+There we go - the number of instructions has remained almost the same, but we’re getting 3.2 instructions per cycle. This appears to be due to the number of branch misses approaching 0.
 
-Now let’s take a look at the unsurprising result: the lookup algorithm is than the polynomial. The reason is simple: it takes more instructions to run. I’ve extracted the assembly out using *objdump* which you can see [here](https://github.com/gregfoletta/whitespacer/blob/algorithms/encoding_assembly.md).
+I’ll be honest and say that at this point I’m butting up against the limits of my CPU architecture knowledge. I thought that branch predictions were a zero-cost optimisation, and that mispredicted branches didn’t have any side effects. If anyone has any more information or theories on this please [reach out](mailto:greg@foletta.org).
+
+# Lookup versus Polynomial
+
+Now let’s take a look at the unsurprising result: our original lookup algorithm versus the polynomial. We’ll go straight to using `perf stat` to see high-level statistics:
 
 ``` zsh
-perf stat ./ws -a lookup < urandom_32M > /dev/null
-```
-
-    ## 
-    ##  Performance counter stats for './ws -a lookup':
-    ## 
-    ##         535.703442      task-clock (msec)         #    0.998 CPUs utilized          
-    ##                  8      context-switches          #    0.015 K/sec                  
-    ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,850      page-faults               #    0.024 M/sec                  
-    ##      1,759,076,713      cycles                    #    3.284 GHz                    
-    ##      5,200,260,035      instructions              #    2.96  insn per cycle         
-    ##        488,226,193      branches                  #  911.374 M/sec                  
-    ##            477,634      branch-misses             #    0.10% of all branches        
-    ## 
-    ##        0.536536069 seconds time elapsed
-
-``` zsh
-perf stat ./ws -a poly < urandom_32M > /dev/null
-```
-
-    ## 
-    ##  Performance counter stats for './ws -a poly':
-    ## 
-    ##        1127.449560      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  8      context-switches          #    0.007 K/sec                  
-    ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,853      page-faults               #    0.011 M/sec                  
-    ##      3,815,850,683      cycles                    #    3.384 GHz                    
-    ##      7,757,764,944      instructions              #    2.03  insn per cycle         
-    ##        487,993,660      branches                  #  432.830 M/sec                  
-    ##            320,777      branch-misses             #    0.07% of all branches        
-    ## 
-    ##        1.128916265 seconds time elapsed
-
-But what really surprised me was the switch was much slower than
-
-# Intermission
-
-# What About The o
-
-``` zsh
+# Lookup table 
 perf stat ./ws_debug -a lookup < urandom_32M > /dev/null
 ```
 
     ## 
     ##  Performance counter stats for './ws_debug -a lookup':
     ## 
-    ##         467.730584      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  1      context-switches          #    0.002 K/sec                  
+    ##         480.813345      task-clock (msec)         #    0.998 CPUs utilized          
+    ##                  4      context-switches          #    0.008 K/sec                  
     ##                  0      cpu-migrations            #    0.000 K/sec                  
     ##             12,851      page-faults               #    0.027 M/sec                  
-    ##      1,745,162,634      cycles                    #    3.731 GHz                    
-    ##      5,196,440,141      instructions              #    2.98  insn per cycle         
-    ##        487,709,448      branches                  # 1042.714 M/sec                  
-    ##            111,900      branch-misses             #    0.02% of all branches        
+    ##      1,727,564,992      cycles                    #    3.593 GHz                    
+    ##      5,195,086,496      instructions              #    3.01  insn per cycle         
+    ##        487,500,554      branches                  # 1013.908 M/sec                  
+    ##            129,061      branch-misses             #    0.03% of all branches        
     ## 
-    ##        0.468017329 seconds time elapsed
+    ##        0.481558683 seconds time elapsed
 
 ``` zsh
+# Polynomial
 perf stat ./ws_debug -a poly < urandom_32M > /dev/null
 ```
 
     ## 
     ##  Performance counter stats for './ws_debug -a poly':
     ## 
-    ##        1146.243565      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                 14      context-switches          #    0.012 K/sec                  
+    ##         969.362232      task-clock (msec)         #    1.000 CPUs utilized          
+    ##                  8      context-switches          #    0.008 K/sec                  
     ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,853      page-faults               #    0.011 M/sec                  
-    ##      3,846,017,269      cycles                    #    3.355 GHz                    
-    ##      7,757,334,153      instructions              #    2.02  insn per cycle         
-    ##        487,867,624      branches                  #  425.623 M/sec                  
-    ##            546,365      branch-misses             #    0.11% of all branches        
+    ##             12,854      page-faults               #    0.013 M/sec                  
+    ##      3,760,745,809      cycles                    #    3.880 GHz                    
+    ##      7,755,555,360      instructions              #    2.06  insn per cycle         
+    ##        487,534,636      branches                  #  502.944 M/sec                  
+    ##            124,997      branch-misses             #    0.03% of all branches        
     ## 
-    ##        1.146873995 seconds time elapsed
+    ##        0.969693473 seconds time elapsed
+
+We see two main reasons as to why the polynomial is slower. First off it simply takes for instructions to calculate the polynomial, as compared to simply looking up the value in a lookup table. Secondly, this increase in instructions is compounded by that fact that we’re getting less instructions per seconds.
+
+# Summary
+
+In this article we looked at two different alternatives to a lookup table for encoding and decoding bytes in the *whitespacer* program. The fist was to try and use a polynomial function, and the seconds was to use a switch statement rather than a lookup table.
+
+Upon calculation of the coefficients for the polynomial, we knew we
+
+``` zsh
+rm -rf whitespacer urandom_32M zero_32M ws_debug 
+```
