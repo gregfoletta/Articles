@@ -1,0 +1,352 @@
+---
+title: 'A Tale Of Two Optimisations'
+author: 'Greg Foletta'
+date: '2021-09-20'
+slug: 'a-tale-of-two-optimisations'
+categories: [R, C]
+---
+
+A couple of month's ago I wrote a toy program called 'whitespacer'. It takes bytes and encodes/decodes them from/to whitespace.
+
+Ever since I wrote it, it's been gnawing at me that it could have been written in a more performant manner. In this article we're going to look at a couple of different ways of encoding and decoding the data. We'll profile and visualise their different performances, then take a bit of a deep dive into their differences at the CPU level. Along the way we'll become gain a better understanding about the `perf` performance analysis tool and how branch prediction affects performance.
+
+
+```{r, include=FALSE}
+library(tidyverse)
+library(gt)
+library(glue)
+library(cowplot)
+```
+
+# A Quick Recap
+
+In [this previous article](/post/2021-06-21-whitespacer/) I took you through the *whitespcer* program. Here's a quick recap of what it does:
+
+- Works in an 'encoding' and 'decoding' mode'.
+- Reads from stdin and writes to stdout.
+- In encoding mode, takes each of the four dibits (2 bits) of a byte and turns it into one of four whitespace characters.
+    - Characters are tab, newline, carraige return and space.
+- Decoding mode does the reverse, taking groups of four whitespace characters and reconstituting the original byte.
+
+Here's the encoding function that we'll be looking to improve upon in this article.
+
+```C
+//Dibit to whitesapce lookup table
+char encode_lookup_tbl[] = { '\t', '\n', '\r', ' ' };
+
+//Given a dibit, returns the whitespace encoding
+unsigned char lookup_encode(const unsigned char dibit) {
+    return encode_lookup_tbl[ dibit ];
+}
+```
+
+The decoding function is the same but uses a different inverse table.
+
+# Attempt 1: A Mathematical Function
+
+What bothered me about the original implementation was the lookup table. Even though I knew they'd be cached, I thoguht the memory accesses to the lookup tables might have a detrimental affect on performance.
+
+I thought if I could find a mathematical function to perform this mapping, rather than a lookup table, I might be able to save some time on memory accesses in the hot encoding and decoding loop.
+
+From somewhere in the recesses of my brain I recalled that if we have a set of $k + 1$ data points \\(x_0, y_0), \ldots, (x_k, y_k)\\) where no two \\(x_i\\) are the same, we can fit a curve using a linear regression with a polynomial of degree \\(k\\). Here's our table of data points:
+
+```{r echo=FALSE}
+whitespace <-
+    tibble(
+        dibit = 0:3,
+        whitespace = c('\t', '\n', '\r', ' '),
+    ) %>% 
+    mutate(ascii_dec = map_int(whitespace, ~utf8ToInt(.x)))
+
+whitespace %>%
+    select(-whitespace) %>% 
+    gt() %>% 
+    cols_label(
+        dibit = 'Dibit',
+        ascii_dec = 'ASCII Decimal Value'
+    ) %>%
+    cols_align('center') %>% 
+    tab_options(container.width = '30%')
+```
+This means we can find \\(\beta\\) coefficients for the function
+$$ f(x) = \beta_0 + \beta_1 x + \beta_2 x^2 + \beta_3 x^3 $$
+such that when passed a dibit value it returns the appropriate whitespace character. We can also find the inverse polynomial \\f^{-1}(x)\\) which takes a whitespace character and returns a dibit to be our decoding function. Let's create these models in R, where `whitespace` is a tibble holding our dibit and whitespace values.
+
+```{r}
+encode_model <-
+    whitespace %>% 
+    lm(ascii_dec ~ dibit + I(dibit^2) + I(dibit^3), data = .)
+
+decode_model <-
+    whitespace %>% 
+    lm(dibit ~ ascii_dec + I(ascii_dec^2) + I(ascii_dec^3), data = .)
+```
+
+Visualising these models will help us see what's going on. On the left is out encoding function, which takes out dibit values and maps them to our ASCII whitespace characters. On the right is the inverse function, which takes the ASCII whitespace characters' decimal value and maps it back to a dibit. These show that outside of these data points the functions make little sense. 
+
+```{r echo=FALSE}
+plot_grid(
+    whitespace %>%
+        ggplot() +
+        geom_point(aes(dibit, ascii_dec)) +
+        geom_function(fun = ~{ predict(encode_model, tibble(dibit = .x))}) +
+        labs(
+            x = 'Dibit',
+            y = 'ASCII Decimal',
+            title = 'Whitespace Encoding Function'
+        ),
+    whitespace %>%
+        ggplot() +
+        geom_point(aes(ascii_dec, dibit)) +
+        geom_function(fun = ~{ predict(decode_model, tibble(ascii_dec = .x))}) +
+        labs(
+            x = 'ASCII Decimal',
+            y = 'Dibit',
+            title = 'Whitespace Decoding Function'
+        )
+)
+```
+
+Let's take a look at the \\(\beta\\) coefficients:
+
+```{r}
+tibble(
+    parameter = c('beta_0', 'beta_1', 'beta_2', 'beta_3'),
+    encode = encode_model %>% coef(),
+    decode = decode_model %>% coef()
+) %>% 
+    gt() %>% 
+    cols_label(
+        parameter = 'Parameter',
+        encode = 'Encoding',
+        decode = 'Decoding'
+    ) %>% 
+    cols_align('center') %>% 
+    tab_options(container.width = '50%')
+```
+Immediately we see a bit of a problem. I'll be honest in that I was hoping - somewhat optimistically - that I would get some nice, clean integer coefficients, but instead we've got floating point values. My gut feel is that having to use floating point instructions is not going to improve upon our original lookup table. But we won't know until we profile, so let's persist. Here's the new encoding function:
+
+```C
+unsigned char poly_encode(const unsigned char dibit) {
+    return (unsigned char) (9.0 + 
+    4.666667 * dibit - 
+    6.0 * (dibit * dibit) + 
+    2.333333333333 * (dibit * dibit * dibit));
+}
+```
+
+We don't need to hit the mark exactly, we just need to get close enough so that the whole part is correct. The cast to `usigned char` will give us this whole part, throwing away any values after the decimal point. 
+
+# Attempt 2: A Switch
+
+While working on the polynomial function, it struck me that we could also simply use a switch statement. It looks at the value of the dibit and returns the whitespace character. Here's the implementation of the encoding function:
+
+```C
+unsigned char switch_encode(const unsigned char dibit) {
+    switch (dibit) {
+        case 0:
+            return '\t';
+        case 1:
+            return '\n';
+        case 2:
+            return '\r';
+        case 3:
+            return ' ';
+    }
+}
+```
+
+We also need need a way to select the algorithm the program uses at runtime. A command line option *-a <algorithm>* has been added, where <algorithm> is either 'lookup', 'poly' or 'switch'. If none is specified it defaults to the original lookup table.
+
+# Profiling
+
+```{zsh include=FALSE}
+git clone --branch algorithms git@github.com:gregfoletta/whitespacer.git
+cd whitespacer
+make debug
+cp ws_debug ..
+cd ..
+dd if=/dev/urandom of=urandom_32M bs=1MB count=32
+```
+
+Rather than supposition, let's test how the different alogrithms perform. I've created a sm. I've created a small R function which takes a vector of shell commands and returns how long they took to run. There's a small amount of overhead in spawning a shell, but this is constant across and as we're looking at he *differences* between the runtimes, it gets cancelled out.
+
+```{r system_profile}
+system_profile <- function(commands) {
+    map_dbl(commands, ~{
+        start <- proc.time()["elapsed"] 
+        system(.x, ignore.stdout = TRUE)
+        finish <- proc.time()["elapsed"]
+        finish - start
+    })
+}
+```
+
+We run 200 iterations of an encode / decode pipeline for each algorithm, piping in a 32Mb file of random bytes generated from */dev/urandom*. The output is dumped to */dev/null*. 
+
+```{r}
+profiling_results <-
+    tibble(
+        n = 1:600,
+        algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
+    ) %>% 
+    mutate(
+            command = glue('cat urandom_32M | ./ws_debug -a { algo } {n} | ./ws_debug -d -a { algo } > /dev/null'),
+            time = system_profile(command)
+    ) %>% 
+    select(-command)
+```
+
+Rather than simply looking at the means or medians for each of the algorithms, we take a look at the distribution of runtimes for each with the mean highlighted.
+
+```{r echo=FALSE}
+profiling_means <-
+    profiling_results %>% 
+    group_by(algo) %>% 
+    summarise(mean = mean(time))
+
+profiling_results %>% 
+    ggplot() +
+    geom_density(aes(time, fill = algo), alpha = .4) +
+    geom_vline(data = profiling_means, aes(xintercept = mean, colour = algo)) +
+    geom_label(data = profiling_means, aes(x = mean, y = 0, label = round(mean, 2))) +
+    labs(
+        x = 'Seconds',
+        y = 'Density',
+        title = 'Whitespacer Algorithms - Performance',
+        subtitle = 'Encode/Decode 32Mb of random bytes',
+        fill = 'Algorithm',
+        colour = 'Algorithm'
+    )
+```
+
+As expected, the polynomial encoding/decoding is slower than the lookup table. But what is really surprising is that the switch statement: its slower than both! On average it's taking over one second more to encode and decode the 32M file. I love a good surprise, so let's dive in and find out what happening.
+
+# What's With The Switch?
+
+I took a bottom-up approach to trying to solve this mystery. This made sense because:
+
+a. I was the one that wrote it.
+b. The cod is simple and
+c. This is a learning experience.
+
+In most other scenarios I think a top-down approach would be the more efficient.
+
+The approach taken was to first take a look at the instructions that were being executed on the CPU as the program was running. We can use `perf record` execute the program take samples of it's state, which on my machine will use the *Precise Event Based Sampling (PEBS)* Intel feature. At a certain frequency (default 4000Hz, based on an overflowing counter) the PEBS will write processor state (CPU ID, instruction pointer, register values, etc) to a buffer, issue an interrupt, and perf will read these values.
+
+By using the `-b` switch, perf also captures the *Last Branch Record (LBR) stack*. With the LBR processor feature, the CPU logs a set of *from* and *to* address of branches taken (predicted and mispredicted) to a set of special purpose registers in a ring buffer (my CPU has 32 entries in the ruing buffer). With this information perf can reconstitute the history of instructions executed on the CPU, rather than only having a single point - the instruction pointer - to use from the sample.
+
+Perf runs the whitespacer encoding half of the pipeline, and is fed 32Mb of random bytes.
+
+```sh
+perf record -b -o switch.data -e cycles:pp ./ws_debug -a switch < urandom_32M > /dev/null
+[ perf record: Woken up 22 times to write data ]
+[ perf record: Captured and wrote 5.345 MB switch.data (6833 samples) ]
+```
+
+Looking at the trace data (saved in *switch.data*), the *brstackins* field allows us to see the assembly instructions executed along the branches of the branch stack. Perf has captures around 43,000 executions of our `switch_encode()` function. Here's the output from one of them:
+
+```sh
+perf script -F +brstackinsn -i switch.data
+```
+
+```asm
+switch_encode:
+0000560dd2bffddd        insn: 55 
+0000560dd2bffdde        insn: 48 89 e5 
+0000560dd2bffde1        insn: 89 f8 
+0000560dd2bffde3        insn: 88 45 fc 
+0000560dd2bffde6        insn: 0f b6 45 fc 
+0000560dd2bffdea        insn: 83 f8 01 
+0000560dd2bffded        insn: 74 1e                     # MISPRED 4 cycles 1.50 IPC
+0000560dd2bffe0d        insn: b8 0a 00 00 00 
+0000560dd2bffe12        insn: eb 0e                     # PRED 22 cycles 0.05 IPC
+0000560dd2bffe22        insn: 5d 
+0000560dd2bffe23        insn: c3                        # PRED 5 cycles 0.20 IPC
+```     
+
+The thing that stands out immediately is the misprediction, and the wopping 22 cycles in the other predicted branch. Let's take a step back and run the `perf stat` command to pull out to pull out some summaries:
+
+```{sh}
+# Perf stat with 32Mb urandom bytes
+perf stat ./ws_debug -a switch < urandom_32M > /dev/null       
+```
+
+The first statistic that should conern us is the instructions per cycle, which is just under one. The second is the numbner of branch misses, which is up at 12.56%. Put simply, we're not getting much bang for our buck when it comes to predicting branches.
+
+The hypothesis at this point is that given our data is random and uniformly distributed, combined with the branching (the C switch statement) used to encode the data, the branch predictor is performing poorly, and so is our performance. 
+
+To confirm this hypothesis, let's create an input file of all zeros and see how it performs. 
+
+```{zsh zero_file, include=FALSE}
+# Create a 32M file of all zero bytes
+dd if=/dev/zero of=zero_32M bs=1MB count=32
+```
+
+```{zsh perf_stat_switch_zero}
+# Perf stat with 32Mb of zero bytes
+perf stat ./ws_debug -a switch < zero_32M > /dev/null
+```
+
+```{r zero_profiling}
+profiling_results <-
+    tibble(
+        n = 1:30,
+        algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
+    ) %>% 
+    mutate(
+            command = glue('cat zero_32M | ./ws_debug -a { algo } {n} | ./ws_debug -d -a { algo } > /dev/null'),
+            time = system_profile(command)
+    ) %>% 
+    select(-command)
+    
+profiling_means <-
+    profiling_results %>% 
+    group_by(algo) %>% 
+    summarise(mean = mean(time))
+
+profiling_results %>% 
+    ggplot() +
+    geom_density(aes(time, fill = algo), alpha = .4) +
+    geom_vline(data = profiling_means, aes(xintercept = mean, colour = algo)) +
+    geom_label(data = profiling_means, aes(x = mean, y = 0, label = round(mean, 2))) +
+    labs(
+        x = 'Seconds',
+        y = 'Density',
+        title = 'Whitespacer Algorithms - Performance',
+        subtitle = 'Encode/Decode 32Mb of zero bytes',
+        fill = 'Algorithm',
+        colour = 'Algorithm'
+    )
+```
+
+
+There we go - the number of instructions has remained almost the same, but we're getting 3.2 instructions per cycle. This appears to be due to the number of branch misses approaching 0.
+
+I'll be honest and say that at this point I'm butting up against the limits of my CPU architecture knowledge. I thought that branch predictions were a zero-cost optimisation, and that mispredicted branches didn't have any side effects. If anyone has any more information or theories on this please [reach out](mailto:greg@foletta.org).
+
+# Lookup versus Polynomial
+
+Now let's take a look at the unsurprising result: our original lookup algorithm versus the polynomial. We'll go straight to using `perf stat` to see high-level statistics:
+
+```{zsh}
+# Lookup table 
+perf stat ./ws_debug -a lookup < urandom_32M > /dev/null
+```
+
+```{zsh}
+# Polynomial
+perf stat ./ws_debug -a poly < urandom_32M > /dev/null
+```
+
+We see two main reasons as to why the polynomial is slower. First off it simply takes for instructions to calculate the polynomial, as compared to simply looking up the value in a lookup table. Secondly, this increase in instructions is compounded by that fact that we're getting less instructions per seconds.
+
+# Summary
+
+In this article we looked at two different alternatives to a lookup table for encoding and decoding bytes in the *whitespacer* program. The fist was to try and use a polynomial function, and the seconds was to use a switch statement rather than a lookup table.
+
+
+```{zsh include=FALSE}
+rm -rf whitespacer urandom_32M zero_32M ws_debug 
+```
+
