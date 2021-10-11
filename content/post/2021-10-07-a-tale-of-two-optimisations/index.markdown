@@ -6,24 +6,21 @@ slug: 'a-tale-of-two-optimisations'
 categories: [R, C]
 ---
 
-A couple of month’s ago I wrote a toy program called ‘whitespacer.’ It takes bytes and encodes/decodes them from/to whitespace.
-
-Ever since I wrote it, it’s been gnawing at me that it could have been written in a more performant manner. In this article we’re going to look at a couple of different ways of encoding and decoding the data. We’ll profile and visualise their different performances, then take a bit of a deep dive into their differences at the CPU level. Along the way we’ll become gain a better understanding about the `perf` performance analysis tool and how branch prediction affects performance.
+A couple of months ago I wrote a toy program called [whitespacer](github.com/gregfoletta/whitespacer). Ever since, I’ve had this gnawing feeling that I could have done it better; that it could have been written in a more performant manner. In this article I’ll take you through a couple of different ideas I came up with. We’ll profile and visualise their different performances and stumble upon some surprising behaviour. We’ll use this as an excuse to take a deeper dive into their behaviour at the CPU level and gain a better understanding about the `perf` performance analysis tool and branch prediction.
 
 # A Quick Recap
 
-In [this previous article](/post/2021-06-21-whitespacer/) I took you through the *whitespcer* program. Here’s a quick recap of what it does:
+In [a previous article](/post/2021-06-21-whitespacer/) I took you through the *whitespacer* program. Here’s a quick recap of what it does:
 
+-   Reads from standard in and writes to standard out.
 -   Works in an ‘encoding’ and ‘decoding’ mode’.
--   Reads from stdin and writes to stdout.
--   In encoding mode, takes each of the four dibits (2 bits) of a byte and turns it into one of four whitespace characters.
-    -   Characters are tab, newline, carraige return and space.
+-   In encoding mode it takes each of the four dibits (2 bits) of each byte and turns it into one of four whitespace characters (tab, new line, carriage return and space).
 -   Decoding mode does the reverse, taking groups of four whitespace characters and reconstituting the original byte.
 
-Here’s the encoding function that we’ll be looking to improve upon in this article.
+Here’s the encoding function:
 
 ``` c
-//Dibit to whitesapce lookup table
+//Dibit to whitesapce lookup table (global variable)
 char encode_lookup_tbl[] = { '\t', '\n', '\r', ' ' };
 
 //Given a dibit, returns the whitespace encoding
@@ -32,22 +29,22 @@ unsigned char lookup_encode(const unsigned char dibit) {
 }
 ```
 
-The decoding function is the same but uses a different inverse table.
+I’ve omitted the decoding function for brevity, but it’s the same with a different lookup table.
 
 # Attempt 1: A Mathematical Function
 
-What bothered me about the original implementation was the lookup table. Even though I knew they’d be cached, I thoguht the memory accesses to the lookup tables might have a detrimental affect on performance.
+What bothered me about the original implementation was the lookup table. Even though I knew they’d be cached, I still thought the memory accesses might have a detrimental affect on performance.
 
-I thought if I could find a mathematical function to perform this mapping, rather than a lookup table, I might be able to save some time on memory accesses in the hot encoding and decoding loop.
+I had an idea about using mathematical functions (rather than the lookup table) to perform the encoding/decoding. This would remove the memory accesses and perhaps improve performance.
 
-From somewhere in the recesses of my brain I recalled that if we have a set of `\(k + 1\)` data points \\(x\_0, y\_0), , (x\_k, y\_k)\\) where no two \\(x\_i\\) are the same, we can fit a curve using a linear regression with a polynomial of degree \\(k\\). Here’s our table of data points:
+From somewhere I recalled that if we have a set of \\(k + 1\\) data points \\((x\_0, y\_0),…, (x\_k, y\_k)\\) where no two \\(x\_i\\) are the same, we can fit a curve using a linear regression with a polynomial of degree \\(k\\). Here’s our table of data points:
 
-<div id="atspdsoolc" style="overflow-x:auto;overflow-y:auto;width:30%;height:auto;">
+<div id="hrzskzpmfx" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
 <style>html {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#atspdsoolc .gt_table {
+#hrzskzpmfx .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -57,7 +54,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   font-weight: normal;
   font-style: normal;
   background-color: #FFFFFF;
-  width: auto;
+  width: 30%;
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #A8A8A8;
@@ -72,7 +69,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-left-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_heading {
+#hrzskzpmfx .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -84,7 +81,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-right-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_title {
+#hrzskzpmfx .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -94,7 +91,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-bottom-width: 0;
 }
 
-#atspdsoolc .gt_subtitle {
+#hrzskzpmfx .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -104,13 +101,13 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-top-width: 0;
 }
 
-#atspdsoolc .gt_bottom_border {
+#hrzskzpmfx .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_col_headings {
+#hrzskzpmfx .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -125,7 +122,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-right-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_col_heading {
+#hrzskzpmfx .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -145,7 +142,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   overflow-x: hidden;
 }
 
-#atspdsoolc .gt_column_spanner_outer {
+#hrzskzpmfx .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -157,15 +154,15 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   padding-right: 4px;
 }
 
-#atspdsoolc .gt_column_spanner_outer:first-child {
+#hrzskzpmfx .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#atspdsoolc .gt_column_spanner_outer:last-child {
+#hrzskzpmfx .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#atspdsoolc .gt_column_spanner {
+#hrzskzpmfx .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -177,7 +174,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   width: 100%;
 }
 
-#atspdsoolc .gt_group_heading {
+#hrzskzpmfx .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -199,7 +196,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   vertical-align: middle;
 }
 
-#atspdsoolc .gt_empty_group_heading {
+#hrzskzpmfx .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -214,15 +211,15 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   vertical-align: middle;
 }
 
-#atspdsoolc .gt_from_md > :first-child {
+#hrzskzpmfx .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#atspdsoolc .gt_from_md > :last-child {
+#hrzskzpmfx .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#atspdsoolc .gt_row {
+#hrzskzpmfx .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -241,7 +238,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   overflow-x: hidden;
 }
 
-#atspdsoolc .gt_stub {
+#hrzskzpmfx .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -253,7 +250,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   padding-left: 12px;
 }
 
-#atspdsoolc .gt_summary_row {
+#hrzskzpmfx .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -263,7 +260,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   padding-right: 5px;
 }
 
-#atspdsoolc .gt_first_summary_row {
+#hrzskzpmfx .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -273,7 +270,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-top-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_grand_summary_row {
+#hrzskzpmfx .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -283,7 +280,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   padding-right: 5px;
 }
 
-#atspdsoolc .gt_first_grand_summary_row {
+#hrzskzpmfx .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -293,11 +290,11 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-top-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_striped {
+#hrzskzpmfx .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#atspdsoolc .gt_table_body {
+#hrzskzpmfx .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -306,7 +303,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-bottom-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_footnotes {
+#hrzskzpmfx .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -320,13 +317,13 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-right-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_footnote {
+#hrzskzpmfx .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#atspdsoolc .gt_sourcenotes {
+#hrzskzpmfx .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -340,41 +337,41 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
   border-right-color: #D3D3D3;
 }
 
-#atspdsoolc .gt_sourcenote {
+#hrzskzpmfx .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#atspdsoolc .gt_left {
+#hrzskzpmfx .gt_left {
   text-align: left;
 }
 
-#atspdsoolc .gt_center {
+#hrzskzpmfx .gt_center {
   text-align: center;
 }
 
-#atspdsoolc .gt_right {
+#hrzskzpmfx .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#atspdsoolc .gt_font_normal {
+#hrzskzpmfx .gt_font_normal {
   font-weight: normal;
 }
 
-#atspdsoolc .gt_font_bold {
+#hrzskzpmfx .gt_font_bold {
   font-weight: bold;
 }
 
-#atspdsoolc .gt_font_italic {
+#hrzskzpmfx .gt_font_italic {
   font-style: italic;
 }
 
-#atspdsoolc .gt_super {
+#hrzskzpmfx .gt_super {
   font-size: 65%;
 }
 
-#atspdsoolc .gt_footnote_marks {
+#hrzskzpmfx .gt_footnote_marks {
   font-style: italic;
   font-weight: normal;
   font-size: 65%;
@@ -405,7 +402,7 @@ From somewhere in the recesses of my brain I recalled that if we have a set of `
 
 This means we can find \\(\\) coefficients for the function
 $$ f(x) = \beta_0 + \beta_1 x + \beta_2 x^2 + \beta_3 x^3 $$
-such that when passed a dibit value it returns the appropriate whitespace character. We can also find the inverse polynomial \\f^{-1}(x)\\) which takes a whitespace character and returns a dibit to be our decoding function. Let’s create these models in R, where `whitespace` is a tibble holding our dibit and whitespace values.
+such that when passed a dibit value it returns the appropriate whitespace character. We can also find the inverse polynomial \\(f^{-1}(x)\\) which takes a whitespace character and returns a dibit to be our decoding function. Let’s create linear regression models in R where `whitespace` is the table holding our dibit and whitespace values:
 
 ``` r
 encode_model <-
@@ -417,34 +414,18 @@ decode_model <-
     lm(dibit ~ ascii_dec + I(ascii_dec^2) + I(ascii_dec^3), data = .)
 ```
 
-Visualising these models will help us see what’s going on. On the left is out encoding function, which takes out dibit values and maps them to our ASCII whitespace characters. On the right is the inverse function, which takes the ASCII whitespace characters’ decimal value and maps it back to a dibit. These show that outside of these data points the functions make little sense.
+Visualising these models will help us see what’s going on. On the left is our encoding model, which takes out dibit values and maps them to our ASCII whitespace characters. On the right our decoding model, which takes the ASCII whitespace characters’ decimal value and maps it back to a dibit. What becomes obvious by visualising these is how they make no sense for any values outside of our four points:
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" />
 
 Let’s take a look at the \\(\\) coefficients:
 
-``` r
-tibble(
-    parameter = c('beta_0', 'beta_1', 'beta_2', 'beta_3'),
-    encode = encode_model %>% coef(),
-    decode = decode_model %>% coef()
-) %>% 
-    gt() %>% 
-    cols_label(
-        parameter = 'Parameter',
-        encode = 'Encoding',
-        decode = 'Decoding'
-    ) %>% 
-    cols_align('center') %>% 
-    tab_options(container.width = '50%')
-```
-
-<div id="lnknvxcsag" style="overflow-x:auto;overflow-y:auto;width:50%;height:auto;">
+<div id="fzeonzdcyg" style="overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
 <style>html {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', 'Fira Sans', 'Droid Sans', Arial, sans-serif;
 }
 
-#lnknvxcsag .gt_table {
+#fzeonzdcyg .gt_table {
   display: table;
   border-collapse: collapse;
   margin-left: auto;
@@ -454,7 +435,7 @@ tibble(
   font-weight: normal;
   font-style: normal;
   background-color: #FFFFFF;
-  width: auto;
+  width: 30%;
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #A8A8A8;
@@ -469,7 +450,7 @@ tibble(
   border-left-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_heading {
+#fzeonzdcyg .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -481,7 +462,7 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_title {
+#fzeonzdcyg .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -491,7 +472,7 @@ tibble(
   border-bottom-width: 0;
 }
 
-#lnknvxcsag .gt_subtitle {
+#fzeonzdcyg .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -501,13 +482,13 @@ tibble(
   border-top-width: 0;
 }
 
-#lnknvxcsag .gt_bottom_border {
+#fzeonzdcyg .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_col_headings {
+#fzeonzdcyg .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -522,7 +503,7 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_col_heading {
+#fzeonzdcyg .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -542,7 +523,7 @@ tibble(
   overflow-x: hidden;
 }
 
-#lnknvxcsag .gt_column_spanner_outer {
+#fzeonzdcyg .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -554,15 +535,15 @@ tibble(
   padding-right: 4px;
 }
 
-#lnknvxcsag .gt_column_spanner_outer:first-child {
+#fzeonzdcyg .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#lnknvxcsag .gt_column_spanner_outer:last-child {
+#fzeonzdcyg .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#lnknvxcsag .gt_column_spanner {
+#fzeonzdcyg .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -574,7 +555,7 @@ tibble(
   width: 100%;
 }
 
-#lnknvxcsag .gt_group_heading {
+#fzeonzdcyg .gt_group_heading {
   padding: 8px;
   color: #333333;
   background-color: #FFFFFF;
@@ -596,7 +577,7 @@ tibble(
   vertical-align: middle;
 }
 
-#lnknvxcsag .gt_empty_group_heading {
+#fzeonzdcyg .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -611,15 +592,15 @@ tibble(
   vertical-align: middle;
 }
 
-#lnknvxcsag .gt_from_md > :first-child {
+#fzeonzdcyg .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#lnknvxcsag .gt_from_md > :last-child {
+#fzeonzdcyg .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#lnknvxcsag .gt_row {
+#fzeonzdcyg .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -638,7 +619,7 @@ tibble(
   overflow-x: hidden;
 }
 
-#lnknvxcsag .gt_stub {
+#fzeonzdcyg .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -650,7 +631,7 @@ tibble(
   padding-left: 12px;
 }
 
-#lnknvxcsag .gt_summary_row {
+#fzeonzdcyg .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -660,7 +641,7 @@ tibble(
   padding-right: 5px;
 }
 
-#lnknvxcsag .gt_first_summary_row {
+#fzeonzdcyg .gt_first_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -670,7 +651,7 @@ tibble(
   border-top-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_grand_summary_row {
+#fzeonzdcyg .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -680,7 +661,7 @@ tibble(
   padding-right: 5px;
 }
 
-#lnknvxcsag .gt_first_grand_summary_row {
+#fzeonzdcyg .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -690,11 +671,11 @@ tibble(
   border-top-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_striped {
+#fzeonzdcyg .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#lnknvxcsag .gt_table_body {
+#fzeonzdcyg .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -703,7 +684,7 @@ tibble(
   border-bottom-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_footnotes {
+#fzeonzdcyg .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -717,13 +698,13 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_footnote {
+#fzeonzdcyg .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding: 4px;
 }
 
-#lnknvxcsag .gt_sourcenotes {
+#fzeonzdcyg .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -737,41 +718,41 @@ tibble(
   border-right-color: #D3D3D3;
 }
 
-#lnknvxcsag .gt_sourcenote {
+#fzeonzdcyg .gt_sourcenote {
   font-size: 90%;
   padding: 4px;
 }
 
-#lnknvxcsag .gt_left {
+#fzeonzdcyg .gt_left {
   text-align: left;
 }
 
-#lnknvxcsag .gt_center {
+#fzeonzdcyg .gt_center {
   text-align: center;
 }
 
-#lnknvxcsag .gt_right {
+#fzeonzdcyg .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#lnknvxcsag .gt_font_normal {
+#fzeonzdcyg .gt_font_normal {
   font-weight: normal;
 }
 
-#lnknvxcsag .gt_font_bold {
+#fzeonzdcyg .gt_font_bold {
   font-weight: bold;
 }
 
-#lnknvxcsag .gt_font_italic {
+#fzeonzdcyg .gt_font_italic {
   font-style: italic;
 }
 
-#lnknvxcsag .gt_super {
+#fzeonzdcyg .gt_super {
   font-size: 65%;
 }
 
-#lnknvxcsag .gt_footnote_marks {
+#fzeonzdcyg .gt_footnote_marks {
   font-style: italic;
   font-weight: normal;
   font-size: 65%;
@@ -805,7 +786,7 @@ tibble(
 </table>
 </div>
 
-Immediately we see a bit of a problem. I’ll be honest in that I was hoping - somewhat optimistically - that I would get some nice, clean integer coefficients, but instead we’ve got floating point values. My gut feel is that having to use floating point instructions is not going to improve upon our original lookup table. But we won’t know until we profile, so let’s persist. Here’s the new encoding function:
+Immediately we see a bit of a problem. I’ll be honest that I was hoping - somewhat optimistically - for some nice, clean integer coefficients. Instead we’ve got floating point values. My gut feel is that having to use floating point instructions is not going to improve upon our original lookup table. But we won’t know until we profile, so let’s persist. Here’s the new polynomial encoding function, with the decoding function omitted for brevity:
 
 ``` c
 unsigned char poly_encode(const unsigned char dibit) {
@@ -816,11 +797,11 @@ unsigned char poly_encode(const unsigned char dibit) {
 }
 ```
 
-We don’t need to hit the mark exactly, we just need to get close enough so that the whole part is correct. The cast to `usigned char` will give us this whole part, throwing away any values after the decimal point.
+We don’t need to (and are probably unlikely to) hit the mark exactly, we just need to get close enough so that the whole part of the floating point value is correct. The cast to `usigned char` will give us this whole part, throwing away any values after the decimal point.
 
 # Attempt 2: A Switch
 
-While working on the polynomial function, it struck me that we could also simply use a switch statement. It looks at the value of the dibit and returns the whitespace character. Here’s the implementation of the encoding function:
+While working on the polynomial function, it struck me that we could also use a conditional statement to make decisions on how to encode (and decode) individual dibits. Here’s an implementation which uses a switch statement:
 
 ``` c
 unsigned char switch_encode(const unsigned char dibit) {
@@ -837,11 +818,11 @@ unsigned char switch_encode(const unsigned char dibit) {
 }
 ```
 
-We also need need a way to select the algorithm the program uses at runtime. A command line option *-a <algorithm>* has been added, where <algorithm> is either ‘lookup,’ ‘poly’ or ‘switch.’ If none is specified it defaults to the original lookup table.
+We also need need a way to select the algorithm the program uses at runtime. A command line option *-a <algorithm>* has been added, where <algorithm> is either ‘lookup,’ ‘poly’ or ‘switch.’ If none is specified it defaults to the original lookup table. You can find the full code for the new, multi-algorithm whitespacer [here](https://github.com/gregfoletta/whitespacer/tree/algorithms).
 
 # Profiling
 
-Rather than supposition, let’s test how the different alogrithms perform. I’ve created a sm. I’ve created a small R function which takes a vector of shell commands and returns how long they took to run. There’s a small amount of overhead in spawning a shell, but this is constant across and as we’re looking at he *differences* between the runtimes, it gets cancelled out.
+Rather than supposition, let’s test how the different algorithms perform. I’ve created an R function which takes a vector of shell commands and returns how long they took to run. There will be a small amount of overhead in spawning a shell, but as this is constant across all executions and as we’re looking at he *differences* between the runtimes, it gets cancelled out.
 
 ``` r
 system_profile <- function(commands) {
@@ -854,16 +835,18 @@ system_profile <- function(commands) {
 }
 ```
 
-We run 200 iterations of an encode / decode pipeline for each algorithm, piping in a 32Mb file of random bytes generated from */dev/urandom*. The output is dumped to */dev/null*.
+We now run 200 iterations of an encode / decode pipeline for each algorithm and look at the time each takes to run, piping in a 32Mb file of random bytes generated from */dev/urandom*. The output is dumped to */dev/null*. The executables have been compiled with all optimisations disabled.
 
 ``` r
 profiling_results <-
     tibble(
-        n = 1:600,
+        n = 1:9,
         algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
     ) %>% 
     mutate(
-            command = glue('cat urandom_32M | ./ws_debug -a { algo } {n} | ./ws_debug -d -a { algo } > /dev/null'),
+            command = glue(
+                '< urandom_32M ./ws_debug -a { algo } | ./ws_debug -d -a { algo } > /dev/null'
+            ),
             time = system_profile(command)
     ) %>% 
     select(-command)
@@ -873,23 +856,13 @@ Rather than simply looking at the means or medians for each of the algorithms, w
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
-As expected, the polynomial encoding/decoding is slower than the lookup table. But what is really surprising is that the switch statement: its slower than both! On average it’s taking over one second more to encode and decode the 32M file. I love a good surprise, so let’s dive in and find out what happening.
+As expected, the polynomial encoding/decoding is slower than the lookup table. But what is really surprising is the switch statement: its slower than both! On average it’s 2.3 seconds slower than the lookup table! I love a good surprise, so let’s dive in and try to work out what’s happening.
 
 # What’s With The Switch?
 
-I took a bottom-up approach to trying to solve this mystery. This made sense because:
+We’ll take a bottom up approach and look at the instructions that were being executed on the CPU as the process was running. Using `perf record` we take samples of the process’s state, most importantly the instruction pointer. By using the `-b` switch, perf also captures the *Last Branch Record (LBR) stack*. With the LBR processor feature, the CPU logs the *from* and *to* addresses of predicted and mispredicted branches taken to a set of special purpose registers. With this information, *perf* can reconstitute the a history of the instructions executed, rather than only having a single point in time to use from the sample.
 
-1.  I was the one that wrote it.
-2.  The cod is simple and
-3.  This is a learning experience.
-
-In most other scenarios I think a top-down approach would be the more efficient.
-
-The approach taken was to first take a look at the instructions that were being executed on the CPU as the program was running. We can use `perf record` execute the program take samples of it’s state, which on my machine will use the *Precise Event Based Sampling (PEBS)* Intel feature. At a certain frequency (default 4000Hz, based on an overflowing counter) the PEBS will write processor state (CPU ID, instruction pointer, register values, etc) to a buffer, issue an interrupt, and perf will read these values.
-
-By using the `-b` switch, perf also captures the *Last Branch Record (LBR) stack*. With the LBR processor feature, the CPU logs a set of *from* and *to* address of branches taken (predicted and mispredicted) to a set of special purpose registers in a ring buffer (my CPU has 32 entries in the ruing buffer). With this information perf can reconstitute the history of instructions executed on the CPU, rather than only having a single point - the instruction pointer - to use from the sample.
-
-Perf runs the whitespacer encoding half of the pipeline, and is fed 32Mb of random bytes.
+Let’s run the encoding half of the pipeline and feed it 32Mb of random bytes:
 
 ``` sh
 perf record -b -o switch.data -e cycles:pp ./ws_debug -a switch < urandom_32M > /dev/null
@@ -897,7 +870,7 @@ perf record -b -o switch.data -e cycles:pp ./ws_debug -a switch < urandom_32M > 
 [ perf record: Captured and wrote 5.345 MB switch.data (6833 samples) ]
 ```
 
-Looking at the trace data (saved in *switch.data*), the *brstackins* field allows us to see the assembly instructions executed along the branches of the branch stack. Perf has captures around 43,000 executions of our `switch_encode()` function. Here’s the output from one of them:
+Looking at the trace data (saved in *switch.data*), the *brstackins* field allows us to see the instructions executed and approximate CPU cycles for different branches. Perf has captured around 43,000 executions of our `switch_encode()` function, with just one of these displayed below:
 
 ``` sh
 perf script -F +brstackinsn -i switch.data
@@ -918,134 +891,108 @@ switch_encode:
 0000560dd2bffe23        insn: c3                        # PRED 5 cycles 0.20 IPC
 ```
 
-The thing that stands out immediately is the misprediction, and the wopping 22 cycles in the other predicted branch. Let’s take a step back and run the `perf stat` command to pull out to pull out some summaries:
+Even without decoding the machine code, what immediately stands stand out is the 22 cycles taken following the branch misprediction. Let’s now zoom out and run `perf stat` to pull out some summary statistics:
 
 ``` sh
 # Perf stat with 32Mb urandom bytes
 perf stat ./ws_debug -a switch < urandom_32M > /dev/null       
 ```
 
-    ## 
-    ##  Performance counter stats for './ws_debug -a switch':
-    ## 
-    ##        1658.055170      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  4      context-switches          #    0.002 K/sec                  
-    ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,852      page-faults               #    0.008 M/sec                  
-    ##      6,317,437,770      cycles                    #    3.810 GHz                    
-    ##      5,772,191,219      instructions              #    0.91  insn per cycle         
-    ##        967,643,280      branches                  #  583.601 M/sec                  
-    ##        121,900,789      branch-misses             #   12.60% of all branches        
-    ## 
-    ##        1.659130589 seconds time elapsed
 
-The first statistic that should conern us is the instructions per cycle, which is just under one. The second is the numbner of branch misses, which is up at 12.56%. Put simply, we’re not getting much bang for our buck when it comes to predicting branches.
+     Performance counter stats for './ws_debug -a switch':
 
-The hypothesis at this point is that given our data is random and uniformly distributed, combined with the branching (the C switch statement) used to encode the data, the branch predictor is performing poorly, and so is our performance.
+           1641.089879      task-clock (msec)         #    1.000 CPUs utilized          
+                     7      context-switches          #    0.004 K/sec                  
+                     0      cpu-migrations            #    0.000 K/sec                  
+                12,853      page-faults               #    0.008 M/sec                  
+         6,316,880,424      cycles                    #    3.849 GHz                    
+         5,772,375,503      instructions              #    0.91  insn per cycle         
+           967,706,194      branches                  #  589.673 M/sec                  
+           121,878,281      branch-misses             #   12.59% of all branches        
 
-To confirm this hypothesis, let’s create an input file of all zeros and see how it performs.
+           1.641870438 seconds time elapsed
+
+The first statistic that stands out are the instructions per cycle, which is just under one. The likely cause of this is the number is the number of branch misses, which is up at \~12%. These branch prediction misses are destroying any benefit of pipelining in the CPU.
+
+I’ve got an sneaking suspicion that the cause of these missed branch predictions is our input data, so let’s test the hypothesis. We create a 32Mb file of all zeros from */dev/zero* instead of random bytes, then re-profile with this data as input instead of the random bytes. I’ll omit the code and go straight to the results:
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/zero_profiling-1.png" width="672" />
+
+The switch algorithm now outperforms the others! Here’s the *perf stat*:
 
 ``` zsh
 # Perf stat with 32Mb of zero bytes
 perf stat ./ws_debug -a switch < zero_32M > /dev/null
 ```
 
-    ## 
-    ##  Performance counter stats for './ws_debug -a switch':
-    ## 
-    ##         462.646730      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  1      context-switches          #    0.002 K/sec                  
-    ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,852      page-faults               #    0.028 M/sec                  
-    ##      1,785,116,443      cycles                    #    3.858 GHz                    
-    ##      5,835,314,253      instructions              #    3.27  insn per cycle         
-    ##        999,506,500      branches                  # 2160.410 M/sec                  
-    ##            171,532      branch-misses             #    0.02% of all branches        
-    ## 
-    ##        0.463012748 seconds time elapsed
 
-``` r
-profiling_results <-
-    tibble(
-        n = 1:30,
-        algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
-    ) %>% 
-    mutate(
-            command = glue('cat zero_32M | ./ws_debug -a { algo } {n} | ./ws_debug -d -a { algo } > /dev/null'),
-            time = system_profile(command)
-    ) %>% 
-    select(-command)
-    
-profiling_means <-
-    profiling_results %>% 
-    group_by(algo) %>% 
-    summarise(mean = mean(time))
+     Performance counter stats for './ws_debug -a switch':
 
-profiling_results %>% 
-    ggplot() +
-    geom_density(aes(time, fill = algo), alpha = .4) +
-    geom_vline(data = profiling_means, aes(xintercept = mean, colour = algo)) +
-    geom_label(data = profiling_means, aes(x = mean, y = 0, label = round(mean, 2))) +
-    labs(
-        x = 'Seconds',
-        y = 'Density',
-        title = 'Whitespacer Algorithms - Performance',
-        subtitle = 'Encode/Decode 32Mb of zero bytes',
-        fill = 'Algorithm',
-        colour = 'Algorithm'
-    )
-```
+            524.998367      task-clock (msec)         #    0.998 CPUs utilized          
+                    33      context-switches          #    0.063 K/sec                  
+                     0      cpu-migrations            #    0.000 K/sec                  
+                12,853      page-faults               #    0.024 M/sec                  
+         1,827,951,688      cycles                    #    3.482 GHz                    
+         5,834,871,616      instructions              #    3.19  insn per cycle         
+           999,396,597      branches                  # 1903.618 M/sec                  
+               185,046      branch-misses             #    0.02% of all branches        
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/zero_profiling-1.png" width="672" />
+           0.526126660 seconds time elapsed
 
-There we go - the number of instructions has remained almost the same, but we’re getting 3.2 instructions per cycle. This appears to be due to the number of branch misses approaching 0.
+In the grand scheme of things, almost no branch prediction misses, and a huge speed increase as compared to the random bytes.
 
-I’ll be honest and say that at this point I’m butting up against the limits of my CPU architecture knowledge. I thought that branch predictions were a zero-cost optimisation, and that mispredicted branches didn’t have any side effects. If anyone has any more information or theories on this please [reach out](mailto:greg@foletta.org).
+Now this is where I start to butt up against the limits of my CPU architecture knowledge (feel free to [contact me](mailto:greg@foletta.org) with any corrections), but what I assume is happening is that the branch predictor on my CPU is using historical branching information to try and make good guesses. But when the input is random bytes, history provides no additional information, and the branch predictor adds no benefit. In fact it may be a hindrance due to the penalty of a missed branches.
 
 # Lookup versus Polynomial
 
-Now let’s take a look at the unsurprising result: our original lookup algorithm versus the polynomial. We’ll go straight to using `perf stat` to see high-level statistics:
+Now let’s take a look at the unsurprising result: our original lookup algorithm versus the polynomial. We’ll go straight to using `perf stat` to see high-level statistics. First up is the lookup algorithm:
 
 ``` zsh
 # Lookup table 
 perf stat ./ws_debug -a lookup < urandom_32M > /dev/null
 ```
 
-    ## 
-    ##  Performance counter stats for './ws_debug -a lookup':
-    ## 
-    ##         462.481227      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  0      context-switches          #    0.000 K/sec                  
-    ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,852      page-faults               #    0.028 M/sec                  
-    ##      1,687,558,028      cycles                    #    3.649 GHz                    
-    ##      5,195,104,985      instructions              #    3.08  insn per cycle         
-    ##        487,489,417      branches                  # 1054.074 M/sec                  
-    ##             97,701      branch-misses             #    0.02% of all branches        
-    ## 
-    ##        0.463036330 seconds time elapsed
+
+     Performance counter stats for './ws_debug -a lookup':
+
+            448.711935      task-clock (msec)         #    0.996 CPUs utilized          
+                     9      context-switches          #    0.020 K/sec                  
+                     0      cpu-migrations            #    0.000 K/sec                  
+                12,851      page-faults               #    0.029 M/sec                  
+         1,694,238,421      cycles                    #    3.776 GHz                    
+         5,194,807,323      instructions              #    3.07  insn per cycle         
+           487,407,742      branches                  # 1086.238 M/sec                  
+                92,316      branch-misses             #    0.02% of all branches        
+
+           0.450334167 seconds time elapsed
+
+Now the polynomial:
 
 ``` zsh
 # Polynomial
 perf stat ./ws_debug -a poly < urandom_32M > /dev/null
 ```
 
-    ## 
-    ##  Performance counter stats for './ws_debug -a poly':
-    ## 
-    ##         968.111096      task-clock (msec)         #    0.999 CPUs utilized          
-    ##                  7      context-switches          #    0.007 K/sec                  
-    ##                  0      cpu-migrations            #    0.000 K/sec                  
-    ##             12,852      page-faults               #    0.013 M/sec                  
-    ##      3,746,605,851      cycles                    #    3.870 GHz                    
-    ##      7,755,261,498      instructions              #    2.07  insn per cycle         
-    ##        487,451,809      branches                  #  503.508 M/sec                  
-    ##            104,295      branch-misses             #    0.02% of all branches        
-    ## 
-    ##        0.968726968 seconds time elapsed
 
-We see two main reasons as to why the polynomial is slower. First off it simply takes for instructions to calculate the polynomial, as compared to simply looking up the value in a lookup table. Secondly, this increase in instructions is compounded by that fact that we’re getting less instructions per seconds.
+     Performance counter stats for './ws_debug -a poly':
+
+            970.773548      task-clock (msec)         #    1.000 CPUs utilized          
+                     1      context-switches          #    0.001 K/sec                  
+                     0      cpu-migrations            #    0.000 K/sec                  
+                12,853      page-faults               #    0.013 M/sec                  
+         3,762,791,989      cycles                    #    3.876 GHz                    
+         7,755,359,156      instructions              #    2.06  insn per cycle         
+           487,501,085      branches                  #  502.178 M/sec                  
+                94,286      branch-misses             #    0.02% of all branches        
+
+           0.970993316 seconds time elapsed
+
+We see two main reasons as to why the polynomial is slower. First off it simply takes more instructions to calculate the polynomial as opposed to looking up the value in a lookup table. Second, even with the (likely cached) memory accesses, we’re able to execute more instructions per cycle with the lookup table as opposed to the polynomial algorithm.
 
 # Summary
 
-In this article we looked at two different alternatives to a lookup table for encoding and decoding bytes in the *whitespacer* program. The fist was to try and use a polynomial function, and the seconds was to use a switch statement rather than a lookup table.
+In this article we looked at two different alternatives to a lookup table for encoding and decoding bytes in the *whitespacer* program. The fist was to try and use a polynomial function, and the second was to use a conditional switch statement.
+
+We found a surprising result with the switch statement, and were able to determine using the *perf* tool that we were paying a penalty for missed branch predictions due to the randomness of the input data.
+
+When you run into a problem or a surprising result, you’re often gifted an opportunity to learn something new. I’ve certainly learned a lot about *perf*, LBR stacks and branch prediction in putting this article together.
