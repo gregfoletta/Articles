@@ -59,17 +59,7 @@ whitespace <-
     mutate(ascii_dec = map_int(whitespace, ~utf8ToInt(.x)))
 
 whitespace %>%
-    select(-whitespace) %>% 
-    gt() %>% 
-    cols_label(
-        dibit = 'Dibit',
-        ascii_dec = 'ASCII Decimal Value'
-    ) %>%
-    cols_align('center') %>%
-    tab_options(
-        table.width = '30%',
-        table.align = 'center'
-    )
+    select(-whitespace)
 ```
 
 This means we can find \\(\beta\\) coefficients for the function
@@ -118,18 +108,7 @@ tibble(
     parameter = c('beta_0', 'beta_1', 'beta_2', 'beta_3'),
     encode = encode_model %>% coef(),
     decode = decode_model %>% coef()
-) %>% 
-    gt() %>% 
-    cols_label(
-        parameter = 'Parameter',
-        encode = 'Encoding',
-        decode = 'Decoding'
-    ) %>% 
-    cols_align('center') %>%
-    tab_options(
-        table.width = '30%',
-        table.align = 'center'
-    )
+)
 ```
 
 Immediately we see a bit of a problem. I'll be honest that I was hoping - somewhat optimistically - for some nice, clean integer coefficients. Instead we've got floating point values. My gut feel is that having to use floating point instructions is not going to improve upon our original lookup table. But we won't know until we profile, so let's persist. Here's the new polynomial encoding function, with the decoding function omitted for brevity:
@@ -190,12 +169,12 @@ system_profile <- function(commands) {
 }
 ```
 
-We now run 200 iterations of an encode / decode pipeline for each algorithm and look at the time each takes to run, piping in a 32Mb file of random bytes generated from */dev/urandom*. The output is dumped to */dev/null*. The executables have been compiled with all optimisations disabled. 
+We now run 100 iterations of an encode / decode pipeline for each algorithm and look at the time each takes to run, piping in a 32Mb file of random bytes generated from */dev/urandom*. The output is dumped to */dev/null*. The executables have been compiled with all optimisations disabled. 
 
 ```{r}
 profiling_results <-
     tibble(
-        n = 1:9,
+        n = 1:300,
         algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
     ) %>% 
     mutate(
@@ -285,7 +264,7 @@ dd if=/dev/zero of=zero_32M bs=1MB count=32
 ```{r zero_profiling, echo=FALSE}
 profiling_results <-
     tibble(
-        n = 1:9,
+        n = 1:300,
         algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
     ) %>% 
     mutate(
