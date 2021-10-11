@@ -1,7 +1,7 @@
 ---
 title: 'A Tale Of Two Optimisations'
 author: 'Greg Foletta'
-date: '2021-09-20'
+date: '2021-10-10'
 slug: 'a-tale-of-two-optimisations'
 categories: [R, C]
 ---
