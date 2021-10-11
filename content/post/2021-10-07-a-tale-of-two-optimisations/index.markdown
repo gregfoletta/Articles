@@ -6,7 +6,7 @@ slug: 'a-tale-of-two-optimisations'
 categories: [R, C]
 ---
 
-A couple of months ago I wrote a toy program called [whitespacer](github.com/gregfoletta/whitespacer). Ever since, I've had this gnawing feeling that I could have done it better; that it could have been written in a more performant manner. In this article I'll take you through a couple of different ideas I came up with. We'll profile and visualise their different performances and stumble upon some surprising behaviour. We'll use this as an excuse to take a deeper dive into their behaviour at the CPU level and gain a better understanding about the `perf` performance analysis tool and branch prediction.
+A couple of months ago I wrote a toy program called [whitespacer](https://github.com/gregfoletta/whitespacer). Ever since, I've had this gnawing feeling that I could have done it better; that it could have been written in a more performant manner. In this article I'll take you through a couple of different ideas I came up with. We'll profile and visualise their different performances and stumble upon some surprising behaviour. We'll use this as an excuse to take a deeper dive into their behaviour at the CPU level and gain a better understanding about the `perf` performance analysis tool and branch prediction.
 
 
 
