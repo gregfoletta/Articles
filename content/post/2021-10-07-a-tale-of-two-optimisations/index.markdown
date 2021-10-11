@@ -160,7 +160,7 @@ Rather than simply looking at the means or medians for each of the algorithms, w
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
-As expected, the polynomial encoding/decoding is slower than the lookup table. But what is really surprising is the switch statement: its slower than both! On average it's 2.15 seconds slower than the lookup table! I love a good surprise, so let's dive in and try to work out what's happening.
+As expected, the polynomial encoding/decoding is slower than the lookup table. But what is really surprising is the switch statement: its slower than both! On average it's 2.45 seconds slower than the lookup table! I love a good surprise, so let's dive in and try to work out what's happening.
 
 # What's With The Switch?
 
@@ -207,16 +207,16 @@ perf stat ./ws_debug -a switch < urandom_32M > /dev/null
 
  Performance counter stats for './ws_debug -a switch':
 
-       1656.548077      task-clock (msec)         #    1.000 CPUs utilized          
-                 3      context-switches          #    0.002 K/sec                  
+       1743.865268      task-clock (msec)         #    1.000 CPUs utilized          
+                 7      context-switches          #    0.004 K/sec                  
                  0      cpu-migrations            #    0.000 K/sec                  
-            12,851      page-faults               #    0.008 M/sec                  
-     6,303,659,002      cycles                    #    3.805 GHz                    
-     5,772,005,569      instructions              #    0.92  insn per cycle         
-       967,570,464      branches                  #  584.088 M/sec                  
-       121,937,171      branch-misses             #   12.60% of all branches        
+            12,852      page-faults               #    0.007 M/sec                  
+     6,484,859,596      cycles                    #    3.719 GHz                    
+     5,773,682,725      instructions              #    0.89  insn per cycle         
+       967,903,800      branches                  #  555.034 M/sec                  
+       123,207,223      branch-misses             #   12.73% of all branches        
 
-       1.657291998 seconds time elapsed
+       1.744494500 seconds time elapsed
 ```
 
 The first statistic that stands out are the instructions per cycle, which is just under one. The likely cause of this is the number is the number of branch misses, which is up at ~12%. These branch prediction misses are destroying any benefit of pipelining in the CPU.
@@ -240,16 +240,16 @@ perf stat ./ws_debug -a switch < zero_32M > /dev/null
 
  Performance counter stats for './ws_debug -a switch':
 
-        463.623516      task-clock (msec)         #    0.999 CPUs utilized          
-                 0      context-switches          #    0.000 K/sec                  
+        543.503058      task-clock (msec)         #    0.999 CPUs utilized          
+                 8      context-switches          #    0.015 K/sec                  
                  0      cpu-migrations            #    0.000 K/sec                  
-            12,852      page-faults               #    0.028 M/sec                  
-     1,788,013,061      cycles                    #    3.857 GHz                    
-     5,835,177,064      instructions              #    3.26  insn per cycle         
-       999,477,567      branches                  # 2155.796 M/sec                  
-            95,660      branch-misses             #    0.01% of all branches        
+            12,854      page-faults               #    0.024 M/sec                  
+     1,953,309,524      cycles                    #    3.594 GHz                    
+     5,835,245,013      instructions              #    2.99  insn per cycle         
+       999,489,826      branches                  # 1838.977 M/sec                  
+         1,226,487      branch-misses             #    0.12% of all branches        
 
-       0.463872641 seconds time elapsed
+       0.544021460 seconds time elapsed
 ```
 
 In the grand scheme of things, almost no branch prediction misses, and a huge speed increase as compared to the random bytes.
@@ -270,16 +270,16 @@ perf stat ./ws_debug -a lookup < urandom_32M > /dev/null
 
  Performance counter stats for './ws_debug -a lookup':
 
-        435.472986      task-clock (msec)         #    0.999 CPUs utilized          
-                 1      context-switches          #    0.002 K/sec                  
-                 0      cpu-migrations            #    0.000 K/sec                  
-            12,852      page-faults               #    0.030 M/sec                  
-     1,685,035,030      cycles                    #    3.869 GHz                    
-     5,195,065,337      instructions              #    3.08  insn per cycle         
-       487,460,509      branches                  # 1119.382 M/sec                  
-            83,845      branch-misses             #    0.02% of all branches        
+        511.025199      task-clock (msec)         #    0.999 CPUs utilized          
+                 7      context-switches          #    0.014 K/sec                  
+                 1      cpu-migrations            #    0.002 K/sec                  
+            12,852      page-faults               #    0.025 M/sec                  
+     1,802,617,592      cycles                    #    3.527 GHz                    
+     5,195,307,808      instructions              #    2.88  insn per cycle         
+       487,513,834      branches                  #  953.992 M/sec                  
+           506,448      branch-misses             #    0.10% of all branches        
 
-       0.435717483 seconds time elapsed
+       0.511367875 seconds time elapsed
 ```
 
 Now the polynomial:
@@ -294,16 +294,16 @@ perf stat ./ws_debug -a poly < urandom_32M > /dev/null
 
  Performance counter stats for './ws_debug -a poly':
 
-        963.650095      task-clock (msec)         #    1.000 CPUs utilized          
-                 4      context-switches          #    0.004 K/sec                  
+       1063.839451      task-clock (msec)         #    1.000 CPUs utilized          
+                 2      context-switches          #    0.002 K/sec                  
                  0      cpu-migrations            #    0.000 K/sec                  
-            12,851      page-faults               #    0.013 M/sec                  
-     3,742,169,706      cycles                    #    3.883 GHz                    
-     7,755,440,434      instructions              #    2.07  insn per cycle         
-       487,465,337      branches                  #  505.853 M/sec                  
-            80,936      branch-misses             #    0.02% of all branches        
+            12,850      page-faults               #    0.012 M/sec                  
+     3,829,284,007      cycles                    #    3.599 GHz                    
+     7,755,413,038      instructions              #    2.03  insn per cycle         
+       487,472,058      branches                  #  458.220 M/sec                  
+           537,512      branch-misses             #    0.11% of all branches        
 
-       0.963888187 seconds time elapsed
+       1.064266885 seconds time elapsed
 ```
 
 We see two main reasons as to why the polynomial is slower. First off it simply takes more instructions to calculate the polynomial as opposed to looking up the value in a lookup table. Second, even with the (likely cached) memory accesses, we're able to execute more instructions per cycle with the lookup table as opposed to the polynomial algorithm.
