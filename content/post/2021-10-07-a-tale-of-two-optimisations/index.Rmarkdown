@@ -14,6 +14,7 @@ library(tidyverse)
 library(gt)
 library(glue)
 library(cowplot)
+library(ggrepel)
 
 knitr::opts_chunk$set(comment = "")
 ```
@@ -178,10 +179,10 @@ profiling_results <-
         algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
     ) %>% 
     mutate(
-            command = glue(
-                '< urandom_32M ./ws_debug -a { algo } | ./ws_debug -d -a { algo } > /dev/null'
-            ),
-            time = system_profile(command)
+        command = glue(
+            './ws_debug -a { algo } < urandom_32M | ./ws_debug -d -a { algo } > /dev/null'
+        ),
+        time = system_profile(command)
     ) %>% 
     select(-command)
 ```
@@ -268,8 +269,10 @@ profiling_results <-
         algo = rep(c('lookup', 'poly', 'switch'), max(n) / 3)
     ) %>% 
     mutate(
-            command = glue('< zero_32M ./ws_debug -a { algo } | ./ws_debug -d -a { algo } > /dev/null'),
-            time = system_profile(command)
+        command = glue(
+            '< zero_32M ./ws_debug -a { algo } | ./ws_debug -d -a { algo } > /dev/null'
+        ),
+        time = system_profile(command)
     ) %>% 
     select(-command)
 
@@ -282,7 +285,7 @@ profiling_results %>%
     ggplot() +
     geom_density(aes(time, fill = algo), alpha = .4) +
     geom_vline(data = profiling_means, aes(xintercept = mean, colour = algo)) +
-    geom_label(data = profiling_means, aes(x = mean, y = 0, label = round(mean, 2))) +
+    geom_label_repel(data = profiling_means, aes(x = mean, y = 0, label = round(mean, 2))) +
     labs(
         x = 'Seconds',
         y = 'Density',
