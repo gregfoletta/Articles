@@ -32,13 +32,13 @@ Let's first talk about how the experimental set up and how the data was captured
 Data was gathered while in two different positions on the bike[^1]. The first we will call on the 'tops', looked like this:
 [^1]: Images courtesy of [bikegremlin.com](http://bikegremlin.com)
 
-```{r, echo=FALSE, out.width="10%", fig.cap="Tops of the handlebars"}
+```{r, echo=FALSE, fig.align="center", out.extra='style="width:40%;height:40%;"'}
 knitr::include_graphics("tops.jpg")
 ```
 
 The second which we will call the 'drops', looked like this:
 
-```{r, echo=FALSE, out.width="10%", fig.cap="Tops of the handlebars"}
+```{r, echo=FALSE, fig.align="center", out.extra='style="width:40%;height:40%;"'}
 knitr::include_graphics("drops.jpg")
 ```
 
@@ -249,6 +249,31 @@ cycle_data_mdl %>%
     augment() %>%  
     ggplot() +
     geom_density(aes(.std.resid))
+```
+
+# Answer
+
+```{r}
+(1 - (cycle_data_mdl$coefficients[[2]]/cycle_data_mdl$coefficients[[1]])) * 100
+```
+
+
+```{r}
+crossing(
+    speed = c(20, 40, 60) / 3.6,
+    position = as_factor(c('Tops', 'Drops')),
+) %>% 
+    mutate(
+        power = predict(
+            cycle_data_mdl,
+            newdata = tibble(
+                speed = speed,
+                position = position
+            )
+        )
+    ) %>% 
+    pivot_wider(names_from = position, values_from = power) %>% 
+    mutate(power_difference = Tops - Drops)
 ```
 
 

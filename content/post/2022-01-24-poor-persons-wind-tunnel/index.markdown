@@ -26,17 +26,11 @@ Let's first talk about how the experimental set up and how the data was captured
 Data was gathered while in two different positions on the bike[^1]. The first we will call on the 'tops', looked like this:
 [^1]: Images courtesy of [bikegremlin.com](http://bikegremlin.com)
 
-<div class="figure">
-<img src="tops.jpg" alt="Tops of the handlebars" width="10%" />
-<p class="caption">Figure 1: Tops of the handlebars</p>
-</div>
+<img src="tops.jpg" style="width:40%;height:40%;" style="display: block; margin: auto;" />
 
 The second which we will call the 'drops', looked like this:
 
-<div class="figure">
-<img src="drops.jpg" alt="Tops of the handlebars" width="10%" />
-<p class="caption">Figure 2: Tops of the handlebars</p>
-</div>
+<img src="drops.jpg" style="width:40%;height:40%;" style="display: block; margin: auto;" />
 
 For each position the pace was slowly increasing from 10km/h to to 50km/h, in 8-10km/h increments. For each increment level, the pace was held as close as possible to constant for two laps, increasing to three laps for higher speeds in order to get enough samples.
 
@@ -204,6 +198,46 @@ tidy(cycle_data_mdl)
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 
+# Answer
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+
+```r
+(1 - (cycle_data_mdl$coefficients[[2]]/cycle_data_mdl$coefficients[[1]])) * 100
+```
+
+```
+## [1] 7.539574
+```
+
+
+
+```r
+crossing(
+    speed = c(20, 40, 60) / 3.6,
+    position = as_factor(c('Tops', 'Drops')),
+) %>% 
+    mutate(
+        power = predict(
+            cycle_data_mdl,
+            newdata = tibble(
+                speed = speed,
+                position = position
+            )
+        )
+    ) %>% 
+    pivot_wider(names_from = position, values_from = power) %>% 
+    mutate(power_difference = Tops - Drops)
+```
+
+```
+## # A tibble: 3 × 4
+##   speed   Tops  Drops power_difference
+##   <dbl>  <dbl>  <dbl>            <dbl>
+## 1  5.56   43.3   40.0             3.26
+## 2 11.1   346.   320.             26.1 
+## 3 16.7  1169.  1081.             88.1
+```
+
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
 
