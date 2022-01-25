@@ -52,17 +52,17 @@ Here's an example of the XML from the root to the a trackpoint. Only one lap and
                         <Time>2022-01-16T00:00:41Z</Time>
                         <DistanceMeters>1.48</DistanceMeters>
                         <HeartRateBpm>
-                         <Value>105</Value>
+                            <Value>105</Value>
                         </HearthRateBpm>
                         <Cadence>32</Cadence>
                         <Extensions>
-                         <TPX>
-                          <Speed>3.19</Speed>
-                          <Watts>56</Watts>
-                         </TPX>
+                            <TPX>
+                                <Speed>3.19</Speed>
+                                <Watts>56</Watts>
+                            </TPX>
                         </Extensions>
                     </Trackpoint>
-                    <!-- Multiple trackpoints (1 second sample) --> 
+                    <!-- Multiple trackpoints (1 second per sample) --> 
                 </Track>
             </Lap>
             <!-- Multiple laps (generated manually) -->
@@ -97,20 +97,20 @@ print(cycle_data)
 ```
 
 ```
-## # A tibble: 1,985 × 6
-##    time                speed power   bpm cadence   lap
-##    <dttm>              <dbl> <int> <int>   <int> <dbl>
-##  1 2022-01-16 00:00:42  3.19    56   105      32     0
-##  2 2022-01-16 00:00:43  3.28   100   104      34     0
-##  3 2022-01-16 00:00:44  3.5     75   104      36     0
-##  4 2022-01-16 00:00:45  3.58    84   105      38     0
-##  5 2022-01-16 00:00:46  3.78    79   106      40     0
-##  6 2022-01-16 00:00:47  4.08    83   107      43     0
-##  7 2022-01-16 00:00:48  4.39   172   108      46     0
-##  8 2022-01-16 00:00:49  4.58   197   109      47     0
-##  9 2022-01-16 00:00:50  4.78   213   111      49     0
-## 10 2022-01-16 00:00:51  5      288   113      51     0
-## # … with 1,975 more rows
+# A tibble: 1,985 × 6
+   time                speed power   bpm cadence   lap
+   <dttm>              <dbl> <int> <int>   <int> <dbl>
+ 1 2022-01-16 00:00:42  3.19    56   105      32     0
+ 2 2022-01-16 00:00:43  3.28   100   104      34     0
+ 3 2022-01-16 00:00:44  3.5     75   104      36     0
+ 4 2022-01-16 00:00:45  3.58    84   105      38     0
+ 5 2022-01-16 00:00:46  3.78    79   106      40     0
+ 6 2022-01-16 00:00:47  4.08    83   107      43     0
+ 7 2022-01-16 00:00:48  4.39   172   108      46     0
+ 8 2022-01-16 00:00:49  4.58   197   109      47     0
+ 9 2022-01-16 00:00:50  4.78   213   111      49     0
+10 2022-01-16 00:00:51  5      288   113      51     0
+# … with 1,975 more rows
 ```
 
 I think it's worth going through each line:
@@ -155,10 +155,10 @@ We see some sort of exponential relationship between speed and power (we'll disc
 
 # Defining and Building a Model
 
-Before we build our model in R we first have to define what the model is going to be. I'm going to be using the class drag equation:
+Before we build our model in R we first have to define what the model is going to be. We'll be using the going to be using the class drag equation:
 y
 $$ F_D = \frac{1}{2}\rho C_D A v^2$$
-This says that the force of drag through a fluid is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient of my bike/body (\\(C_D\\)) time  is front on cross-sectional area ((\\(A\\)) times the square of my is my velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
+This says that the force of drag through a fluid is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient of my bike/body (\\(C_D\\)) time  is front on cross-sectional area (\\(A\\)) times the square of my is my velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
 
 $$ \text{Let } \beta = \frac{1}{2} \rho C_D A $$
 $$ F_D = \beta v^2 $$
@@ -170,9 +170,11 @@ $$P_D = \beta v^2 \frac{x}{t} $$
 As distance over time is simply velocity, we are left with:
 
 $$ P_D = \beta v^3 $$ 
-This is the model we're going to fit our data to. The model will give us an estimate (with some uncertainty) of the \\(\beta\\) value when I was on the tops of the handvars, and a \\(\beta\\) value when I was in the drops.
+Is this a perfect model? Not at all, but for our purposes it should be reasonable. Don't make me tap the "all models are wrong..." sign!
 
-As we know the generative process for this data, we have some prior information that we should definitely include in the model: it takes zero watts to go zero metres per second. This implies that our model should go through the origin \\((0,0)\\) and we should not include an intercept. 
+The model will give us an estimate (with some uncertainty) \\(\beta_{tops}\\) value when I was on the tops of the handlebars, and a \\(\beta_{drops}\\) value when I was in the drops.
+
+We have some prior information that we can be included in the model: it takes zero watts to go zero metres per second. This implies that our model should go through the origin \\((0,0)\\) and we should not include an intercept. I believe that given our strong knowledge of the process that generated the data, removing the intercept is valid.
 
 
 ```r
@@ -180,23 +182,62 @@ cycle_data_mdl <-
     cycle_data_cleaned %>% 
     lm(power ~ 0 + position : I(speed^3), data = .) 
 
-tidy(cycle_data_mdl)
+tidy(cycle_data_mdl, conf.int = TRUE, conf.level = .80)
 ```
 
 ```
-## # A tibble: 2 × 5
-##   term                     estimate std.error statistic p.value
-##   <chr>                       <dbl>     <dbl>     <dbl>   <dbl>
-## 1 positionTops:I(speed^3)     0.252   0.00224      113.       0
-## 2 positionDrops:I(speed^3)    0.233   0.00202      116.       0
+## # A tibble: 2 × 7
+##   term                   estimate std.error statistic p.value conf.low conf.high
+##   <chr>                     <dbl>     <dbl>     <dbl>   <dbl>    <dbl>     <dbl>
+## 1 positionTops:I(speed^…    0.252   0.00224      113.       0    0.250     0.255
+## 2 positionDrops:I(speed…    0.233   0.00202      116.       0    0.231     0.236
 ```
 
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+The model has determined that \(\beta_{tops}\) is 0.2524726 and \(\beta_{drops}\) is 0.2334373. An 80% confidence interval is what I would consider tight around the coefficients. Viewing the results of the modelling on top of our data makes it easier to see what's going on.
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+What's the model telling us? It has determined that moving from on the tops of the handlebars to on the drops gives an 7.5395738% decrease in power required for a specific velocity. Here's the power difference looks like at 20, 40 and 60 kmph: 
+
+
+```r
+crossing(
+    kmph = c(20, 40, 60),
+    position = as_factor(c('Tops', 'Drops')),
+) %>% 
+    mutate(
+        speed = kmph / 3.6,
+        power = round(predict(
+            cycle_data_mdl,
+            newdata = tibble(
+                speed = speed,
+                position = position
+            )
+        ), 2)
+    ) %>% 
+    pivot_wider(names_from = position, values_from = power) %>% 
+    select(-speed) %>% 
+    rename(Speed = kmph) %>% 
+    mutate(`Power Difference` = Tops - Drops) %>% 
+    knitr::kable()
+```
+
+
+
+| Speed|    Tops|   Drops| Power Difference|
+|-----:|-------:|-------:|----------------:|
+|    20|   43.29|   40.03|             3.26|
+|    40|  346.33|  320.22|            26.11|
+|    60| 1168.85| 1080.73|            88.12|
+# Model Diagnostics
+
+For the sake of article we've shown the results of the model straightaway, but we do need to look at least some diagnostics to ensure that the model is reaosnable, and that our assumptions haven't been violated. The first plot to look at is a fitted vs standardised residuals plot. We're looking for an even, constant (homoskedastic) along the zero residual for all of the fitted values. I've fitted a linear regression to this as well to highlight any trend.
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+
+Interpreting this kind of plot is always going to subjective. What we can see is an increase of 
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" />
 
 # Answer
 
@@ -211,33 +252,6 @@ tidy(cycle_data_mdl)
 
 
 
-```r
-crossing(
-    speed = c(20, 40, 60) / 3.6,
-    position = as_factor(c('Tops', 'Drops')),
-) %>% 
-    mutate(
-        power = predict(
-            cycle_data_mdl,
-            newdata = tibble(
-                speed = speed,
-                position = position
-            )
-        )
-    ) %>% 
-    pivot_wider(names_from = position, values_from = power) %>% 
-    mutate(power_difference = Tops - Drops)
-```
 
-```
-## # A tibble: 3 × 4
-##   speed   Tops  Drops power_difference
-##   <dbl>  <dbl>  <dbl>            <dbl>
-## 1  5.56   43.3   40.0             3.26
-## 2 11.1   346.   320.             26.1 
-## 3 16.7  1169.  1081.             88.1
-```
-
-
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" />
 
