@@ -10,14 +10,13 @@ images: []
 
 
 
-One of my passtimes is to ride (and occasionally race) track bikes. These are the bikes you'll see 
-I raced bikes as a junior, then came back to it in my mid thirties. One of the big contrasts has been the low barrier to entry for technology. When I was young everyone had bike computer that showed you your speed, but that was it. Now you've got speed, location via GPS, cadence, heart rate, and power. Looking and graphs and visualising the data is interesting, but I've been wanting to try and do more with it.
+I raced bikes as a junior and then came back to the sport after a twenty year hiatus. One of the biggest contrasts I've seen is the affordability of bike sensors. All I used to have 'back in the day' was a simple computer that told me my speed and cadence. Now I've got that, plus position via GPS, power, heart rate, pedal smoothness, with the data collected and presented on  my iPhone.
 
-This article is split into two sections:
+Collecting and viewing this data is all well and good, but for the longest time I've been wanting to do something more with it. I finally had the idea to use the data to try and determine the aerodynamics of different positions on the bike. So in this article we're going to attempt to answer to the following question:
 
-1. In the first section we will take cycling data that I've generated in a controlled manner, extract it from XML and transform it into a tidy, rectangular data frame. The goal is to show how elegance of R and how easy it performs manipulations like this.
-1. In the second section we will use the data to create a "poor person's wind tunnel", determining how efficient different positions on the bike are in terms of watts saved. 
+> How much more aerodynamically efficient is it to ride with your hands on the drops of the handlebars, rather than the tops?
 
+There are two main sections of the article: in the first section we look at data was generated, and then how we load and transform the data to get it ready for analysis. It's in this section where we see R really shine, with a simple and element method of transforming XML into a rectangular, tidy data format. In the second section we define an aerodynamic model (or more accurately reuse a common model), then perform a simple regression of this data to determine the model parameters. 
 
 # Data Acquisition
 
@@ -40,7 +39,7 @@ There are two main external elements which affect our data generation process: w
 
 The data is downloaded in TCX (Training Center XML) format. While good for us that it's in a standard structured format, it's not quite in the rectangular tidy data structure that we need for our analysis. Our first step is to extract and transform it into this format. The XML is structured as a single *activity* with one or more *laps*. Each *lap* has *trackpoints* which contain a timestamp and the other data (speed, power, heartrate, etc) that's been ollected. A trackpoint is taken every one second.
 
-Here's an example of the XML from the root to the a trackpoint. Only one lap and one trackpoint is shown.
+The full file is available [here](cycle_data.tcx), but here's an example of the XML from the root to the a trackpoint. Only one lap and one trackpoint is shown.
 
 ```xml
 <TrainingCenterDatabase>
@@ -140,7 +139,7 @@ cycle_data_cleaned <-
     cycle_data %>% 
     filter(
         lap %in% c(1,3),
-        between(power - lag(power), -20, 20)
+        between(speed - lag(speed), -.05, .05)
     ) %>%
     mutate(position = fct_recode(as_factor(lap), "Tops" = "1", "Drops" = "3"))
 ```
@@ -180,56 +179,32 @@ We have some prior information that we can be included in the model: it takes ze
 ```r
 cycle_data_mdl <-
     cycle_data_cleaned %>% 
-    lm(power ~ 0 + position : I(speed^3), data = .) 
+    lm(power ~ 0 + position:I(speed^3), data = .) 
 
 tidy(cycle_data_mdl, conf.int = TRUE, conf.level = .80)
 ```
 
 ```
 ## # A tibble: 2 × 7
-##   term                   estimate std.error statistic p.value conf.low conf.high
-##   <chr>                     <dbl>     <dbl>     <dbl>   <dbl>    <dbl>     <dbl>
-## 1 positionTops:I(speed^…    0.252   0.00224      113.       0    0.250     0.255
-## 2 positionDrops:I(speed…    0.233   0.00202      116.       0    0.231     0.236
+##   term                 estimate std.error statistic   p.value conf.low conf.high
+##   <chr>                   <dbl>     <dbl>     <dbl>     <dbl>    <dbl>     <dbl>
+## 1 positionTops:I(spee…    0.258   0.00355      72.5 5.43e-274    0.253     0.262
+## 2 positionDrops:I(spe…    0.228   0.00300      76.0 8.15e-284    0.224     0.232
 ```
 
 
-The model has determined that \(\beta_{tops}\) is 0.2524726 and \(\beta_{drops}\) is 0.2334373. An 80% confidence interval is what I would consider tight around the coefficients. Viewing the results of the modelling on top of our data makes it easier to see what's going on.
+The model has determined that \\(\beta_{tops}\\) is 0.2576768 and \\(\beta_{drops}\\) is 0.2277073. An 80% confidence interval is what I would consider tight around the coefficients. Viewing the results of the modelling on top of our data makes it easier to see what's going on.
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
-What's the model telling us? It has determined that moving from on the tops of the handlebars to on the drops gives an 7.5395738% decrease in power required for a specific velocity. Here's the power difference looks like at 20, 40 and 60 kmph: 
-
-
-```r
-crossing(
-    kmph = c(20, 40, 60),
-    position = as_factor(c('Tops', 'Drops')),
-) %>% 
-    mutate(
-        speed = kmph / 3.6,
-        power = round(predict(
-            cycle_data_mdl,
-            newdata = tibble(
-                speed = speed,
-                position = position
-            )
-        ), 2)
-    ) %>% 
-    pivot_wider(names_from = position, values_from = power) %>% 
-    select(-speed) %>% 
-    rename(Speed = kmph) %>% 
-    mutate(`Power Difference` = Tops - Drops) %>% 
-    knitr::kable()
-```
-
+What's the model telling us? It has determined that moving from on the tops of the handlebars to on the drops gives an 11.630649% decrease in power required for a specific velocity. Here's the power difference looks like at 20, 40 and 60 kmph: 
 
 
 | Speed|    Tops|   Drops| Power Difference|
 |-----:|-------:|-------:|----------------:|
-|    20|   43.29|   40.03|             3.26|
-|    40|  346.33|  320.22|            26.11|
-|    60| 1168.85| 1080.73|            88.12|
+|    20|   44.18|   39.04|             5.14|
+|    40|  353.47|  312.36|            41.11|
+|    60| 1192.95| 1054.20|           138.75|
 # Model Diagnostics
 
 For the sake of article we've shown the results of the model straightaway, but we do need to look at least some diagnostics to ensure that the model is reaosnable, and that our assumptions haven't been violated. The first plot to look at is a fitted vs standardised residuals plot. We're looking for an even, constant (homoskedastic) along the zero residual for all of the fitted values. I've fitted a linear regression to this as well to highlight any trend.
@@ -239,19 +214,8 @@ Interpreting this kind of plot is always going to subjective. What we can see is
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" />
 
-# Answer
+
+# Summary
 
 
-```r
-(1 - (cycle_data_mdl$coefficients[[2]]/cycle_data_mdl$coefficients[[1]])) * 100
-```
-
-```
-## [1] 7.539574
-```
-
-
-
-
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" />
 
