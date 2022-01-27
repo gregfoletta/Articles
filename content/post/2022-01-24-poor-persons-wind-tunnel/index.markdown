@@ -91,26 +91,21 @@ cycle_data <-
             ),
         )
     }
-
-print(cycle_data)
 ```
 
-```
-# A tibble: 1,985 × 6
-   time                speed power   bpm cadence   lap
-   <dttm>              <dbl> <int> <int>   <int> <dbl>
- 1 2022-01-16 00:00:42  3.19    56   105      32     0
- 2 2022-01-16 00:00:43  3.28   100   104      34     0
- 3 2022-01-16 00:00:44  3.5     75   104      36     0
- 4 2022-01-16 00:00:45  3.58    84   105      38     0
- 5 2022-01-16 00:00:46  3.78    79   106      40     0
- 6 2022-01-16 00:00:47  4.08    83   107      43     0
- 7 2022-01-16 00:00:48  4.39   172   108      46     0
- 8 2022-01-16 00:00:49  4.58   197   109      47     0
- 9 2022-01-16 00:00:50  4.78   213   111      49     0
-10 2022-01-16 00:00:51  5      288   113      51     0
-# … with 1,975 more rows
-```
+
+|time                | speed| power| bpm| cadence| lap|
+|:-------------------|-----:|-----:|---:|-------:|---:|
+|2022-01-16 00:00:42 |  3.19|    56| 105|      32|   0|
+|2022-01-16 00:00:43 |  3.28|   100| 104|      34|   0|
+|2022-01-16 00:00:44 |  3.50|    75| 104|      36|   0|
+|2022-01-16 00:00:45 |  3.58|    84| 105|      38|   0|
+|2022-01-16 00:00:46 |  3.78|    79| 106|      40|   0|
+|2022-01-16 00:00:47 |  4.08|    83| 107|      43|   0|
+|2022-01-16 00:00:48 |  4.39|   172| 108|      46|   0|
+|2022-01-16 00:00:49 |  4.58|   197| 109|      47|   0|
+|2022-01-16 00:00:50 |  4.78|   213| 111|      49|   0|
+|2022-01-16 00:00:51 |  5.00|   288| 113|      51|   0|
 
 I think it's worth going through each line:
 
@@ -122,13 +117,15 @@ I think it's worth going through each line:
 
 And that's it! with less than 20 lines of code we've been able to transform our XML into a tidy, rectangular data format ready for visualisation and analysis. Speaking of visualisation, let's take a look at a few different aspects of the data to get a general feel for it. First off is the power output over time with each lap coloured separately. Laps one and three contain the data that we will be using in our model.
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-5-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-6-1.png" width="672" />
 
 As the the data was generated on a track bike which has only a single gear, the speed and cadence should have a near perfect linear relationship.
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-6-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-7-1.png" width="672" />
 
-We see the linear relationship but note that there is a distribution of speeds across each cadence value. This is likely due to the difference in precision between the cadence and the speed, as cadence is measured as a integer whereas speed is a double with a single decimal point.
+We see the linear relationship but note that there is a distribution of speeds across each cadence value. This is likely due to the difference in precision between the cadence and the speed, as cadence is measured as a integer whereas speed is a double with a single decimal point[^2].
+
+[^2]: A linear regression of cadence on speed was performed, and the residuals were in the range of (-.5, .5). This supports our precision difference hypothesis.
 
 Finally, let's take  look at the data we'll be modelling and its relationship. We extract out the second and fourth laps from the data, then create a new *position* factor variable with appropriately named levels. We're also going to remove data where we were accelerating - i.e. the rate of change of the power between trackpoint samples was between -20 and 20 watts. I had to accelerate to move to different speed increments, but our model only relates to points of (relatively) constant speed and so these aren't valid for our model.
 
@@ -139,7 +136,7 @@ cycle_data_cleaned <-
     cycle_data %>% 
     filter(
         lap %in% c(1,3),
-        between(speed - lag(speed), -.05, .05)
+        between(power - lag(power), -10, 10)
     ) %>%
     mutate(position = fct_recode(as_factor(lap), "Tops" = "1", "Drops" = "3"))
 ```
@@ -148,27 +145,26 @@ I should note that removing data to fit a model is not generally something that 
 
 We can now view the power output versus the speed of this cleaned data.
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" />
 
 We see some sort of exponential relationship between speed and power (we'll discuss that in the next section). We can also see the "blobs" of data where I have tried to keep a constant speed, and how keeping that constant speed become more difficult as I went faster. What is not instantly visible is the difference in power output versus speed for each of the different hand positions.
 
+
 # Defining and Building a Model
 
-Before we build our model in R we first have to define what the model is going to be. We'll be using the going to be using the class drag equation:
+Before we build our model in R we first have to define what the model is going to be. We'll be using the going to be using the classic drag equation: 
 y
-$$ F_D = \frac{1}{2}\rho C_D A v^2$$
-This says that the force of drag through a fluid is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient of my bike/body (\\(C_D\\)) time  is front on cross-sectional area (\\(A\\)) times the square of my is my velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
+$$ F_d = \frac{1}{2}\rho C_D A v^2$$
+This says that the force of drag \\(F_d\\) on a body when moving through a fluid is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient of my bike/body (\\(C_D\\)) time  is front on cross-sectional area (\\(A\\)) times the square of my is my velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
 
 $$ \text{Let } \beta = \frac{1}{2} \rho C_D A $$
-$$ F_D = \beta v^2 $$
+$$ F_d = \beta v^2 $$
 We've got force on our left-hand side, but we need power. Energy is force times distance, and power is energy over time, so we have:
 
-$$ F_D \frac{x}{t} = \beta v^2 \frac{x}{t}$$ 
-$$P_D = \beta v^2 \frac{x}{t} $$
+$$ F_d \Big( \frac{x}{t} \Big) = \beta v^2 \Big( \frac{x}{t} \Big)$$ 
+Distance over time is velocity so we are left with:
 
-As distance over time is simply velocity, we are left with:
-
-$$ P_D = \beta v^3 $$ 
+$$ P_d = \beta v^3 $$ 
 Is this a perfect model? Not at all, but for our purposes it should be reasonable. Don't make me tap the "all models are wrong..." sign!
 
 The model will give us an estimate (with some uncertainty) \\(\beta_{tops}\\) value when I was on the tops of the handlebars, and a \\(\beta_{drops}\\) value when I was in the drops.
@@ -180,42 +176,84 @@ We have some prior information that we can be included in the model: it takes ze
 cycle_data_mdl <-
     cycle_data_cleaned %>% 
     lm(power ~ 0 + position:I(speed^3), data = .) 
-
-tidy(cycle_data_mdl, conf.int = TRUE, conf.level = .80)
 ```
 
-```
-## # A tibble: 2 × 7
-##   term                 estimate std.error statistic   p.value conf.low conf.high
-##   <chr>                   <dbl>     <dbl>     <dbl>     <dbl>    <dbl>     <dbl>
-## 1 positionTops:I(spee…    0.258   0.00355      72.5 5.43e-274    0.253     0.262
-## 2 positionDrops:I(spe…    0.228   0.00300      76.0 8.15e-284    0.224     0.232
-```
-
-
-The model has determined that \\(\beta_{tops}\\) is 0.2576768 and \\(\beta_{drops}\\) is 0.2277073. An 80% confidence interval is what I would consider tight around the coefficients. Viewing the results of the modelling on top of our data makes it easier to see what's going on.
+Here's what model looks like overlayed on the data:
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
-What's the model telling us? It has determined that moving from on the tops of the handlebars to on the drops gives an 11.630649% decrease in power required for a specific velocity. Here's the power difference looks like at 20, 40 and 60 kmph: 
+As expected the drops is more efficient that the tops. Before looking at the parameters of the model let's first look at some diagnostics. The first one to look at is a fitted value versus residual plot.
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+
+This is very interesting! While we seem to have captured mos of the the variation in our model, there still seems to be a linear component that our model hasn't accounted for. If we think about this, our model is too simple and we've missed a critical component: friction! Let's re
+
+# Building a Better Model
+
+In the original model, \\(P_{Total} = P_{Drag}\\), but out **t**otal power used is made up of power to overcome **d**rag plus power to overcome **f**riction:
+
+$$ P_{t} = P_{d} + P_{f} $$
+
+Generally the force of friction is not proportional to the relative velocity of the two surfaces that are touching, but we're looking at power, so doing some conversion we end up with:
+
+$$ P_{f} = \frac{ F_{f} \times x }{ t } = F_{f}v $$
+
+If we let \\(\beta_1 = F_{f}) and from our previous model we let \\(\beta_2 = \beta), our model is now:
+
+$$ P_{t} = \beta_1 v + \beta_2 v^3 $$
+Let's re-do our modelling with this updated model. We don't beleive that the frictional component would be affected by the position on the handlebars, so we make sure it's not conditional on the position.
 
 
-| Speed|    Tops|   Drops| Power Difference|
-|-----:|-------:|-------:|----------------:|
-|    20|   44.18|   39.04|             5.14|
-|    40|  353.47|  312.36|            41.11|
-|    60| 1192.95| 1054.20|           138.75|
-# Model Diagnostics
+```r
+cycle_data_mdl <-
+    cycle_data_cleaned %>% 
+    lm(power ~ 0 + speed + position:I(speed^3), data = .) 
+```
 
-For the sake of article we've shown the results of the model straightaway, but we do need to look at least some diagnostics to ensure that the model is reaosnable, and that our assumptions haven't been violated. The first plot to look at is a fitted vs standardised residuals plot. We're looking for an even, constant (homoskedastic) along the zero residual for all of the fitted values. I've fitted a linear regression to this as well to highlight any trend.
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
-
-Interpreting this kind of plot is always going to subjective. What we can see is an increase of 
+Here's our updated on model on top of the original data:
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" />
 
+Hard to discern if much difference from this graph, so let's look at the fitted versus residuals again:
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
+That's looking much better! We've now captured the linear component, the residuals are random, and the variation is reasonably even across the entire spread of fitted values. There are a few outliers, and a more rigourous analysis would look to determine whether they had significant leverage on our regression line. Subjectively looking at this graph though my guess would be no.
+
+The other type of diagnostic we'll look at is a histogram of the residuals. A linear regression has an assumption that the residuals are normal. The residual shape doesn't affect the point estimates of the model, but does affect the confidence intervals of the parameters.
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" />
+
+This looks great: the residuals have an approximate Gaussian shape, there's not much mass at more that 2 standard deviations, and the mean sits approximately at zero.
+
+With confidence in the model we now take a look at the parameters:
+
+
+|Term                     |  Estimate| Std Error| Statistic| P Value|
+|:------------------------|---------:|---------:|---------:|-------:|
+|speed                    | 4.1788613| 0.3782129|  11.04897|       0|
+|positionTops:I(speed^3)  | 0.2131439| 0.0045782|  46.55634|       0|
+|positionDrops:I(speed^3) | 0.1889915| 0.0044721|  42.26044|       0|
+
+The speed term is the \\(\beta_1\\) coefficient, which is the the frictional force of the bike. The model has determined that the frictional of the bike accounts for 4.18 Newtons of force.
+
+The next two are the coefficients of the \\(v^3\\) term when the position varibale is 'Tops' and when it is 'Drops'. Value of the coefficient isn't important to us (being a combinatio of the fluid density, drag dofficient, and my cross-sectional area), but what we want to look at is the relative difference. The result is that, for a specific velocity, we need to use 11.33% less power. Put another way, we are 11.33 more efficient in this position.
+
+The following table gives you an idea on the differences in power required for speeds of 20, 40, and 60 km/h.
+
+
+
+| Speed|    Tops|  Drops| Power Difference|
+|-----:|-------:|------:|----------------:|
+|    20|   59.76|  55.62|             4.14|
+|    40|  338.81| 305.68|            33.13|
+|    60| 1056.43| 944.61|           111.82|
 
 # Summary
 
+In this article we looked at the aerodynamics of different positions on a bike. We gathered data using different sensors, and showed the elegance of R by transforming XML data into a rectangular, tidy data frame.
+
+We defined a simple model and used this to perform a regression of power required to maintain a specific velocity. By performaing diagnostics on this model, we were able to identify that our model was incomplete, and that we were likely not including friction in the model. We defined and created a new model with friction included, which performed better than our original model.
+
+The ultimate aim of the article was to determine how much more efficient it is to ride in the 'drops' of the handlebars rather than the 'tops'. From our modelling we estimate it to be 11.33% more efficient.
 
 
