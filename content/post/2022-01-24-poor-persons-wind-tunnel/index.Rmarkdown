@@ -16,40 +16,43 @@ library(xml2)
 library(scales)
 ```
 
-I raced bikes as a junior and then came back to the sport after a twenty year hiatus. One of the biggest contrasts I've seen is the affordability of bike sensors. All I used to have 'back in the day' was a simple computer that told me my speed and cadence. Now I've got that, plus position via GPS, power, heart rate, pedal smoothness, with the data collected and presented on  my iPhone.
+I raced bikes as a junior and came back to it after a twenty year hiatus. One of the biggest contrasts I've seen in the sport is the proliferation of bike sensors. All I used to have 'back in the day' was a simple computer with speed and cadence. Now I've got that, plus position via GPS, power, heart rate, pedal smoothness and balance, all collected and displayed on my phone.
 
-Collecting and viewing this data is all well and good, but for the longest time I've been wanting to do something more with it. I finally had the idea to use the data to try and determine the aerodynamics of different positions on the bike. So in this article we're going to attempt to answer to the following question:
+It's all well and good to collect and visualise this data, but surely there was more I could do with it? After much thought, I realised I could use it to determine my aerodynamic position on the bike. So in this article we're going to answer the question:
 
 > How much more aerodynamically efficient is it to ride with your hands on the drops of the handlebars, rather than the tops?
 
-There are two main sections of the article: in the first section we look at data was generated, and then how we load and transform the data to get it ready for analysis. It's in this section where we see R really shine, with a simple and element method of transforming XML into a rectangular, tidy data format. In the second section we define an aerodynamic model (or more accurately reuse a common model), then perform a simple regression of this data to determine the model parameters. 
+There are two main sections of the article: in the first section we look at how the data was generated, loaded into R, and transformed into a state that's ready for analysis. It's in this section where we see R really shine, with a simple and element method of transforming XML into a rectangular, tidy data format. 
+
+In the second section we define an aerodynamic model (or more accurately reuse a common model), then perform a simple regression of this data to determine the aerodynamic properties. Diagnostics on the model make us realise that we've missed a critical element, updating the model to get better estimates of the aerodynamic properties.
 
 # Data Acquisition
 
-Let's first talk about how the experimental set up and how the data was captured. I used a track bike (which has a single fixed gear) and rode it around the [Coburg velodrome](https://www.google.com/maps/@-37.7297305,144.9553304,147m/data=!3m1!1e3) which is a 250m outdoor track. A sensor (Wahoo speed) on the hub of the wheel collected speed data, my pedals (PowerTap P1) collected power and cadence, and a strap around my chest collected my heart rate.
+We'll first look at how the experiment was set up and how the data was captured. A track bike (with has a single, fixed gear) was ridden around the [Coburg velodrome](https://www.google.com/maps/@-37.7297305,144.9553304,147m/data=!3m1!1e3) which is a 250m outdoor track. A sensor (Wahoo speed) on the hub of the wheel collected the speed, and the pedals (PowerTap P1s) collected power and cadence.
 
-Data was gathered while in two different positions on the bike[^1]. The first we will call on the 'tops', looked like this:
+Data was gathered while in two different positions on the bike[^1]. The first position which we will call being on the 'tops' looked similar to this except without brake levers:
 [^1]: Images courtesy of [bikegremlin.com](http://bikegremlin.com)
 
 ```{r, echo=FALSE, fig.align="center", out.extra='style="width:40%;height:40%;"'}
 knitr::include_graphics("tops.jpg")
 ```
 
-The second which we will call the 'drops', looked like this:
+The second position which we will call being on the 'drops' looked like this:
 
 ```{r, echo=FALSE, fig.align="center", out.extra='style="width:40%;height:40%;"'}
 knitr::include_graphics("drops.jpg")
 ```
+For each position the pace was slowly increasing from 10km/h to to 45km/h in approximately 10km/h increments. For each increment level, the pace was held as close as possible to constant for two laps, increasing to three laps for higher speeds in order to get enough samples.
 
-For each position the pace was slowly increasing from 10km/h to to 50km/h, in 8-10km/h increments. For each increment level, the pace was held as close as possible to constant for two laps, increasing to three laps for higher speeds in order to get enough samples.
+The experimental environemnt is far from clean, with two main external elements affecting our data generation process: wind, and the lumpyness of the velodrome. Because we are moving around and oval, both of these external elements will add noise to the data, but shouldn't bias it in any one direction. If there was any biasing effect it would be from wind gusts.
 
-There are two main external elements which affect our data generation process: wind, and the fact that the Coburg velodrome is not completely flat. However because we are moving around and oval, some noise will be added but none of the data should be biased. This noise will simply increase our uncertainty about our model's parameters.
+What do we expect from the experiment? We're expecting better aerodynamics when in the drops position due to two factors: a reduction in the front on surface area, and a more streamlined shape.
 
 # Transforming the Data
 
-The data is downloaded in TCX (Training Center XML) format. While good for us that it's in a standard structured format, it's not quite in the rectangular tidy data structure that we need for our analysis. Our first step is to extract and transform it into this format. The XML is structured as a single *activity* with one or more *laps*. Each *lap* has *trackpoints* which contain a timestamp and the other data (speed, power, heartrate, etc) that's been ollected. A trackpoint is taken every one second.
+The data is downloaded in TCX (Training Center XML) format. While good for us that it's in a standard structured format, it's not quite in the rectangular tidy data structure that we need for our analysis, so the first step is to extract and transform it. The XML is structured as a single *activity* with one or more *laps*. Each *lap* has *trackpoints* which contain a timestamp and the data collected (speed, power, heartrate, etc). A trackpoint is taken every one second.
 
-The full file is available [here](cycle_data.tcx), but here's an example of the XML from the root to the a trackpoint. Only one lap and one trackpoint is shown.
+The full file is available [here](cycle_data.tcx), but this is a high-level overview of the structure:
 
 ```xml
 <TrainingCenterDatabase>
@@ -80,7 +83,7 @@ The full file is available [here](cycle_data.tcx), but here's an example of the 
 </TrainingCenterDatabase>
 ```
 
-In what I think is a great example of the elegance and power of R, the following code takes our TCX file and uses XPath to extract out the fields we need, turning it into a tidy data frame.
+Thanks to the XML2 library, XPath queries, the vectorised nature of R, this is quite an easy task:
 
 ```{r, comment=""}
 cycle_data <-
@@ -107,15 +110,17 @@ head(cycle_data, n = 10) %>%
     knitr::kable()
 ```
 
-I think it's worth going through each line:
+While terseness is elegant it can also make the code difficult to interpret, so I think it's valuable to go through each step of the pipeline:
 
 1. The TCX file is read in as as an *xml_document*
-1. The TCX is namespaced, but as we're only working with this file we strip the namespace to make our XPath shorter.
-1. Using the `.//Trackpoint[Extensions]` XPath We find all trackpoint nodes that have a child extensions node. We can't just find all of the trackpoints as there seems to be a quirk where the first trackpoint has a timestamp but no other data.
-1. We then construct a data frame (a tibble) by finding and extracting the text from our data nodes (speed, power, etc) from each of the trackpoints. The pipe to tibble is enclosed in braces to stop the left-hand side from automatically being placed as the first argument. 
-1. To determine which lap the trackpoint is part of we find it's grandparent lap node, and then count how many preceding lap siblings it has. So the first lap has 0 preceding siblings, the second lap has 1, etc.
+1. The XML is namespaced, but as we're only working with this file we strip the namespace to make our XPath easier to work with.
+1. Using the `.//Trackpoint[Extensions]` XPath we find all 'trackpoint' nodes that have a child 'extensions' node. 
+    - We do this because some of the trackpoints only have a timestamp with no data.
+1. We then construct a data frame (a tibble) by finding and extracting the speed, power, etc from each trachpoint, with the XPaths being relative to the trackpoint node.
+    - The braces to stop the normal behaviour of the left-hand side of the pipe being passed as the first argument to the tibble.
+1. Determining which 'lap' a trackpoint belongs to takes a little more work. We do this by finding it's grandparent lap node and counting how many preceding lap siblings it has. The first lap will have 0 siblings, the second lap 1, and so on.
 
-And that's it! with less than 20 lines of code we've been able to transform our XML into a tidy, rectangular data format ready for visualisation and analysis. Speaking of visualisation, let's take a look at a few different aspects of the data to get a general feel for it. First off is the power output over time with each lap coloured separately. Laps one and three contain the data that we will be using in our model.
+That's it! With less than 20 lines of R the XML has been transformed into a tidy, rectangular data format, ready for visualisation and analysis. Speaking of visualisation, let's take a look at a few different aspects of the data to get a general feel for it. The following graph shows the power output over time, each lap being coloured separately. Laps one and three contain the data that will be used in the model.
 
 ```{r echo=FALSE}
 cycle_data %>% 
@@ -130,7 +135,7 @@ cycle_data %>%
     )
 ```
 
-As the the data was generated on a track bike which has only a single gear, the speed and cadence should have a near perfect linear relationship.
+The data was generated on a track bike which has only a single gear, so the speed and cadence should have a near perfect linear relationship:
 
 ```{r echo=FALSE}
 cycle_data %>% 
@@ -144,11 +149,13 @@ cycle_data %>%
     )
 ```
 
-We see the linear relationship but note that there is a distribution of speeds across each cadence value. This is likely due to the difference in precision between the cadence and the speed, as cadence is measured as a integer whereas speed is a double with a single decimal point[^2].
+There's a clear linear relationship, but there is also distribution of speeds across each cadence value. This is likely due to the difference in precision between the cadence and the speed, as cadence is measured as a integer whereas speed is a double with a single decimal point[^2].
 
 [^2]: A linear regression of cadence on speed was performed, and the residuals were in the range of (-.5, .5). This supports our precision difference hypothesis.
 
-Finally, let's take  look at the data we'll be modelling and its relationship. We extract out the second and fourth laps from the data, then create a new *position* factor variable with appropriately named levels. We're also going to remove data where we were accelerating - i.e. the rate of change of the power between trackpoint samples was between -20 and 20 watts. I had to accelerate to move to different speed increments, but our model only relates to points of (relatively) constant speed and so these aren't valid for our model.
+Before we look at the power and speed, we need to do a little bit of housework. The second and fourth laps are extracted, and a new *position* factor variable is created with nicely named levels. 
+
+In what could be considered controversial, we're going to remove data points where the bike was accelerating - i.e. the rate of change of the power between trackpoint samples was between -10 and 10 watts. Acceleration was required to 'move' to different speed increments, but our model only relates to points of (relatively) constant speed. Given our knowledge of the data generation process, I think this data removal can be justified.
 
 
 ```{r}
@@ -161,9 +168,7 @@ cycle_data_cleaned <-
     mutate(position = fct_recode(as_factor(lap), "Tops" = "1", "Drops" = "3"))
 ```
 
-I should note that removing data to fit a model is not generally something that should be done. The difference here is that I was in control of the the data generation (not just data acquisition) process, and I have justified the rationale for the removal of the data. 
-
-We can now view the power output versus the speed of this cleaned data.
+We can now view the power output versus the speed by position of the data we'll be using in our model.
 
 ```{r echo=FALSE}
 cycle_data_cleaned %>% 
