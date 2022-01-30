@@ -7,7 +7,7 @@ categories: [R, Regression]
 
 
 
-I raced bikes as a junior and came back to it after a twenty year hiatus. One of the biggest contrasts I've seen in the sport is the proliferation of bike sensors. All I used to have 'back in the day' was a simple computer with speed and cadence. Now I've got that, plus position via GPS, power, heart rate, pedal smoothness and balance, all collected and displayed on my phone.
+I raced bikes as a junior and came back to it after a twenty year hiatus. One of the biggest contrasts I've seen in the sport is the proliferation of bike sensors. All I used to have 'back in the day' was a simple computer with velocity and cadence. Now I've got that, plus position via GPS, power, heart rate, pedal smoothness and balance, all collected and displayed on my phone.
 
 It's all well and good to collect and visualise this data, but surely there was more I could do with it? After much thought, I realised I could use it to determine my aerodynamic position on the bike. So in this article we're going to answer the question:
 
@@ -19,7 +19,7 @@ In the second section we define an aerodynamic model (or more accurately reuse a
 
 # Data Acquisition
 
-We'll first look at how the experiment was set up and how the data was captured. A track bike (with has a single, fixed gear) was ridden around the [Coburg velodrome](https://www.google.com/maps/@-37.7297305,144.9553304,147m/data=!3m1!1e3) which is a 250m outdoor track. A sensor (Wahoo speed) on the hub of the wheel collected the speed, and the pedals (PowerTap P1s) collected power and cadence.
+We'll first look at how the experiment was set up and how the data was captured. A track bike (with has a single, fixed gear) was ridden around the [Coburg velodrome](https://www.google.com/maps/@-37.7297305,144.9553304,147m/data=!3m1!1e3) which is a 250m outdoor track. A sensor (Wahoo speed) on the hub of the wheel collected the velocity, and the pedals (PowerTap P1s) collected power and cadence.
 
 Data was gathered while in two different positions on the bike[^1]. The first position which we will call being on the 'tops' looked similar to this except without brake levers:
 [^1]: Images courtesy of [bikegremlin.com](http://bikegremlin.com)
@@ -29,7 +29,8 @@ Data was gathered while in two different positions on the bike[^1]. The first po
 The second position which we will call being on the 'drops' looked like this:
 
 <img src="drops.jpg" style="width:40%;height:40%;" style="display: block; margin: auto;" />
-For each position the pace was slowly increasing from 10km/h to to 45km/h in approximately 10km/h increments. For each increment level, the pace was held as close as possible to constant for two laps, increasing to three laps for higher speeds in order to get enough samples.
+
+For each position the pace was slowly increasing from 10km/h to to 45km/h in approximately 10km/h increments. For each increment level, the pace was held as close as possible to constant for two laps, increasing to three laps for higher velocities in order to get enough samples.
 
 The experimental environemnt is far from clean, with two main external elements affecting our data generation process: wind, and the lumpyness of the velodrome. Because we are moving around and oval, both of these external elements will add noise to the data, but shouldn't bias it in any one direction. If there was any biasing effect it would be from wind gusts.
 
@@ -37,9 +38,9 @@ What do we expect from the experiment? We're expecting better aerodynamics when 
 
 # Transforming the Data
 
-The data is downloaded in TCX (Training Center XML) format. While good for us that it's in a standard structured format, it's not quite in the rectangular tidy data structure that we need for our analysis, so the first step is to extract and transform it. The XML is structured as a single *activity* with one or more *laps*. Each *lap* has *trackpoints* which contain a timestamp and the data collected (speed, power, heartrate, etc). A trackpoint is taken every one second.
+The data is downloaded in TCX (Training Center XML) format. While good for us that it's in a standard structured format, it's not quite in the rectangular, tidy data that we need for our analysis. The first step is therefore to extract and transform it. The XML is is made up of a a single *activity* with multiple *laps*. Each *lap* has *trackpoints* which contain a timestamp and the data collected (velocity, power, heartrate, etc). A trackpoint is taken every one second.
 
-The full file is available [here](cycle_data.tcx), but this is a high-level overview of the structure:
+You can look at the full file [here](cycle_data.tcx), but below is a high level overview of the structure:
 
 ```xml
 <TrainingCenterDatabase>
@@ -70,7 +71,7 @@ The full file is available [here](cycle_data.tcx), but this is a high-level over
 </TrainingCenterDatabase>
 ```
 
-Thanks to the XML2 library, XPath queries, the vectorised nature of R, this is quite an easy task:
+Thanks to the XML2 library, XPath queries, the vectorised nature of R, extracting and transforming this data is relatively easy:
 
 
 ```r
@@ -81,7 +82,7 @@ cycle_data <-
     {
         tibble(
             time = xml_find_first(., './Time') %>% xml_text() %>% ymd_hms(),
-            speed = xml_find_first(., './Extensions/TPX/Speed') %>% xml_double(),
+            velocity = xml_find_first(., './Extensions/TPX/Speed') %>% xml_double(),
             power = xml_find_first(., './Extensions/TPX/Watts') %>% xml_integer(),
             bpm = xml_find_first(., './HeartRateBpm/Value') %>% xml_integer(),
             cadence = xml_find_first(., './Cadence') %>% xml_integer(),
@@ -94,18 +95,18 @@ cycle_data <-
 ```
 
 
-|time                | speed| power| bpm| cadence| lap|
-|:-------------------|-----:|-----:|---:|-------:|---:|
-|2022-01-16 00:00:42 |  3.19|    56| 105|      32|   0|
-|2022-01-16 00:00:43 |  3.28|   100| 104|      34|   0|
-|2022-01-16 00:00:44 |  3.50|    75| 104|      36|   0|
-|2022-01-16 00:00:45 |  3.58|    84| 105|      38|   0|
-|2022-01-16 00:00:46 |  3.78|    79| 106|      40|   0|
-|2022-01-16 00:00:47 |  4.08|    83| 107|      43|   0|
-|2022-01-16 00:00:48 |  4.39|   172| 108|      46|   0|
-|2022-01-16 00:00:49 |  4.58|   197| 109|      47|   0|
-|2022-01-16 00:00:50 |  4.78|   213| 111|      49|   0|
-|2022-01-16 00:00:51 |  5.00|   288| 113|      51|   0|
+|time                | velocity| power| bpm| cadence| lap|
+|:-------------------|--------:|-----:|---:|-------:|---:|
+|2022-01-16 00:00:42 |     3.19|    56| 105|      32|   0|
+|2022-01-16 00:00:43 |     3.28|   100| 104|      34|   0|
+|2022-01-16 00:00:44 |     3.50|    75| 104|      36|   0|
+|2022-01-16 00:00:45 |     3.58|    84| 105|      38|   0|
+|2022-01-16 00:00:46 |     3.78|    79| 106|      40|   0|
+|2022-01-16 00:00:47 |     4.08|    83| 107|      43|   0|
+|2022-01-16 00:00:48 |     4.39|   172| 108|      46|   0|
+|2022-01-16 00:00:49 |     4.58|   197| 109|      47|   0|
+|2022-01-16 00:00:50 |     4.78|   213| 111|      49|   0|
+|2022-01-16 00:00:51 |     5.00|   288| 113|      51|   0|
 
 While terseness is elegant it can also make the code difficult to interpret, so I think it's valuable to go through each step of the pipeline:
 
@@ -113,7 +114,7 @@ While terseness is elegant it can also make the code difficult to interpret, so 
 1. The XML is namespaced, but as we're only working with this file we strip the namespace to make our XPath easier to work with.
 1. Using the `.//Trackpoint[Extensions]` XPath we find all 'trackpoint' nodes that have a child 'extensions' node. 
     - We do this because some of the trackpoints only have a timestamp with no data.
-1. We then construct a data frame (a tibble) by finding and extracting the speed, power, etc from each trachpoint, with the XPaths being relative to the trackpoint node.
+1. We then construct a data frame (a tibble) by finding and extracting the velocity, power, etc from each trachpoint, with the XPaths being relative to the trackpoint node.
     - The braces to stop the normal behaviour of the left-hand side of the pipe being passed as the first argument to the tibble.
 1. Determining which 'lap' a trackpoint belongs to takes a little more work. We do this by finding it's grandparent lap node and counting how many preceding lap siblings it has. The first lap will have 0 siblings, the second lap 1, and so on.
 
@@ -121,17 +122,17 @@ That's it! With less than 20 lines of R the XML has been transformed into a tidy
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-6-1.png" width="672" />
 
-The data was generated on a track bike which has only a single gear, so the speed and cadence should have a near perfect linear relationship:
+The data was generated on a track bike which has only a single gear, so the velocity and cadence should have a near perfect linear relationship:
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-7-1.png" width="672" />
 
-There's a clear linear relationship, but there is also distribution of speeds across each cadence value. This is likely due to the difference in precision between the cadence and the speed, as cadence is measured as a integer whereas speed is a double with a single decimal point[^2].
+There's a clear linear relationship, but there is also distribution of velocities across each cadence value. This is likely due to the difference in precision between the cadence and the velocity, as cadence is measured as a integer whereas velocity is a double with a single decimal point[^2].
 
-[^2]: A linear regression of cadence on speed was performed, and the residuals were in the range of (-.5, .5). This supports our precision difference hypothesis.
+[^2]: A linear regression of cadence on velocity was performed and the residuals were in the range of (-.5, .5). This supports our precision difference hypothesis.
 
-Before we look at the power and speed, we need to do a little bit of housework. The second and fourth laps are extracted, and a new *position* factor variable is created with nicely named levels. 
+Before we look at the power and velocity, we need to do a little bit of housework. The second and fourth laps that contain our experimental data are extracted, and a new *position* factor variable is created with appropriately named levels. 
 
-In what could be considered controversial, we're going to remove data points where the bike was accelerating - i.e. the rate of change of the power between trackpoint samples was between -10 and 10 watts. Acceleration was required to 'move' to different speed increments, but our model only relates to points of (relatively) constant speed. Given our knowledge of the data generation process, I think this data removal can be justified.
+In what could be considered controversial, we're going to remove data points where the bike was accelerating - i.e. the rate of change of the power between trackpoint samples was between -10 and 10 watts. Acceleration was required to 'move' to different velocity increments, but our model only relates to points of (relatively) constant velocity. Given our knowledge of the data generation process, I think this data removal can be justified.
 
 
 
@@ -145,19 +146,18 @@ cycle_data_cleaned <-
     mutate(position = fct_recode(as_factor(lap), "Tops" = "1", "Drops" = "3"))
 ```
 
-We can now view the power output versus the speed by position of the data we'll be using in our model.      
+We can now view the power output versus the velocity by position of the data we'll be using in our model.      
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" />
 
-We see some sort of exponential relationship between speed and power (we'll discuss that in the next section). We can also see the "blobs" of data where I have tried to keep a constant speed, and how keeping that constant speed become more difficult as I went faster. What is not instantly visible is the difference in power output versus speed for each of the different hand positions.
-
+We see an exponential relationship, and can see the "blobs" of data where I have tried to keep a constant velocity. What is not instantly visible is the difference in power output versus velocity for each of the different hand positions.
 
 # Defining and Building a Model
 
-Before we build our model in R we first have to define what the model is going to be. We'll be using the going to be using the classic drag equation: 
+We'll be using the going to be using the classic drag equation as our model:
 y
 $$ F_d = \frac{1}{2}\rho C_D A v^2$$
-This says that the force of drag \\(F_d\\) on a body when moving through a fluid is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient of my bike/body (\\(C_D\\)) time  is front on cross-sectional area (\\(A\\)) times the square of my is my velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
+This says that the force of drag \\(F_d\\) on the bike/body system when moving through the air is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient the bike/body (\\(C_D\\)) times the front on cross-sectional area (\\(A\\)) times the square of the velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
 
 $$ \text{Let } \beta = \frac{1}{2} \rho C_D A $$
 $$ F_d = \beta v^2 $$
@@ -169,13 +169,10 @@ Distance over time is velocity so we are left with:
 $$ P_d = \beta v^3 $$ 
 The coefficient is conditional on the position variable, so we'll end up with two coefficients from this model:
 
-$$
-  P_d  =\left\{
-  \begin{array}{@{}ll@{}}
-    \beta_{tops} v^3 & \text{if}\ position = tops \\
+$$ P_d = \Bigg\\{\begin{array}{ll}
+    \beta_{tops} v^3 & \text{if}\ position = tops \\\\
     \beta_{drops} v^3 & \text{if}\ position = drops
-  \end{array}\right.
-$$
+  \end{array} $$
 
 Is this a perfect model? Not at all, but for our purposes it should be reasonable. Don't make me tap the "all models are wrong..." sign!
 
@@ -187,7 +184,7 @@ We have some prior information that we can be included in the model: it takes ze
 ```r
 cycle_data_mdl <-
     cycle_data_cleaned %>% 
-    lm(power ~ 0 + position:I(speed^3), data = .) 
+    lm(power ~ 0 + position:I(velocity^3), data = .) 
 ```
 
 Here's what model looks like overlayed on the data:
@@ -215,20 +212,19 @@ $$ P_{f} = \frac{ F_{f} \times x }{ t } = F_{f}v $$
 
 If we let \\(\beta_1 = F_{f}\\) then our updated model is:
 
-$$
-  P_d =  \beta_1 v + \left\{
-  \begin{array}{@{}ll@{}}
-    \beta_{tops} v^3 & \text{if}\ position = tops \\
+
+$$ P_d = \beta_1 v + \Bigg\\{\begin{array}{ll}
+    \beta_{tops} v^3 & \text{if}\ position = tops \\\\
     \beta_{drops} v^3 & \text{if}\ position = drops
-  \end{array}\right.
-$$
+  \end{array} $$
+  
 We'll now run our updated model over the data. The frictional component is not going to be affected by the position on the handlebars, so we ensure it's not conditional on the position:
 
 
 ```r
 cycle_data_mdl <-
     cycle_data_cleaned %>% 
-    lm(power ~ 0 + speed + position:I(speed^3), data = .) 
+    lm(power ~ 0 + velocity+ position:I(velocity^3), data = .) 
 ```
 
 Here's the updated on model on top of the original data:
@@ -249,44 +245,46 @@ This looks great: the residuals have an approximate Gaussian shape, there's not 
 With confidence in the model we now take a look at the parameters:
 
 
-|Term                     |  Estimate| Std Error| Statistic| P Value|
-|:------------------------|---------:|---------:|---------:|-------:|
-|speed                    | 4.1788613| 0.3782129|  11.04897|       0|
-|positionTops:I(speed^3)  | 0.2131439| 0.0045782|  46.55634|       0|
-|positionDrops:I(speed^3) | 0.1889915| 0.0044721|  42.26044|       0|
+|Term                        |  Estimate| Std Error| Statistic| P Value|
+|:---------------------------|---------:|---------:|---------:|-------:|
+|velocity                    | 4.1788613| 0.3782129|  11.04897|       0|
+|positionTops:I(velocity^3)  | 0.2131439| 0.0045782|  46.55634|       0|
+|positionDrops:I(velocity^3) | 0.1889915| 0.0044721|  42.26044|       0|
 
-The speed term is the \\(\beta_1\\) coefficient, which is the the frictional force of the bike. The model has determined that the frictional of the bike accounts for 4.18 Newtons of force.
+The velocity term is the \\(\beta_1\\) coefficient, which is the the frictional force of the bike. The model has determined that the frictional of the bike accounts for 4.18 Newtons of force.
 
 The next two are the coefficients of the \\(v^3\\) term when the position varibale is 'Tops' and when it is 'Drops'. Value of the coefficient isn't important to us (being a combinatio of the fluid density, drag dofficient, and my cross-sectional area), but what we want to look at is the relative difference. The result is that, for a specific velocity, we need to use 11.33% less power. Put another way, we are 11.33% more efficient in this position.
 
-The following table gives you an idea on the differences in power required for speeds of 20, 40, and 60 km/h.
+The following table gives you an idea on the differences in power required for velocities of 20, 40, and 60 km/h.
 
 
 
-| Speed|    Tops|  Drops| Power Difference|
-|-----:|-------:|------:|----------------:|
-|    20|   59.76|  55.62|             4.14|
-|    40|  338.81| 305.68|            33.13|
-|    60| 1056.43| 944.61|           111.82|
+| Velocity|    Tops|  Drops| Power Difference|
+|--------:|-------:|------:|----------------:|
+|       20|   59.76|  55.62|             4.14|
+|       40|  338.81| 305.68|            33.13|
+|       60| 1056.43| 944.61|           111.82|
 
-# Percentage Uncertainty
+# Don't Forget the Uncertainty
 
-In calculating the *average* percent decrease, we've thrown away all of our uncertainty of the parameters. If we make two assumptions, both of which I beleive to be strong:
+In calculating the *average* percent decrease, the uncertainty in the parameters has been thrown away. If we assume two things about the parameters:
 
 1. The parameter estimates are normally distributed, and
 2. There is no covariance between the parameters
 
-then we can take a computational approach to determining the uncertainly of the percentage. We take one million samples from a normal distribution for each of the parameters, with a mean of the estimate, and a standard deviation  of the standard error. We can then calculate the percentage for the one million pairs of parameters generated[^3] which gives us a distribution of percentages, the look at the quartiles for these values.
+then we can take a computational approach to determining the uncertainly of the percentage. Drawing samples from each of the parameter distributions (mean = parameter estimate, and standard deviation = standard error) then calculating the percentage for each pair of samples [^3] will give us a distribution of percentages. We can then calculate quantiles on this data.
 
 [^3]: Thanks to /u/eatthepieguy for responding to my [query on this](https://www.reddit.com/r/statistics/comments/sehzun/q_confidence_intervals_for_percentages/).
 
 
 ```r
+# Extract the parameter and standard error from the model.
 beta_tops <- tidy(cycle_data_mdl)[[2]][2]
 sigma_tops <- tidy(cycle_data_mdl)[[3]][2]
 beta_drops <- tidy(cycle_data_mdl)[[2]][3]
 sigma_drops <- tidy(cycle_data_mdl)[[3]][3]
 
+# Generate our samples and calculate the percentages
 percent_distribution <-
     tibble(
         beta_top_dist = rnorm(1000000, beta_tops, sigma_tops),
@@ -294,23 +292,21 @@ percent_distribution <-
         percent = ((beta_top_dist - beta_drop_dist) / beta_top_dist) * 100
     )
 
+# View the distribution
 percent_distribution %>% 
     ggplot(aes(percent)) +
     geom_histogram( binwidth = .1) +
     labs(
         title = 'Distribution of Computed Parameter Percentage Increases/Decreases',
-        x = "Percentage Increase/Decrease",
-        y = 'Count (Bin Width = .1)',
+        x = "Percentage Increase/Decrease (Bin Width = .1%)",
+        y = 'Count',
     )
 ```
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
-Our 89%[^4] confidence interval is therefore:
 
-|Quantile |     Range|
-|:--------|---------:|
-|5.5%     |  6.691276|
-|94.5%    | 15.763184|
+Our 89%[^4] confidence interval is therefore [6.69003, 15.7649306]
+
 [^4]: Why 89%? Well, why 95%?
 
 # Summary
