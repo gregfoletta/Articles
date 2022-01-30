@@ -1,11 +1,8 @@
 ---
-title: Poor Man's Wind Tunnel
-author: ''
-date: '2021-12-24'
-slug: 
-categories: []
-tags: []
-images: []
+title: Poor Person's Wind Tunnel (Draft)
+author: 'Greg Foletta'
+date: '2022-01-29'
+categories: [R, Regression]
 ---
 
 ```{r include=FALSE}
@@ -168,7 +165,7 @@ cycle_data_cleaned <-
     mutate(position = fct_recode(as_factor(lap), "Tops" = "1", "Drops" = "3"))
 ```
 
-We can now view the power output versus the speed by position of the data we'll be using in our model.
+We can now view the power output versus the speed by position of the data we'll be using in our model.      
 
 ```{r echo=FALSE}
 cycle_data_cleaned %>% 
@@ -200,6 +197,16 @@ $$ F_d \Big( \frac{x}{t} \Big) = \beta v^2 \Big( \frac{x}{t} \Big)$$
 Distance over time is velocity so we are left with:
 
 $$ P_d = \beta v^3 $$ 
+The coefficient is conditional on the position variable, so we'll end up with two coefficients from this model:
+
+$$
+  P_d  =\left\{
+  \begin{array}{@{}ll@{}}
+    \beta_{tops} v^3 & \text{if}\ position = tops \\
+    \beta_{drops} v^3 & \text{if}\ position = drops
+  \end{array}\right.
+$$
+
 Is this a perfect model? Not at all, but for our purposes it should be reasonable. Don't make me tap the "all models are wrong..." sign!
 
 The model will give us an estimate (with some uncertainty) \\(\beta_{tops}\\) value when I was on the tops of the handlebars, and a \\(\beta_{drops}\\) value when I was in the drops.
@@ -241,7 +248,7 @@ crossing(
     )
 ```
 
-As expected the drops is more efficient that the tops. Before looking at the parameters of the model let's first look at some diagnostics. The first one to look at is a fitted value versus residual plot.
+As expected the drops is more efficient that the tops. Before looking at the parameters of the model let's first look at some diagnostics. The first one to look at is the fitted values of the over the residuals:
 
 ```{r echo=FALSE}
 cycle_data_mdl %>%
@@ -256,22 +263,31 @@ cycle_data_mdl %>%
     )
 ```
 
-This is very interesting! While we seem to have captured mos of the the variation in our model, there still seems to be a linear component that our model hasn't accounted for. If we think about this, our model is too simple and we've missed a critical component: friction! Let's re
+I've added a linear regression line to highlight the trend, and it shows shows something quite interesting: there appears to be a linear relationship that our model hasn't accounted for.
+
+If we think back to our model, we were only accounting for the power required to overcome drag, but there's another force in play that we've completely ignored: friction. There's the rolling friction of the wheels on the tack, and the sliding friction of the hubs, the chainset and pedals, and of the chain on the sprocket.
+
+With this realisation, let's try and build a better model to account for this force.
 
 # Building a Better Model
 
-In the original model, \\(P_{Total} = P_{Drag}\\), but out **t**otal power used is made up of power to overcome **d**rag plus power to overcome **f**riction:
+In the original model, \\(P_{Total} = P_{Drag}\\), but in our updated model total power used is made up of power to overcome drag plus power to overcome friction:
 
 $$ P_{t} = P_{d} + P_{f} $$
-
-Generally the force of friction is not proportional to the relative velocity of the two surfaces that are touching, but we're looking at power, so doing some conversion we end up with:
+Once again knowing that forces times distance is energy, and energy over time is power, we end up with:
 
 $$ P_{f} = \frac{ F_{f} \times x }{ t } = F_{f}v $$
 
-If we let \\(\beta_1 = F_{f}) and from our previous model we let \\(\beta_2 = \beta), our model is now:
+If we let \\(\beta_1 = F_{f}\\) then our updated model is:
 
-$$ P_{t} = \beta_1 v + \beta_2 v^3 $$
-Let's re-do our modelling with this updated model. We don't beleive that the frictional component would be affected by the position on the handlebars, so we make sure it's not conditional on the position.
+$$
+  P_d =  \beta_1 v + \left\{
+  \begin{array}{@{}ll@{}}
+    \beta_{tops} v^3 & \text{if}\ position = tops \\
+    \beta_{drops} v^3 & \text{if}\ position = drops
+  \end{array}\right.
+$$
+We'll now run our updated model over the data. The frictional component is not going to be affected by the position on the handlebars, so we ensure it's not conditional on the position:
 
 ```{r}
 cycle_data_mdl <-
@@ -279,7 +295,7 @@ cycle_data_mdl <-
     lm(power ~ 0 + speed + position:I(speed^3), data = .) 
 ```
 
-Here's our updated on model on top of the original data:
+Here's the updated on model on top of the original data:
 
 ```{r echo = FALSE}
 crossing(
@@ -308,7 +324,7 @@ crossing(
     )
 ```
 
-Hard to discern if much difference from this graph, so let's look at the fitted versus residuals again:
+Hard to discern if much difference from this graph, so we'll go back and look at our fitted versus residual diagnostic graph:
 
 ```{r echo=FALSE}
 cycle_data_mdl %>%
@@ -356,7 +372,7 @@ tidy(cycle_data_mdl) %>%
 
 The speed term is the \\(\beta_1\\) coefficient, which is the the frictional force of the bike. The model has determined that the frictional of the bike accounts for `r round(beta_1, 2)` Newtons of force.
 
-The next two are the coefficients of the \\(v^3\\) term when the position varibale is 'Tops' and when it is 'Drops'. Value of the coefficient isn't important to us (being a combinatio of the fluid density, drag dofficient, and my cross-sectional area), but what we want to look at is the relative difference. The result is that, for a specific velocity, we need to use `r round(percent_change, 2)`% less power. Put another way, we are `r round(percent_change, 2)` more efficient in this position.
+The next two are the coefficients of the \\(v^3\\) term when the position varibale is 'Tops' and when it is 'Drops'. Value of the coefficient isn't important to us (being a combinatio of the fluid density, drag dofficient, and my cross-sectional area), but what we want to look at is the relative difference. The result is that, for a specific velocity, we need to use `r round(percent_change, 2)`% less power. Put another way, we are `r round(percent_change, 2)`% more efficient in this position.
 
 The following table gives you an idea on the differences in power required for speeds of 20, 40, and 60 km/h.
 
@@ -383,12 +399,55 @@ crossing(
     knitr::kable()
 ```
 
+# Percentage Uncertainty
+
+In calculating the *average* percent decrease, we've thrown away all of our uncertainty of the parameters. If we make two assumptions, both of which I beleive to be strong:
+
+1. The parameter estimates are normally distributed, and
+2. There is no covariance between the parameters
+
+then we can take a computational approach to determining the uncertainly of the percentage. We take one million samples from a normal distribution for each of the parameters, with a mean of the estimate, and a standard deviation  of the standard error. We can then calculate the percentage for the one million pairs of parameters generated[^3] which gives us a distribution of percentages, the look at the quartiles for these values.
+
+[^3]: Thanks to /u/eatthepieguy for responding to my [query on this](https://www.reddit.com/r/statistics/comments/sehzun/q_confidence_intervals_for_percentages/).
+
+```{r}
+beta_tops <- tidy(cycle_data_mdl)[[2]][2]
+sigma_tops <- tidy(cycle_data_mdl)[[3]][2]
+beta_drops <- tidy(cycle_data_mdl)[[2]][3]
+sigma_drops <- tidy(cycle_data_mdl)[[3]][3]
+
+percent_distribution <-
+    tibble(
+        beta_top_dist = rnorm(1000000, beta_tops, sigma_tops),
+        beta_drop_dist = rnorm(1000000, beta_drops, sigma_drops),
+        percent = ((beta_top_dist - beta_drop_dist) / beta_top_dist) * 100
+    )
+
+percent_distribution %>% 
+    ggplot(aes(percent)) +
+    geom_histogram( binwidth = .1) +
+    labs(
+        title = 'Distribution of Computed Parameter Percentage Increases/Decreases',
+        x = "Percentage Increase/Decrease",
+        y = 'Count (Bin Width = .1)',
+    )
+```
+Our 89%[^4] confidence interval is therefore:
+```{r, echo = FALSE}
+percent_distribution %>% 
+    summarise(quantile = c(.055, .945), range = quantile(percent, probs = quantile)) %>% 
+    mutate(quantile = percent(quantile, accuracy = 0.1)) %>%
+    janitor::clean_names(case = 'title') %>% 
+    knitr::kable()
+```
+[^4]: Why 89%? Well, why 95%?
+
 # Summary
 
 In this article we looked at the aerodynamics of different positions on a bike. We gathered data using different sensors, and showed the elegance of R by transforming XML data into a rectangular, tidy data frame.
 
 We defined a simple model and used this to perform a regression of power required to maintain a specific velocity. By performaing diagnostics on this model, we were able to identify that our model was incomplete, and that we were likely not including friction in the model. We defined and created a new model with friction included, which performed better than our original model.
 
-The ultimate aim of the article was to determine how much more efficient it is to ride in the 'drops' of the handlebars rather than the 'tops'. From our modelling we estimate it to be `r round(percent_change, 2)`% more efficient.
+The ultimate aim of the article was to determine how much more efficient it is to ride in the 'drops' of the handlebars rather than the 'tops'. From our modelling we found the average estimate of our efficiency gain to be `r round(percent_change, 2)`%, with an 89% confidence interval of [6.7%, 15.7%].
 
 
