@@ -155,8 +155,8 @@ We see an exponential relationship, and can see the "blobs" of data where I have
 
 # Defining and Building a Model
 
-We'll be using the going to be using the classic drag equation as our model:
-y
+We'll be using the the classic drag equation as our model:
+
 $$ F_d = \frac{1}{2}\rho C_D A v^2$$
 This says that the force of drag \\(F_d\\) on the bike/body system when moving through the air is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient the bike/body (\\(C_D\\)) times the front on cross-sectional area (\\(A\\)) times the square of the velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
 
@@ -292,21 +292,11 @@ percent_distribution <-
         beta_drop_dist = rnorm(1000000, beta_drops, sigma_drops),
         percent = ((beta_top_dist - beta_drop_dist) / beta_top_dist) * 100
     )
-
-# View the distribution
-percent_distribution %>% 
-    ggplot(aes(percent)) +
-    geom_histogram( binwidth = .1) +
-    labs(
-        title = 'Distribution of Computed Parameter Percentage Increases/Decreases',
-        x = "Percentage Increase/Decrease (Bin Width = .1%)",
-        y = 'Count',
-    )
 ```
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-20-1.png" width="672" />
 
-Our 89%[^4] confidence interval is therefore [6.69%, 15.75%].
+Our 89%[^4] confidence interval is therefore [6.69%, 15.77%].
 
 [^4]: Why 89%? Well, why 95%?
 
@@ -316,6 +306,6 @@ In this article we looked at the aerodynamics of different positions on a bike. 
 
 We defined a simple model and used this to perform a regression of power required to maintain a specific velocity. By performing diagnostics on this model, we were able to identify that our model was incomplete, and that we were likely not including friction in the model. We defined and created a new model with friction included, which performed better than our original model.
 
-The ultimate aim of the article was to determine how much more efficient it is to ride in the 'drops' of the handlebars rather than the 'tops'. From our modelling we found the average estimate of our efficiency gain to be 11.33%, with an 89% confidence interval of [6.69%, 15.75%].
+The ultimate aim of the article was to determine how much more efficient it is to ride in the 'drops' of the handlebars rather than the 'tops'. From our modelling we found the average estimate of our efficiency gain to be 11.33%, with an 89% confidence interval of [6.69%, 15.77%].
 
 

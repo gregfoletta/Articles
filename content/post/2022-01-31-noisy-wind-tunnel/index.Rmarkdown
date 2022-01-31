@@ -185,8 +185,8 @@ We see an exponential relationship, and can see the "blobs" of data where I have
 
 # Defining and Building a Model
 
-We'll be using the going to be using the classic drag equation as our model:
-y
+We'll be using the the classic drag equation as our model:
+
 $$ F_d = \frac{1}{2}\rho C_D A v^2$$
 This says that the force of drag \\(F_d\\) on the bike/body system when moving through the air is proportional to half of the density of the fluid (\\(\rho\\)) times the drag coefficient the bike/body (\\(C_D\\)) times the front on cross-sectional area (\\(A\\)) times the square of the velocity (\\(v\\)). I'm going to bundle up all coefficients into a single coefficient \\(\beta\\).
 
@@ -421,7 +421,9 @@ percent_distribution <-
         beta_drop_dist = rnorm(1000000, beta_drops, sigma_drops),
         percent = ((beta_top_dist - beta_drop_dist) / beta_top_dist) * 100
     )
+```
 
+```{r echo=FALSE}
 # View the distribution
 percent_distribution %>% 
     ggplot(aes(percent)) +
