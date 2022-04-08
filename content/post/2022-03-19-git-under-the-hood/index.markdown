@@ -14,9 +14,11 @@ categories: [git]
 
 ```zsh
 git init -q
-rm -rf .git/{hooks,info,config,branches,description,objects/{info,pack},refs/{heads,tags}}
+rm -rf .git/{hooks,info,config,branches,description}
+rm -rf .git/objects/{info,pack}
+rm -rf .git/refs/{heads,tags}
 
-tree .git
+tree -n .git
 ```
 
 ```
@@ -36,7 +38,7 @@ tree .git
 echo "Hello" > file_x
 git add file_x
 
-tree .git
+tree -n .git
 ```
 
 ```
@@ -79,7 +81,7 @@ echo "Hello" > subdir/file_z
 
 git add subdir
 
-tree .git
+tree -n .git
 ```
 
 ```
@@ -102,11 +104,11 @@ tree .git
 ```zsh
 git commit -m "Initial Commit"
 
-tree .git
+tree -n .git
 ```
 
 ```
-## [master (root-commit) 169c189] Initial Commit
+## [master (root-commit) a83e81a] Initial Commit
 ##  3 files changed, 3 insertions(+)
 ##  create mode 100644 file_x
 ##  create mode 100644 subdir/file_y
@@ -121,14 +123,14 @@ tree .git
 ## │       └── [01;34mheads[00m
 ## │           └── master
 ## ├── [01;34mobjects[00m
-## │   ├── [01;34m16[00m
-## │   │   └── 9c189e6ef181c0ee03d34611704e71063bb20a
 ## │   ├── [01;34m2b[00m
 ## │   │   └── 04fd32b556e89dfa44b332f0cc59541879189a
 ## │   ├── [01;34m44[00m
 ## │   │   └── 9a4c7ba21764840c8abc1eb9698596fdf33f3d
 ## │   ├── [01;34m90[00m
 ## │   │   └── 9789960b67d38f5e7fa0bb51238079cf041c6a
+## │   ├── [01;34ma8[00m
+## │   │   └── 3e81a25f0f4c9a9b806ae72b9537d8cfeef83b
 ## │   └── [01;34me9[00m
 ## │       └── 65047ad7c57865823c7d992b1d046ea66edf78
 ## └── [01;34mrefs[00m
@@ -196,8 +198,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 ## commit 177
 ## tree 2b04fd32b556e89dfa44b332f0cc59541879189a
-## author Greg Foletta <greg@foletta.org> 1649405783 +1000
-## committer Greg Foletta <greg@foletta.org> 1649405783 +1000
+## author Greg Foletta <greg@foletta.org> 1649407569 +1000
+## committer Greg Foletta <greg@foletta.org> 1649407569 +1000
 ## 
 ## Initial Commit
 ```
@@ -213,7 +215,7 @@ cat .git/refs/heads/master
 
 ```
 ## ref: refs/heads/master
-## 169c189e6ef181c0ee03d34611704e71063bb20a
+## a83e81a25f0f4c9a9b806ae72b9537d8cfeef83b
 ```
 
 # Index
@@ -226,15 +228,12 @@ say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar 
 ```
 
 ```
-## 1649405783 682012379 1649405783 682012379 64769 7999060 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 file_x 0000000000000000 1649405783
-## 1649405783 714066467 1649405783 714066467 64769 10094535 0000000000000000 1000000110100100 1000 1000 12 909789960b67d38f5e7fa0bb51238079cf041c6a 00000000 subdir/file_y 0000000000000000 1649405783
-## 1649405783 714066467 1649405783 714066467 64769 10094584 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 subdir/file_z 0000000000000000
+## 1649407569 164667480 1649407569 164667480 64769 7999196 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 file_x 0000000000000000 1649407569
+## 1649407569 208662624 1649407569 208662624 64769 7999198 0000000000000000 1000000110100100 1000 1000 12 909789960b67d38f5e7fa0bb51238079cf041c6a 00000000 subdir/file_y 0000000000000000 1649407569
+## 1649407569 208662624 1649407569 208662624 64769 7999226 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 subdir/file_z 0000000000000000
 ```
 
 
 
 
-```zsh
-rm -rf .git file_* subdir
-```
 

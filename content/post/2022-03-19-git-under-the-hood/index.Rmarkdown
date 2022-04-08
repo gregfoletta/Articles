@@ -16,9 +16,11 @@ rm -rf .git file_* subdir
 
 ```{zsh}
 git init -q
-rm -rf .git/{hooks,info,config,branches,description,objects/{info,pack},refs/{heads,tags}}
+rm -rf .git/{hooks,info,config,branches,description}
+rm -rf .git/objects/{info,pack}
+rm -rf .git/refs/{heads,tags}
 
-tree .git
+tree -n .git
 ```
 
 
@@ -28,7 +30,7 @@ tree .git
 echo "Hello" > file_x
 git add file_x
 
-tree .git
+tree -n .git
 ```
 
 ```{zsh}
@@ -47,7 +49,7 @@ echo "Hello" > subdir/file_z
 
 git add subdir
 
-tree .git
+tree -n .git
 ```
 
 # Tree
@@ -55,7 +57,7 @@ tree .git
 ```{zsh}
 git commit -m "Initial Commit"
 
-tree .git
+tree -n .git
 ```
 
 ```{zsh}
@@ -103,7 +105,7 @@ say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar 
 
 
 
-```{zsh}
+```{zsh include=FALSE}
 rm -rf .git file_* subdir
 ```
 
