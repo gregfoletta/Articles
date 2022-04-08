@@ -14,7 +14,7 @@ rm -rf .git file_* subdir
 
 # Init and Cleaning
 
-```{zsh}
+```{zsh include=FALSE}
 git init -q
 rm -rf .git/{hooks,info,config,branches,description}
 rm -rf .git/objects/{info,pack}
