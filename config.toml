@@ -1,5 +1,5 @@
 baseurl = "https://git.articles.foletta.org"
-title = "Greg Foletta - Technical Articles"
+title = "Greg Foletta - Bits and Blobs"
 copyright = "Copyright 2022 - Greg Foletta"
 canonifyurls = true
 theme = "hugo-kiera"
