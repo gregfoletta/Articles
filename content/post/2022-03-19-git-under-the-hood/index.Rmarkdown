@@ -1,0 +1,109 @@
+---
+title: Git Under the Hood
+author: 'Greg Foletta'
+date: '2022-03-19'
+slug: git-under-the-hood
+categories: [git]
+---
+
+```{zsh include=FALSE}
+touch file_x
+rm -rf .git file_* subdir
+```
+
+
+# Init and Cleaning
+
+```{zsh}
+git init -q
+rm -rf .git/{hooks,info,config,branches,description,objects/{info,pack},refs/{heads,tags}}
+
+tree .git
+```
+
+
+# Blobs
+
+```{zsh}
+echo "Hello" > file_x
+git add file_x
+
+tree .git
+```
+
+```{zsh}
+pigz -cd .git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78 | hexdump -C
+```
+
+```{zsh}
+echo "blob 6\0Hello" | shasum
+```
+
+```{zsh}
+mkdir subdir
+
+echo "Hello Again" > subdir/file_y
+echo "Hello" > subdir/file_z
+
+git add subdir
+
+tree .git
+```
+
+# Tree
+
+```{zsh}
+git commit -m "Initial Commit"
+
+tree .git
+```
+
+```{zsh}
+pigz -cd .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a | hexdump -C
+```
+
+```{zsh}
+cat .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a |\
+pigz -d |\
+perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
+```
+
+```{zsh}
+pigz -cd .git/objects/44/9a4c7ba21764840c8abc1eb9698596fdf33f3d |\
+perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
+```
+
+
+# Commit
+
+```{zsh}
+COMMIT_DIR=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 1-2)
+COMMIT_OBJ=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 3-)
+
+pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
+perl -0777 -nE 'print join "\n", unpack("Z*A*")'
+```
+
+# Branch
+
+```{zsh}
+cat .git/HEAD
+cat .git/refs/heads/master
+
+
+```
+
+# Index
+```{zsh}
+perl -MData::Dumper -0777 -nE '
+my @index = unpack("A4 H8 N/(N4 N2 B16 B16 N N N H40 B8 W/A B16 x![4])");
+say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar (@index - 2) / 15) - 1)
+' .git/index
+```
+
+
+
+```{zsh}
+rm -rf .git file_* subdir
+```
+
