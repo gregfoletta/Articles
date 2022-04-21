@@ -6,15 +6,23 @@ slug: git-under-the-hood
 categories: [git]
 ---
 
-```{zsh include=FALSE}
+```{zsh}
 touch file_x
 rm -rf .git file_* subdir
 ```
 
+```{r}
+library(tidyverse)
+library(tidygraph)
+library(ggraph)
+library(git2r)
+library(stringr)
+library(glue)
+```
 
 # Init and Cleaning
 
-```{zsh include=FALSE}
+```{zsh}
 git init -q
 rm -rf .git/{hooks,info,config,branches,description}
 rm -rf .git/objects/{info,pack}
@@ -51,6 +59,34 @@ git add subdir
 
 tree -n .git
 ```
+```{r}
+tbl_graph(
+    nodes = odb_objects() %>% select(sha),
+    edges = tibble(to = c(1,2), from = c(1,2))
+) %>%
+    mutate(x = c(-1, 1), y = c(0, 0))
+```
+
+```{r}
+tbl_graph(
+    nodes = odb_objects() %>% select(sha),
+    edges = tibble(to = c(1,2), from = c(1,2))
+) %>%
+    mutate(x = c(-1, 1), y = c(0, 0)) %>% 
+    ggraph(x = x, y = y) +
+    geom_node_point(size = 30, colour = 'steelblue') +
+    geom_node_text(aes(label = str_sub(sha, end = 8)), colour = 'white') +
+    labs(
+        title = 'Blob Objects'
+    ) +
+    xlim(-4, 4) +
+    ylim(-4, 4)
+    
+    
+    #ggraph() +
+    #geom_node_point(size = 40, colour = 'steelblue') +
+    #geom_node_label(aes(label = sha))
+```
 
 # Tree
 
@@ -73,6 +109,50 @@ perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```{zsh}
 pigz -cd .git/objects/44/9a4c7ba21764840c8abc1eb9698596fdf33f3d |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
+```
+
+
+
+```{r}
+# All git objects
+git_object_nodes <- 
+    odb_objects()
+
+# Pull out tree objects, run ls_tree to list what they
+# point to which becomes out edges
+git_object_edges <-
+    odb_objects() %>% 
+    filter(type == 'tree') %>% 
+    mutate(blobs = map(sha, ~ls_tree(.x, recursive = FALSE))) %>%
+    unnest(blobs, names_repair = 'universal') %>%
+    select(
+        from = sha...1,
+        to = sha...6,
+    )
+
+
+tbl_graph(
+    nodes = git_object_nodes,
+    edges = git_object_edges
+) %>%
+    filter(type != 'commit') %>% 
+    ggraph(layout = 'kk') +
+    geom_node_point(aes(colour = type), size = 10) +
+    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
+    geom_node_label(aes(label = glue("{type}\n{str_sub(sha, end = 8)}")), nudge_y = -.14)
+``` 
+
+
+```{r}
+# Test graph structure
+tbl_graph(
+    nodes = tibble(nodes = c('a', 'b', 'c'), type = c('Good', 'Good', 'Bad')),
+    edges = tibble(from = c('a', 'c', 'b'), to = c('b', 'b', 'c'))
+) %>%
+    ggraph(layout = 'kk') +
+    geom_node_point(aes(colour = type), size = 30) +
+    geom_edge_bend(arrow = arrow(ends = 'last', type = 'closed')) +
+    geom_node_text(aes(label = nodes), size = 10,)
 ```
 
 

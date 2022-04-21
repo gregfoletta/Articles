@@ -7,11 +7,101 @@ categories: [git]
 ---
 
 
+```zsh
+touch file_x
+rm -rf .git file_* subdir
+```
 
+
+```r
+library(tidyverse)
+```
+
+```
+## ── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
+```
+
+```
+## ✓ ggplot2 3.3.5     ✓ purrr   0.3.4
+## ✓ tibble  3.1.6     ✓ dplyr   1.0.8
+## ✓ tidyr   1.2.0     ✓ stringr 1.4.0
+## ✓ readr   2.1.2     ✓ forcats 0.5.1
+```
+
+```
+## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+## x dplyr::filter() masks stats::filter()
+## x dplyr::lag()    masks stats::lag()
+```
+
+```r
+library(tidygraph)
+```
+
+```
+## 
+## Attaching package: 'tidygraph'
+```
+
+```
+## The following object is masked from 'package:stats':
+## 
+##     filter
+```
+
+```r
+library(ggraph)
+library(git2r)
+```
+
+```
+## 
+## Attaching package: 'git2r'
+```
+
+```
+## The following object is masked from 'package:tidygraph':
+## 
+##     pull
+```
+
+```
+## The following object is masked from 'package:dplyr':
+## 
+##     pull
+```
+
+```
+## The following objects are masked from 'package:purrr':
+## 
+##     is_empty, when
+```
+
+```r
+library(stringr)
+library(glue)
+```
 
 # Init and Cleaning
 
 
+```zsh
+git init -q
+rm -rf .git/{hooks,info,config,branches,description}
+rm -rf .git/objects/{info,pack}
+rm -rf .git/refs/{heads,tags}
+
+tree -n .git
+```
+
+```
+## [01;34m.git[00m
+## ├── HEAD
+## ├── [01;34mobjects[00m
+## └── [01;34mrefs[00m
+## 
+## 2 directories, 1 file
+```
 
 
 # Blobs
@@ -81,6 +171,57 @@ tree -n .git
 ## 4 directories, 4 files
 ```
 
+```r
+tbl_graph(
+    nodes = odb_objects() %>% select(sha),
+    edges = tibble(to = c(1,2), from = c(1,2))
+) %>%
+    mutate(x = c(-1, 1), y = c(0, 0))
+```
+
+```
+## # A tbl_graph: 2 nodes and 2 edges
+## #
+## # A directed multigraph with 2 components
+## #
+## # Node Data: 2 × 3 (active)
+##   sha                                          x     y
+##   <chr>                                    <dbl> <dbl>
+## 1 e965047ad7c57865823c7d992b1d046ea66edf78    -1     0
+## 2 909789960b67d38f5e7fa0bb51238079cf041c6a     1     0
+## #
+## # Edge Data: 2 × 2
+##    from    to
+##   <int> <int>
+## 1     1     1
+## 2     2     2
+```
+
+
+```r
+tbl_graph(
+    nodes = odb_objects() %>% select(sha),
+    edges = tibble(to = c(1,2), from = c(1,2))
+) %>%
+    mutate(x = c(-1, 1), y = c(0, 0)) %>% 
+    ggraph(x = x, y = y) +
+    geom_node_point(size = 30, colour = 'steelblue') +
+    geom_node_text(aes(label = str_sub(sha, end = 8)), colour = 'white') +
+    labs(
+        title = 'Blob Objects'
+    ) +
+    xlim(-4, 4) +
+    ylim(-4, 4)
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+
+```r
+    #ggraph() +
+    #geom_node_point(size = 40, colour = 'steelblue') +
+    #geom_node_label(aes(label = sha))
+```
+
 # Tree
 
 
@@ -91,7 +232,7 @@ tree -n .git
 ```
 
 ```
-## [master (root-commit) 1573987] Initial Commit
+## [master (root-commit) 66360b3] Initial Commit
 ##  3 files changed, 3 insertions(+)
 ##  create mode 100644 file_x
 ##  create mode 100644 subdir/file_y
@@ -106,12 +247,12 @@ tree -n .git
 ## │       └── [01;34mheads[00m
 ## │           └── master
 ## ├── [01;34mobjects[00m
-## │   ├── [01;34m15[00m
-## │   │   └── 739873fd7bd4e7babaa8c2e5630e0d2af0be8e
 ## │   ├── [01;34m2b[00m
 ## │   │   └── 04fd32b556e89dfa44b332f0cc59541879189a
 ## │   ├── [01;34m44[00m
 ## │   │   └── 9a4c7ba21764840c8abc1eb9698596fdf33f3d
+## │   ├── [01;34m66[00m
+## │   │   └── 360b3c83933ff55d265951f12297be55cbdc30
 ## │   ├── [01;34m90[00m
 ## │   │   └── 9789960b67d38f5e7fa0bb51238079cf041c6a
 ## │   └── [01;34me9[00m
@@ -167,6 +308,67 @@ perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 
 
+
+
+```r
+# All git objects
+git_object_nodes <- 
+    odb_objects()
+
+# Pull out tree objects, run ls_tree to list what they
+# point to which becomes out edges
+git_object_edges <-
+    odb_objects() %>% 
+    filter(type == 'tree') %>% 
+    mutate(blobs = map(sha, ~ls_tree(.x, recursive = FALSE))) %>%
+    unnest(blobs, names_repair = 'universal') %>%
+    select(
+        from = sha...1,
+        to = sha...6,
+    )
+```
+
+```
+## New names:
+## * sha -> sha...1
+## * type -> type...2
+## * len -> len...3
+## * type -> type...5
+## * sha -> sha...6
+## * ...
+```
+
+```r
+tbl_graph(
+    nodes = git_object_nodes,
+    edges = git_object_edges
+) %>%
+    filter(type != 'commit') %>% 
+    ggraph(layout = 'kk') +
+    geom_node_point(aes(colour = type), size = 10) +
+    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
+    geom_node_label(aes(label = glue("{type}\n{str_sub(sha, end = 8)}")), nudge_y = -.14)
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" />
+
+
+
+```r
+# Test graph structure
+tbl_graph(
+    nodes = tibble(nodes = c('a', 'b', 'c'), type = c('Good', 'Good', 'Bad')),
+    edges = tibble(from = c('a', 'c', 'b'), to = c('b', 'b', 'c'))
+) %>%
+    ggraph(layout = 'kk') +
+    geom_node_point(aes(colour = type), size = 30) +
+    geom_edge_bend(arrow = arrow(ends = 'last', type = 'closed')) +
+    geom_node_text(aes(label = nodes), size = 10,)
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
+
+
 # Commit
 
 
@@ -181,8 +383,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 ## commit 177
 ## tree 2b04fd32b556e89dfa44b332f0cc59541879189a
-## author Greg Foletta <greg@foletta.org> 1649407751 +1000
-## committer Greg Foletta <greg@foletta.org> 1649407751 +1000
+## author Greg Foletta <greg@foletta.org> 1650578867 +1000
+## committer Greg Foletta <greg@foletta.org> 1650578867 +1000
 ## 
 ## Initial Commit
 ```
@@ -198,7 +400,7 @@ cat .git/refs/heads/master
 
 ```
 ## ref: refs/heads/master
-## 15739873fd7bd4e7babaa8c2e5630e0d2af0be8e
+## 66360b3c83933ff55d265951f12297be55cbdc30
 ```
 
 # Index
@@ -211,9 +413,9 @@ say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar 
 ```
 
 ```
-## 1649407751 331213014 1649407751 331213014 64769 7999197 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 file_x 0000000000000000 1649407751
-## 1649407751 379210340 1649407751 379210340 64769 10094893 0000000000000000 1000000110100100 1000 1000 12 909789960b67d38f5e7fa0bb51238079cf041c6a 00000000 subdir/file_y 0000000000000000 1649407751
-## 1649407751 379210340 1649407751 379210340 64769 10094903 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 subdir/file_z 0000000000000000
+## 1650578867 622505264 1650578867 622505264 64769 7999180 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 file_x 0000000000000000 1650578867
+## 1650578867 646503924 1650578867 646503924 64769 12189883 0000000000000000 1000000110100100 1000 1000 12 909789960b67d38f5e7fa0bb51238079cf041c6a 00000000 subdir/file_y 0000000000000000 1650578867
+## 1650578867 646503924 1650578867 646503924 64769 12189884 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 subdir/file_z 0000000000000000
 ```
 
 
