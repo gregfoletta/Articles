@@ -232,7 +232,7 @@ tree -n .git
 ```
 
 ```
-## [master (root-commit) 66360b3] Initial Commit
+## [master (root-commit) a4b8375] Initial Commit
 ##  3 files changed, 3 insertions(+)
 ##  create mode 100644 file_x
 ##  create mode 100644 subdir/file_y
@@ -251,10 +251,10 @@ tree -n .git
 ## │   │   └── 04fd32b556e89dfa44b332f0cc59541879189a
 ## │   ├── [01;34m44[00m
 ## │   │   └── 9a4c7ba21764840c8abc1eb9698596fdf33f3d
-## │   ├── [01;34m66[00m
-## │   │   └── 360b3c83933ff55d265951f12297be55cbdc30
 ## │   ├── [01;34m90[00m
 ## │   │   └── 9789960b67d38f5e7fa0bb51238079cf041c6a
+## │   ├── [01;34ma4[00m
+## │   │   └── b837510a2a48ab9d9701548ab2ff6db35237ef
 ## │   └── [01;34me9[00m
 ## │       └── 65047ad7c57865823c7d992b1d046ea66edf78
 ## └── [01;34mrefs[00m
@@ -308,16 +308,60 @@ perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 
 
+```r
+odb_blobs()
+```
+
+```
+##                                        sha   path   name len
+## 1 e965047ad7c57865823c7d992b1d046ea66edf78        file_x   6
+## 2 909789960b67d38f5e7fa0bb51238079cf041c6a subdir file_y  12
+## 3 e965047ad7c57865823c7d992b1d046ea66edf78 subdir file_z   6
+##                                     commit       author                when
+## 1 a4b837510a2a48ab9d9701548ab2ff6db35237ef Greg Foletta 2022-04-25 22:31:34
+## 2 a4b837510a2a48ab9d9701548ab2ff6db35237ef Greg Foletta 2022-04-25 22:31:34
+## 3 a4b837510a2a48ab9d9701548ab2ff6db35237ef Greg Foletta 2022-04-25 22:31:34
+```
+
+```r
+odb_objects() %>% 
+left_join(odb_blobs()) %>%
+select(sha, type, name) %>%
+filter(type != 'commit')
+```
+
+```
+## Joining, by = c("sha", "len")
+```
+
+```
+##                                        sha type   name
+## 1 2b04fd32b556e89dfa44b332f0cc59541879189a tree   <NA>
+## 2 449a4c7ba21764840c8abc1eb9698596fdf33f3d tree   <NA>
+## 3 e965047ad7c57865823c7d992b1d046ea66edf78 blob file_x
+## 4 e965047ad7c57865823c7d992b1d046ea66edf78 blob file_z
+## 5 909789960b67d38f5e7fa0bb51238079cf041c6a blob file_y
+```
+
 
 
 ```r
 # All git objects
-git_object_nodes <- 
-    odb_objects()
+one_commit_nodes <- 
+    odb_objects() 
+
+# Add in the blob content
+one_commit_nodes <-
+    one_commit_nodes %>% 
+    filter(type == 'blob') %>%
+    select(-c(type, len)) %>% 
+    mutate(content = map(sha, ~content(lookup('.', sha = .x)))) %>% 
+    right_join(one_commit_nodes, by = 'sha')
+
 
 # Pull out tree objects, run ls_tree to list what they
 # point to which becomes out edges
-git_object_edges <-
+tree_to_blob_edges <-
     odb_objects() %>% 
     filter(type == 'tree') %>% 
     mutate(blobs = map(sha, ~ls_tree(.x, recursive = FALSE))) %>%
@@ -339,35 +383,45 @@ git_object_edges <-
 ```
 
 ```r
+# Pull out the commits and get what they point to
+commit_to_tree_edges <-
+    odb_objects() %>% 
+    filter(type == 'commit') %>% 
+    mutate(tree = map_chr(sha, ~{ lookup('.', .x) %>% tree() %>% .$sha })) %>%
+    select(
+        from = sha,
+        to = tree
+    )
+
+one_commit_edges <-
+    bind_rows(
+        tree_to_blob_edges,
+        commit_to_tree_edges
+    )
+    
+
+# Create the graph, filtering out the commit
 tbl_graph(
-    nodes = git_object_nodes,
-    edges = git_object_edges
+    nodes = one_commit_nodes,
+    edges = one_commit_edges
 ) %>%
-    filter(type != 'commit') %>% 
-    ggraph(layout = 'kk') +
+    #filter(type != 'commit') %>% 
+    ggraph() +
     geom_node_point(aes(colour = type), size = 10) +
     geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
-    geom_node_label(aes(label = glue("{type}\n{str_sub(sha, end = 8)}")), nudge_y = -.14)
+    geom_node_label(aes(filter = type != 'blob', label = glue("{ str_sub(sha, end = 8)}")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 8)}\n'{ content }'")), repel = TRUE) +
+    labs(
+        title = 'Git Object Structure',
+        subtitle = 'Tree and Blob Objects'
+    )
 ```
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" />
-
-
-
-```r
-# Test graph structure
-tbl_graph(
-    nodes = tibble(nodes = c('a', 'b', 'c'), type = c('Good', 'Good', 'Bad')),
-    edges = tibble(from = c('a', 'c', 'b'), to = c('b', 'b', 'c'))
-) %>%
-    ggraph(layout = 'kk') +
-    geom_node_point(aes(colour = type), size = 30) +
-    geom_edge_bend(arrow = arrow(ends = 'last', type = 'closed')) +
-    geom_node_text(aes(label = nodes), size = 10,)
+```
+## Using `sugiyama` as default layout
 ```
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
-
 
 # Commit
 
@@ -383,11 +437,45 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 ## commit 177
 ## tree 2b04fd32b556e89dfa44b332f0cc59541879189a
-## author Greg Foletta <greg@foletta.org> 1650578867 +1000
-## committer Greg Foletta <greg@foletta.org> 1650578867 +1000
+## author Greg Foletta <greg@foletta.org> 1650925894 +1000
+## committer Greg Foletta <greg@foletta.org> 1650925894 +1000
 ## 
 ## Initial Commit
 ```
+
+
+```r
+odb_objects()
+```
+
+```
+##                                        sha   type len
+## 1 2b04fd32b556e89dfa44b332f0cc59541879189a   tree  67
+## 2 449a4c7ba21764840c8abc1eb9698596fdf33f3d   tree  68
+## 3 e965047ad7c57865823c7d992b1d046ea66edf78   blob   6
+## 4 909789960b67d38f5e7fa0bb51238079cf041c6a   blob  12
+## 5 a4b837510a2a48ab9d9701548ab2ff6db35237ef commit 177
+```
+
+```r
+# Create the graph
+tbl_graph(
+    nodes = one_commit_nodes,
+    edges = one_commit_edges
+) %>%
+    ggraph() +
+    geom_node_point(aes(colour = type), size = 10) +
+    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
+    geom_node_label(aes(label = glue("{type}\n{str_sub(sha, end = 8)}")), nudge_y = -.14)
+```
+
+```
+## Using `sugiyama` as default layout
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
+
+
 
 # Branch
 
@@ -400,7 +488,7 @@ cat .git/refs/heads/master
 
 ```
 ## ref: refs/heads/master
-## 66360b3c83933ff55d265951f12297be55cbdc30
+## a4b837510a2a48ab9d9701548ab2ff6db35237ef
 ```
 
 # Index
@@ -413,9 +501,9 @@ say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar 
 ```
 
 ```
-## 1650578867 622505264 1650578867 622505264 64769 7999180 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 file_x 0000000000000000 1650578867
-## 1650578867 646503924 1650578867 646503924 64769 12189883 0000000000000000 1000000110100100 1000 1000 12 909789960b67d38f5e7fa0bb51238079cf041c6a 00000000 subdir/file_y 0000000000000000 1650578867
-## 1650578867 646503924 1650578867 646503924 64769 12189884 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 subdir/file_z 0000000000000000
+## 1650925894 63280793 1650925894 63280793 64769 7999817 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 file_x 0000000000000000 1650925894
+## 1650925894 103279498 1650925894 103279498 64769 9046848 0000000000000000 1000000110100100 1000 1000 12 909789960b67d38f5e7fa0bb51238079cf041c6a 00000000 subdir/file_y 0000000000000000 1650925894
+## 1650925894 103279498 1650925894 103279498 64769 9046849 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 subdir/file_z 0000000000000000
 ```
 
 

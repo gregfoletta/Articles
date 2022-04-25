@@ -111,16 +111,33 @@ pigz -cd .git/objects/44/9a4c7ba21764840c8abc1eb9698596fdf33f3d |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 
+```{r}
+odb_blobs()
+odb_objects() %>% 
+left_join(odb_blobs()) %>%
+select(sha, type, name) %>%
+filter(type != 'commit')
+    
+```
 
 
 ```{r}
 # All git objects
-git_object_nodes <- 
-    odb_objects()
+one_commit_nodes <- 
+    odb_objects() 
+
+# Add in the blob content
+one_commit_nodes <-
+    one_commit_nodes %>% 
+    filter(type == 'blob') %>%
+    select(-c(type, len)) %>% 
+    mutate(content = map(sha, ~content(lookup('.', sha = .x)))) %>% 
+    right_join(one_commit_nodes, by = 'sha')
+
 
 # Pull out tree objects, run ls_tree to list what they
 # point to which becomes out edges
-git_object_edges <-
+tree_to_blob_edges <-
     odb_objects() %>% 
     filter(type == 'tree') %>% 
     mutate(blobs = map(sha, ~ls_tree(.x, recursive = FALSE))) %>%
@@ -130,31 +147,39 @@ git_object_edges <-
         to = sha...6,
     )
 
+# Pull out the commits and get what they point to
+commit_to_tree_edges <-
+    odb_objects() %>% 
+    filter(type == 'commit') %>% 
+    mutate(tree = map_chr(sha, ~{ lookup('.', .x) %>% tree() %>% .$sha })) %>%
+    select(
+        from = sha,
+        to = tree
+    )
 
+one_commit_edges <-
+    bind_rows(
+        tree_to_blob_edges,
+        commit_to_tree_edges
+    )
+    
+
+# Create the graph, filtering out the commit
 tbl_graph(
-    nodes = git_object_nodes,
-    edges = git_object_edges
+    nodes = one_commit_nodes,
+    edges = one_commit_edges
 ) %>%
-    filter(type != 'commit') %>% 
-    ggraph(layout = 'kk') +
+    #filter(type != 'commit') %>% 
+    ggraph() +
     geom_node_point(aes(colour = type), size = 10) +
     geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
-    geom_node_label(aes(label = glue("{type}\n{str_sub(sha, end = 8)}")), nudge_y = -.14)
+    geom_node_label(aes(filter = type != 'blob', label = glue("{ str_sub(sha, end = 8)}")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 8)}\n'{ content }'")), repel = TRUE) +
+    labs(
+        title = 'Git Object Structure',
+        subtitle = 'Tree and Blob Objects'
+    )
 ``` 
-
-
-```{r}
-# Test graph structure
-tbl_graph(
-    nodes = tibble(nodes = c('a', 'b', 'c'), type = c('Good', 'Good', 'Bad')),
-    edges = tibble(from = c('a', 'c', 'b'), to = c('b', 'b', 'c'))
-) %>%
-    ggraph(layout = 'kk') +
-    geom_node_point(aes(colour = type), size = 30) +
-    geom_edge_bend(arrow = arrow(ends = 'last', type = 'closed')) +
-    geom_node_text(aes(label = nodes), size = 10,)
-```
-
 
 # Commit
 
@@ -165,6 +190,21 @@ COMMIT_OBJ=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 3-)
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
+
+```{r}
+odb_objects()
+# Create the graph
+tbl_graph(
+    nodes = one_commit_nodes,
+    edges = one_commit_edges
+) %>%
+    ggraph() +
+    geom_node_point(aes(colour = type), size = 10) +
+    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
+    geom_node_label(aes(label = glue("{type}\n{str_sub(sha, end = 8)}")), nudge_y = -.14)
+```
+
+
 
 # Branch
 
