@@ -6,19 +6,118 @@ slug: git-under-the-hood
 categories: [git]
 ---
 
-```{zsh}
+```{zsh include=FALSE}
 touch file_x
 rm -rf .git file_* subdir
 ```
 
-```{r}
+```{r include=FALSE}
 library(tidyverse)
 library(tidygraph)
 library(ggraph)
 library(git2r)
 library(stringr)
 library(glue)
+
+knitr::opts_chunk$set(
+    comment = ''
+)
+
 ```
+
+
+```{r include=FALSE}
+repo_nodes <- function(repo = '.') {
+    # First get all of the objects in the repo
+    one_commit_nodes <- 
+        odb_objects(repo = repo) 
+    
+    # We then want to add a 'content' column with:
+    #   - Content of the blobs
+    #   - Nothing for the trees
+    #   - Commit message for the commits
+    
+    # First adding the blob content
+    one_commit_nodes <-
+        one_commit_nodes %>% 
+        filter(type == 'blob') %>%
+        select(sha) %>% 
+        mutate(content = map(sha, ~content(lookup(repo, sha = .x)))) %>% 
+        right_join(one_commit_nodes, by = 'sha')
+   
+    one_commit_nodes <-
+        one_commit_nodes %>%
+        filter(type == 'commit') %>%
+        select(sha) %>%
+        mutate(message = map(sha, ~ {
+            lookup(repo, sha = .x) %>% as.data.frame() %>% magrittr::extract2('message')
+        })) %>% 
+        right_join(one_commit_nodes, by = 'sha')
+    
+    one_commit_nodes
+}
+
+repo_edges <- function(repo = '.') {
+    
+# Pull out tree objects, run ls_tree to list what they
+# point to which becomes out edges
+tree_to_blob_edges <-
+    odb_objects(repo = repo) %>% 
+    filter(type == 'tree') %>% 
+    mutate(blobs = map(sha, ~ls_tree(.x, recursive = FALSE))) %>%
+    unnest(blobs, names_repair = 'universal') %>% 
+    select(
+        from = sha...1,
+        to = sha...6,
+    )
+
+
+# Pull out the commits and add an edge from the commit to the root tree
+commit_to_tree <-
+    odb_objects(repo = repo) %>%
+    filter(type == 'commit') %>%
+    mutate(tree = map_chr(sha, ~ {
+        lookup(repo, .x) %>% tree() %>% .$sha
+    })) %>%
+    mutate(parent_commit = map(sha, ~ {
+        lookup(repo, .x) %>% parents() %>% as.data.frame()  %>% magrittr::extract2('sha')
+    })) %>%
+    unnest(parent_commit, keep_empty = TRUE) %>% 
+    select(
+        from = sha,
+        to = tree
+    )
+
+commit_to_parent_commit <-
+    odb_objects(repo = repo) %>%
+    filter(type == 'commit') %>%
+    mutate(parent_commit = map(sha, ~ {
+        lookup(repo, .x) %>% parents() %>% as.data.frame()  %>% magrittr::extract2('sha')
+    })) %>%
+    unnest(parent_commit) %>% 
+    select(
+        from = sha,
+        to = parent_commit 
+    )
+
+    bind_rows(
+        tree_to_blob_edges,
+        commit_to_tree,
+        commit_to_parent_commit
+    )
+}
+
+git_graph <- function(graph) {
+    graph %>% 
+    ggraph() +
+    geom_node_point(aes(colour = type), size = 10) +
+    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
+    geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(sha, end = 8)}\n'{ str_trim(message) }'")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'tree', label = glue("{ str_sub(sha, end = 8)}")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 8)}\n'{ content }'")), repel = TRUE)
+}
+```
+
 
 # Init and Cleaning
 
@@ -28,7 +127,7 @@ rm -rf .git/{hooks,info,config,branches,description}
 rm -rf .git/objects/{info,pack}
 rm -rf .git/refs/{heads,tags}
 
-tree -n .git
+tree .git
 ```
 
 
@@ -38,7 +137,7 @@ tree -n .git
 echo "Hello" > file_x
 git add file_x
 
-tree -n .git
+tree .git
 ```
 
 ```{zsh}
@@ -57,43 +156,28 @@ echo "Hello" > subdir/file_z
 
 git add subdir
 
-tree -n .git
-```
-```{r}
-tbl_graph(
-    nodes = odb_objects() %>% select(sha),
-    edges = tibble(to = c(1,2), from = c(1,2))
-) %>%
-    mutate(x = c(-1, 1), y = c(0, 0))
+tree .git
 ```
 
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 tbl_graph(
-    nodes = odb_objects() %>% select(sha),
-    edges = tibble(to = c(1,2), from = c(1,2))
+    nodes = repo_nodes()
 ) %>%
-    mutate(x = c(-1, 1), y = c(0, 0)) %>% 
-    ggraph(x = x, y = y) +
-    geom_node_point(size = 30, colour = 'steelblue') +
-    geom_node_text(aes(label = str_sub(sha, end = 8)), colour = 'white') +
+    git_graph() +
     labs(
-        title = 'Blob Objects'
-    ) +
-    xlim(-4, 4) +
-    ylim(-4, 4)
-    
-    
-    #ggraph() +
-    #geom_node_point(size = 40, colour = 'steelblue') +
-    #geom_node_label(aes(label = sha))
+        title = 'Git Object Structure',
+        subtitle = 'Blob Objects'
+    )
+
 ```
+
 
 # Tree
 
 ```{zsh}
-git commit -m "Initial Commit"
+git commit -m "First Commit"
 
-tree -n .git
+tree .git
 ```
 
 ```{zsh}
@@ -111,70 +195,17 @@ pigz -cd .git/objects/44/9a4c7ba21764840c8abc1eb9698596fdf33f3d |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 
-```{r}
-odb_blobs()
-odb_objects() %>% 
-left_join(odb_blobs()) %>%
-select(sha, type, name) %>%
-filter(type != 'commit')
+
+
     
-```
-
-
-```{r}
-# All git objects
-one_commit_nodes <- 
-    odb_objects() 
-
-# Add in the blob content
-one_commit_nodes <-
-    one_commit_nodes %>% 
-    filter(type == 'blob') %>%
-    select(-c(type, len)) %>% 
-    mutate(content = map(sha, ~content(lookup('.', sha = .x)))) %>% 
-    right_join(one_commit_nodes, by = 'sha')
-
-
-# Pull out tree objects, run ls_tree to list what they
-# point to which becomes out edges
-tree_to_blob_edges <-
-    odb_objects() %>% 
-    filter(type == 'tree') %>% 
-    mutate(blobs = map(sha, ~ls_tree(.x, recursive = FALSE))) %>%
-    unnest(blobs, names_repair = 'universal') %>%
-    select(
-        from = sha...1,
-        to = sha...6,
-    )
-
-# Pull out the commits and get what they point to
-commit_to_tree_edges <-
-    odb_objects() %>% 
-    filter(type == 'commit') %>% 
-    mutate(tree = map_chr(sha, ~{ lookup('.', .x) %>% tree() %>% .$sha })) %>%
-    select(
-        from = sha,
-        to = tree
-    )
-
-one_commit_edges <-
-    bind_rows(
-        tree_to_blob_edges,
-        commit_to_tree_edges
-    )
-    
-
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Create the graph, filtering out the commit
 tbl_graph(
-    nodes = one_commit_nodes,
-    edges = one_commit_edges
+    nodes = repo_nodes(),
+    edges = repo_edges()
 ) %>%
-    #filter(type != 'commit') %>% 
-    ggraph() +
-    geom_node_point(aes(colour = type), size = 10) +
-    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
-    geom_node_label(aes(filter = type != 'blob', label = glue("{ str_sub(sha, end = 8)}")), repel = TRUE) +
-    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 8)}\n'{ content }'")), repel = TRUE) +
+    filter(type != 'commit') %>% 
+    git_graph() +
     labs(
         title = 'Git Object Structure',
         subtitle = 'Tree and Blob Objects'
@@ -191,28 +222,51 @@ pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 
-```{r}
-odb_objects()
-# Create the graph
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create the graph, this time without filtering the commit
 tbl_graph(
-    nodes = one_commit_nodes,
-    edges = one_commit_edges
+    nodes = repo_nodes(),
+    edges = repo_edges()
 ) %>%
-    ggraph() +
-    geom_node_point(aes(colour = type), size = 10) +
-    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
-    geom_node_label(aes(label = glue("{type}\n{str_sub(sha, end = 8)}")), nudge_y = -.14)
+    git_graph() +
+    labs(
+        title = 'Git Object Structure',
+        subtitle = 'Tree and Blob Objects'
+    )
+```
+
+```{zsh}
+echo "Hello Root" > file_x
+git add file_x
+git commit -m "Second Commit"
+```
+
+```{zsh}
+COMMIT_DIR=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 1-2)
+COMMIT_OBJ=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 3-)
+
+pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
+perl -0777 -nE 'print join "\n", unpack("Z*A*")'
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create the graph, this time without filtering the commit
+tbl_graph(
+    nodes = repo_nodes(),
+    edges = repo_edges()
+) %>%
+    git_graph() +
+    labs(
+        title = 'Git Object Structure',
+        subtitle = 'Multiple Commit Hierarchy'
+    )
 ```
 
 
-
-# Branch
+# Branches
 
 ```{zsh}
 cat .git/HEAD
 cat .git/refs/heads/master
-
-
 ```
 
 # Index
