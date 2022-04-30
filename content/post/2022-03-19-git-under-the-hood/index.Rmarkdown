@@ -109,17 +109,21 @@ commit_to_parent_commit <-
 
 git_graph <- function(graph) {
     graph %>% 
-    ggraph() +
+    ggraph(layout = 'sugiyama') +
     geom_node_point(aes(colour = type), size = 10) +
     geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
-    geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(sha, end = 8)}\n'{ str_trim(message) }'")), repel = TRUE) +
-    geom_node_label(aes(filter = type == 'tree', label = glue("{ str_sub(sha, end = 8)}")), repel = TRUE) +
-    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 8)}\n'{ content }'")), repel = TRUE)
+    geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(sha, end = 4)}\n'{ str_trim(message) }'")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'tree', label = glue("{ str_sub(sha, end = 4)}")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 4)}\n'{ content }'")), repel = TRUE)
 }
 ```
 
 
-# Init and Cleaning
+# Initialisation
+
+We'll start by initialising an empty git repository. This creates a *.git* directory in the root directory of the repository. It's a root in that all subdirectories and files below this point will be considered part of the the repository.
+
+There's a bunch of stuff that's created, but we'll prune it back to the absolute bare minimum of what git considers a git repository.
 
 ```{zsh}
 git init -q
@@ -133,6 +137,8 @@ tree .git
 
 # Blobs
 
+The first fundamental git object we'll look at is the *blob*. Let's create a file and use the `git add` command to add it to the staging area and see what this has done in our .git directory.
+
 ```{zsh}
 echo "Hello" > file_x
 git add file_x
@@ -140,24 +146,48 @@ git add file_x
 tree .git
 ```
 
+We see that a new object has been created in what looks like some sort of hash value. The file is compressed data.
+
+```{zsh}
+file .git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78
+```
+
+If we decompress and look inside, we can see the file is in a "type, length, value" or TLV format, with the type being a blob, the length of the value being 6 bytes, and the value being "Hello".
+
+
 ```{zsh}
 pigz -cd .git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78 | hexdump -C
 ```
+
+
+All data in git is stored in this manner. So what we can say is that git is an object store for data, where the objects are addressed by a hash. 
+
+A key point to note at this stage is that there's no information about the file contained in these blobs: no path or file name, no permissions. It's only the contents of the file. 
+
+How is this hash calculated? It's simply the SHA2 hash of the TLV. 
 
 ```{zsh}
 echo "blob 6\0Hello" | shasum
 ```
 
+Let's explore this further. We'll create a subdirectory and add two more files, one of which will have the same contents as our first file.
+
 ```{zsh}
 mkdir subdir
 
-echo "Hello Again" > subdir/file_y
 echo "Hello" > subdir/file_z
+echo "Hello Again" > subdir/file_y
 
 git add subdir
 
 tree .git
 ```
+
+Two things that stand out here. First is that while we have a total of three files, there's only two objects. This is because blobls are only concerned with the contents of the files, and we have only two unique pieces of content.
+
+The second is that, like the filenames, theres no reference to the subdirectory here either. We'll see in the next section where this information is stored.
+
+Over the course of the article we'll build up a graph of the objects in the git repository. Here's out starting point: two blobs, the first four characters of their hash, and their contents.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 tbl_graph(
@@ -174,29 +204,41 @@ tbl_graph(
 
 # Tree
 
+So where is the file system information stored? This is the role of the tree object. If we use the analogy of a disk filesystem and the blob is the raw data on the disk, then the tree object is similar to the inode. It holds the metadata of the file, as well as a pointer to the blob object.
+
+Let's perform our first commit and see what's changed in the repository.
+
 ```{zsh}
 git commit -m "First Commit"
 
 tree .git
 ```
 
+Ok, there's a lot there, but let's focus in again on the objects where we have an additional three. I've done the hard work of determining which is which, so let's take a look at the first of the tree objects.
+
 ```{zsh}
 pigz -cd .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a | hexdump -C
 ```
 
+This is a little harder to interpret as some of the information is in a binary representation. Again I've done the hard to work to determine the structure, so we can unpack it into a friendlier, plain-text representation:
+
 ```{zsh}
-cat .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a |\
-pigz -d |\
+pigz -cd .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
+Again we have the type of object, then the of the tree object. Then we have an entry for each of the filesystem objects in the root of our git repository. The first is the *file_x* file, with its permnissions, it's filename, and a pointer to the blob object of its contents.
+
+**Add note on limited permissions**.
+
+The second is the subdir directory, but instead of pointing to a blob object, this points to another tree object. Taking a look inside that:
 
 ```{zsh}
 pigz -cd .git/objects/44/9a4c7ba21764840c8abc1eb9698596fdf33f3d |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
+This object point to the two files within that subdirectory. Keen eyes may notice that both *file_x* in the root and *file_z* point to the same hash, as those files have the same contents. 
 
-
-
+We can visualise this as a graph:
     
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Create the graph, filtering out the commit
@@ -211,6 +253,7 @@ tbl_graph(
         subtitle = 'Tree and Blob Objects'
     )
 ``` 
+The hash value of the tree objects is directly dependent on the name of the file/directory, and its permissions. But it's indirectly dependent on the contents of the files: if that changes, the hash of the blob changes, and so the hash of the tree changes.
 
 # Commit
 
@@ -236,8 +279,8 @@ tbl_graph(
 ```
 
 ```{zsh}
-echo "Hello Root" > file_x
-git add file_x
+echo "Hello Root" > subdir/file_z
+git add subdir/file_z
 git commit -m "Second Commit"
 ```
 
