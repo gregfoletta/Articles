@@ -14,6 +14,9 @@ categories: [git]
 
 
 
+
+
+
 # Initialisation
 
 We'll start by initialising an empty git repository. This creates a *.git* directory in the root directory of the repository. It's a root in that all subdirectories and files below this point will be considered part of the the repository.
@@ -46,7 +49,7 @@ The first fundamental git object we'll look at is the *blob*. Let's create a fil
 
 
 ```zsh
-echo "Hello" > file_x
+echo "Root" > file_x
 git add file_x
 
 tree .git
@@ -57,8 +60,8 @@ tree .git
 ├── HEAD
 ├── index
 ├── objects
-│   └── e9
-│       └── 65047ad7c57865823c7d992b1d046ea66edf78
+│   └── 93
+│       └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
 └── refs
 
 3 directories, 3 files
@@ -68,40 +71,38 @@ We see that a new object has been created in what looks like some sort of hash v
 
 
 ```zsh
-file .git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78
+file .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6
 ```
 
 ```
-.git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78: zlib compressed data
+.git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6: zlib compressed data
 ```
 
 If we decompress and look inside, we can see the file is in a "type, length, value" or TLV format, with the type being a blob, the length of the value being 6 bytes, and the value being "Hello".
 
 
-
 ```zsh
-pigz -cd .git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78 | hexdump -C
+pigz -cd .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 | hexdump -C
 ```
 
 ```
-00000000  62 6c 6f 62 20 36 00 48  65 6c 6c 6f 0a           |blob 6.Hello.|
-0000000d
+00000000  62 6c 6f 62 20 35 00 52  6f 6f 74 0a              |blob 5.Root.|
+0000000c
 ```
-
 
 All data in git is stored in this manner. So what we can say is that git is an object store for data, where the objects are addressed by a hash. 
 
 A key point to note at this stage is that there's no information about the file contained in these blobs: no path or file name, no permissions. It's only the contents of the file. 
 
-How is this hash calculated? It's simply the SHA2 hash of the TLV. 
+How is this hash calculated? It's simply the SHA hash of the TLV. 
 
 
 ```zsh
-echo "blob 6\0Hello" | shasum
+echo "blob 5\0Root" | shasum
 ```
 
 ```
-e965047ad7c57865823c7d992b1d046ea66edf78  -
+9339e13010d12194986b13e3a777ae5ec4f7c8a6  -
 ```
 
 Let's explore this further. We'll create a subdirectory and add two more files, one of which will have the same contents as our first file.
@@ -109,11 +110,10 @@ Let's explore this further. We'll create a subdirectory and add two more files, 
 
 ```zsh
 mkdir subdir
+echo "Root & Sub" > file_y
+echo "Root & Sub" > subdir/file_z
 
-echo "Hello" > subdir/file_z
-echo "Hello Again" > subdir/file_y
-
-git add subdir
+git add file_y subdir 
 
 tree .git
 ```
@@ -123,10 +123,10 @@ tree .git
 ├── HEAD
 ├── index
 ├── objects
-│   ├── 90
-│   │   └── 9789960b67d38f5e7fa0bb51238079cf041c6a
-│   └── e9
-│       └── 65047ad7c57865823c7d992b1d046ea66edf78
+│   ├── 93
+│   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
+│   └── cc
+│       └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
 └── refs
 
 4 directories, 4 files
@@ -138,7 +138,7 @@ The second is that, like the filenames, theres no reference to the subdirectory 
 
 Over the course of the article we'll build up a graph of the objects in the git repository. Here's out starting point: two blobs, the first four characters of their hash, and their contents.
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
 
 # Tree
@@ -155,10 +155,10 @@ tree .git
 ```
 
 ```
-[master (root-commit) 60d5e40] First Commit
+[master (root-commit) cc91b39] First Commit
  3 files changed, 3 insertions(+)
  create mode 100644 file_x
- create mode 100644 subdir/file_y
+ create mode 100644 file_y
  create mode 100644 subdir/file_z
 .git
 ├── COMMIT_EDITMSG
@@ -170,53 +170,56 @@ tree .git
 │       └── heads
 │           └── master
 ├── objects
-│   ├── 2b
-│   │   └── 04fd32b556e89dfa44b332f0cc59541879189a
-│   ├── 44
-│   │   └── 9a4c7ba21764840c8abc1eb9698596fdf33f3d
-│   ├── 60
-│   │   └── d5e4008ed97d76deafcef9dde9c3325a376127
-│   ├── 90
-│   │   └── 9789960b67d38f5e7fa0bb51238079cf041c6a
-│   └── e9
-│       └── 65047ad7c57865823c7d992b1d046ea66edf78
+│   ├── 4e
+│   │   └── eafbc980bb5cc210392fa9712eeca32ded0f7d
+│   ├── 67
+│   │   └── 21ae08f27ae139ec833f8ab14e3361c38d07bd
+│   ├── 93
+│   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
+│   └── cc
+│       ├── 23f67bb60997d9628f4fd1e9e84f92fd49780e
+│       └── 91b39186c0aff09544906e553154bcbe48d076
 └── refs
     └── heads
         └── master
 
-11 directories, 11 files
+10 directories, 11 files
 ```
 
 Ok, there's a lot there, but let's focus in again on the objects where we have an additional three. I've done the hard work of determining which is which, so let's take a look at the first of the tree objects.
 
 
 ```zsh
-pigz -cd .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a | hexdump -C
+pigz -cd .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d | hexdump -C
 ```
 
 ```
-00000000  74 72 65 65 20 36 37 00  31 30 30 36 34 34 20 66  |tree 67.100644 f|
-00000010  69 6c 65 5f 78 00 e9 65  04 7a d7 c5 78 65 82 3c  |ile_x..e.z..xe.<|
-00000020  7d 99 2b 1d 04 6e a6 6e  df 78 34 30 30 30 30 20  |}.+..n.n.x40000 |
-00000030  73 75 62 64 69 72 00 44  9a 4c 7b a2 17 64 84 0c  |subdir.D.L{..d..|
-00000040  8a bc 1e b9 69 85 96 fd  f3 3f 3d                 |....i....?=|
-0000004b
+00000000  74 72 65 65 20 31 30 31  00 31 30 30 36 34 34 20  |tree 101.100644 |
+00000010  66 69 6c 65 5f 78 00 93  39 e1 30 10 d1 21 94 98  |file_x..9.0..!..|
+00000020  6b 13 e3 a7 77 ae 5e c4  f7 c8 a6 31 30 30 36 34  |k...w.^....10064|
+00000030  34 20 66 69 6c 65 5f 79  00 cc 23 f6 7b b6 09 97  |4 file_y..#.{...|
+00000040  d9 62 8f 4f d1 e9 e8 4f  92 fd 49 78 0e 34 30 30  |.b.O...O..Ix.400|
+00000050  30 30 20 73 75 62 64 69  72 00 67 21 ae 08 f2 7a  |00 subdir.g!...z|
+00000060  e1 39 ec 83 3f 8a b1 4e  33 61 c3 8d 07 bd        |.9..?..N3a....|
+0000006e
 ```
 
 This is a little harder to interpret as some of the information is in a binary representation. Again I've done the hard to work to determine the structure, so we can unpack it into a friendlier, plain-text representation:
 
 
 ```zsh
-pigz -cd .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a |\
+pigz -cd .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 
 ```
-tree 67
+tree 101
 100644 file_x
-e965047ad7c57865823c7d992b1d046ea66edf78
+9339e13010d12194986b13e3a777ae5ec4f7c8a6
+100644 file_y
+cc23f67bb60997d9628f4fd1e9e84f92fd49780e
 40000 subdir
-449a4c7ba21764840c8abc1eb9698596fdf33f3d
+6721ae08f27ae139ec833f8ab14e3361c38d07bd
 ```
 Again we have the type of object, then the of the tree object. Then we have an entry for each of the filesystem objects in the root of our git repository. The first is the *file_x* file, with its permnissions, it's filename, and a pointer to the blob object of its contents.
 
@@ -226,91 +229,117 @@ The second is the subdir directory, but instead of pointing to a blob object, th
 
 
 ```zsh
-pigz -cd .git/objects/44/9a4c7ba21764840c8abc1eb9698596fdf33f3d |\
+pigz -cd .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 
 ```
-tree 68
-100644 file_y
-909789960b67d38f5e7fa0bb51238079cf041c6a
+tree 34
 100644 file_z
-e965047ad7c57865823c7d992b1d046ea66edf78
+cc23f67bb60997d9628f4fd1e9e84f92fd49780e
 ```
 This object point to the two files within that subdirectory. Keen eyes may notice that both *file_x* in the root and *file_z* point to the same hash, as those files have the same contents. 
 
 We can visualise this as a graph:
     
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" />
 The hash value of the tree objects is directly dependent on the name of the file/directory, and its permissions. But it's indirectly dependent on the contents of the files: if that changes, the hash of the blob changes, and so the hash of the tree changes.
 
 # Commit
 
+Our third and most visible object is the commit. Let's take a look inside. Because the hash of the commit is based on time, and I generate this article dynamically, I have to calculate the hash and thus the path to the commit. We'll talk about branches later, but this will give you an idea about how they work.
+
 
 ```zsh
-COMMIT_DIR=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 1-2)
-COMMIT_OBJ=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 3-)
+# Get the commit object 
+COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
+COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
 
-pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
+pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |\
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 
 ```
 commit 175
-tree 2b04fd32b556e89dfa44b332f0cc59541879189a
-author Greg Foletta <greg@foletta.org> 1651352382 +1000
-committer Greg Foletta <greg@foletta.org> 1651352382 +1000
+tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
+author Greg Foletta <greg@foletta.org> 1651438298 +1000
+committer Greg Foletta <greg@foletta.org> 1651438298 +1000
 
 First Commit
 ```
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
+Again, like the blob and the tree, we have our type an length of the object. We've then got a few different pieces of information:
+
+The first is reference to a tree object. This is the tree objects that represents the root directory of the repository. The next is the author of the commit, with their name, email address, commit time and the UTC offset. The person who authored the commit doesn't have to be the same person who commited it to the repository, so there's also a line for the commiter. Following this is the commit message, which is free text input at the time of commit which (should) discuss the changes contained in the commit.
+
+Placing this on our graph and we can see the full structure:
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" />
+If the value of any one of the fields changes in the commit, it will be references by a new hash. If a file changes downstream, this will result in one or more changes to tree objects, culminating in a change to hash of the tree object that represents the root directory of the repository. The value of the 'tree' field in the commit changes, and theremore the hash of the commit changes.
+
+This first commit is actually a special commit as it has no parents. Every other commit from this point on - no matter what the branch - will be a descendant of this commit. So from any point, we can trace back the history of the changes to the files in the repository all the way back to this nascent state. If we change the contents of *file_z*, add it to the staging area, and create a second commit we can see how this is represented.
 
 
 ```zsh
-echo "Hello Root" > subdir/file_z
-git add subdir/file_z
-git commit -m "Second Commit"
-```
+# Change the contents, add, and create a second commit
+echo "Root Changed" > file_x
+git add file_x
+git commit -q -m "Second Commit"
 
-```
-[master 4dcc348] Second Commit
- 1 file changed, 1 insertion(+), 1 deletion(-)
-```
+# Determine the path to the second commit object
+COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
+COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
 
-
-```zsh
-COMMIT_DIR=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 1-2)
-COMMIT_OBJ=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 3-)
-
+# Unpack the contents of the commit
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 
 ```
 commit 224
-tree 0aa029179697fb5370fe682371d582ca75db0c1f
-parent 60d5e4008ed97d76deafcef9dde9c3325a376127
-author Greg Foletta <greg@foletta.org> 1651352383 +1000
-committer Greg Foletta <greg@foletta.org> 1651352383 +1000
+tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
+parent cc91b39186c0aff09544906e553154bcbe48d076
+author Greg Foletta <greg@foletta.org> 1651438299 +1000
+committer Greg Foletta <greg@foletta.org> 1651438299 +1000
 
 Second Commit
 ```
+
+We see an additional *parent* line in the commit, which references the hash of the commit that came before it. We can place this on our graph
+
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-20-1.png" width="672" />
 
+This is the core of git. Three objects types resulting in content-addressable storage. THe commits represent 'snapshots' of the repository at a point int time, which point to a parent commit, and the root of a tree. The tree has nodes that represent directories, holding metadata about files, and point towards blobs of data. The data itself is just that: data. Git doesn't calculate any differences between file changes: a one byte change to a file, this results in a new hash and this a completely new blob object that will be pointed to. In terms of the [space-time trade-off](https://en.wikipedia.org/wiki/Space%E2%80%93time_tradeoff), git chooses space over time, resulting in a simple model of data changes over time.
+
+Working with 160 bit hashes is all well and good for a machine, but not human friendly. This is where branches come in.
 
 # Branches
 
+Branches are relatively simple: they are a named pointer to a commit hash. Local branches are stored in the *.git/refs/heads* directory.
+
 
 ```zsh
-cat .git/HEAD
 cat .git/refs/heads/master
 ```
 
 ```
-ref: refs/heads/master
-4dcc3489d11e7e09776fe847e85d89c4579e356f
+c7f3bbbe2c5f609cf7822e3420a65104074cf466
 ```
+
+If we create a new branch, it will point to the same spot as our current HEAD:
+
+
+```zsh
+git branch new_branch
+
+cat .git/refs/heads/*
+```
+
+```
+c7f3bbbe2c5f609cf7822e3420a65104074cf466
+c7f3bbbe2c5f609cf7822e3420a65104074cf466
+```
+
 
 # Index
 
@@ -322,9 +351,9 @@ say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar 
 ```
 
 ```
-1651352381 812135539 1651352381 812135539 64769 7997635 0000000000000000 1000000110100100 1000 1000 6 e965047ad7c57865823c7d992b1d046ea66edf78 00000000 file_x 0000000000000000 1651352381
-1651352381 848136019 1651352381 848136019 64769 8265364 0000000000000000 1000000110100100 1000 1000 12 909789960b67d38f5e7fa0bb51238079cf041c6a 00000000 subdir/file_y 0000000000000000 1651352383
-1651352383 284154981 1651352383 284154981 64769 8265363 0000000000000000 1000000110100100 1000 1000 11 ff8bc6b592ef09b667207e90e5cf51c369358627 00000000 subdir/file_z 0000000000000000 
+1651438299 957619201 1651438299 957619201 64769 7998115 0000000000000000 1000000110100100 1000 1000 13 33459b8faaeaf56a97f7ecba0ae2b1b4511c87e8 00000000 file_x 0000000000000000 1651438298
+1651438298 529612626 1651438298 529612626 64769 7998326 0000000000000000 1000000110100100 1000 1000 11 cc23f67bb60997d9628f4fd1e9e84f92fd49780e 00000000 file_y 0000000000000000 1651438298
+1651438298 529612626 1651438298 529612626 64769 8265379 0000000000000000 1000000110100100 1000 1000 11 cc23f67bb60997d9628f4fd1e9e84f92fd49780e 00000000 subdir/file_z 0000000000000000 
 ```
 
 

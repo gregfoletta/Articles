@@ -106,10 +106,17 @@ commit_to_parent_commit <-
         commit_to_parent_commit
     )
 }
+```
 
+
+```{r include=FALSE}
+# Graphing function
 git_graph <- function(graph) {
+    # Order of the graph
+    graph_order <- graph %>% igraph::gorder()
+    
     graph %>% 
-    ggraph(layout = 'sugiyama') +
+    ggraph(layout = 'sugiyama', layers = c(1:graph_order)) +
     geom_node_point(aes(colour = type), size = 10) +
     geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
     geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(sha, end = 4)}\n'{ str_trim(message) }'")), repel = TRUE) +
@@ -140,7 +147,7 @@ tree .git
 The first fundamental git object we'll look at is the *blob*. Let's create a file and use the `git add` command to add it to the staging area and see what this has done in our .git directory.
 
 ```{zsh}
-echo "Hello" > file_x
+echo "Root" > file_x
 git add file_x
 
 tree .git
@@ -149,36 +156,33 @@ tree .git
 We see that a new object has been created in what looks like some sort of hash value. The file is compressed data.
 
 ```{zsh}
-file .git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78
+file .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6
 ```
 
 If we decompress and look inside, we can see the file is in a "type, length, value" or TLV format, with the type being a blob, the length of the value being 6 bytes, and the value being "Hello".
 
-
 ```{zsh}
-pigz -cd .git/objects/e9/65047ad7c57865823c7d992b1d046ea66edf78 | hexdump -C
+pigz -cd .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 | hexdump -C
 ```
-
 
 All data in git is stored in this manner. So what we can say is that git is an object store for data, where the objects are addressed by a hash. 
 
 A key point to note at this stage is that there's no information about the file contained in these blobs: no path or file name, no permissions. It's only the contents of the file. 
 
-How is this hash calculated? It's simply the SHA2 hash of the TLV. 
+How is this hash calculated? It's simply the SHA hash of the TLV. 
 
 ```{zsh}
-echo "blob 6\0Hello" | shasum
+echo "blob 5\0Root" | shasum
 ```
 
 Let's explore this further. We'll create a subdirectory and add two more files, one of which will have the same contents as our first file.
 
 ```{zsh}
 mkdir subdir
+echo "Root & Sub" > file_y
+echo "Root & Sub" > subdir/file_z
 
-echo "Hello" > subdir/file_z
-echo "Hello Again" > subdir/file_y
-
-git add subdir
+git add file_y subdir 
 
 tree .git
 ```
@@ -217,13 +221,13 @@ tree .git
 Ok, there's a lot there, but let's focus in again on the objects where we have an additional three. I've done the hard work of determining which is which, so let's take a look at the first of the tree objects.
 
 ```{zsh}
-pigz -cd .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a | hexdump -C
+pigz -cd .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d | hexdump -C
 ```
 
 This is a little harder to interpret as some of the information is in a binary representation. Again I've done the hard to work to determine the structure, so we can unpack it into a friendlier, plain-text representation:
 
 ```{zsh}
-pigz -cd .git/objects/2b/04fd32b556e89dfa44b332f0cc59541879189a |\
+pigz -cd .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 Again we have the type of object, then the of the tree object. Then we have an entry for each of the filesystem objects in the root of our git repository. The first is the *file_x* file, with its permnissions, it's filename, and a pointer to the blob object of its contents.
@@ -233,7 +237,7 @@ Again we have the type of object, then the of the tree object. Then we have an e
 The second is the subdir directory, but instead of pointing to a blob object, this points to another tree object. Taking a look inside that:
 
 ```{zsh}
-pigz -cd .git/objects/44/9a4c7ba21764840c8abc1eb9698596fdf33f3d |\
+pigz -cd .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
 This object point to the two files within that subdirectory. Keen eyes may notice that both *file_x* in the root and *file_z* point to the same hash, as those files have the same contents. 
@@ -257,13 +261,22 @@ The hash value of the tree objects is directly dependent on the name of the file
 
 # Commit
 
-```{zsh}
-COMMIT_DIR=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 1-2)
-COMMIT_OBJ=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 3-)
+Our third and most visible object is the commit. Let's take a look inside. Because the hash of the commit is based on time, and I generate this article dynamically, I have to calculate the hash and thus the path to the commit. We'll talk about branches later, but this will give you an idea about how they work.
 
-pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
+```{zsh}
+# Get the commit object 
+COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
+COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
+
+pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |\
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
+
+Again, like the blob and the tree, we have our type an length of the object. We've then got a few different pieces of information:
+
+The first is reference to a tree object. This is the tree objects that represents the root directory of the repository. The next is the author of the commit, with their name, email address, commit time and the UTC offset. The person who authored the commit doesn't have to be the same person who commited it to the repository, so there's also a line for the commiter. Following this is the commit message, which is free text input at the time of commit which (should) discuss the changes contained in the commit.
+
+Placing this on our graph and we can see the full structure:
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Create the graph, this time without filtering the commit
@@ -277,20 +290,27 @@ tbl_graph(
         subtitle = 'Tree and Blob Objects'
     )
 ```
+If the value of any one of the fields changes in the commit, it will be references by a new hash. If a file changes downstream, this will result in one or more changes to tree objects, culminating in a change to hash of the tree object that represents the root directory of the repository. The value of the 'tree' field in the commit changes, and theremore the hash of the commit changes.
+
+This first commit is actually a special commit as it has no parents. Every other commit from this point on - no matter what the branch - will be a descendant of this commit. So from any point, we can trace back the history of the changes to the files in the repository all the way back to this nascent state. If we change the contents of *file_z*, add it to the staging area, and create a second commit we can see how this is represented.
 
 ```{zsh}
-echo "Hello Root" > subdir/file_z
-git add subdir/file_z
-git commit -m "Second Commit"
-```
+# Change the contents, add, and create a second commit
+echo "Root Changed" > file_x
+git add file_x
+git commit -q -m "Second Commit"
 
-```{zsh}
-COMMIT_DIR=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 1-2)
-COMMIT_OBJ=$(git show HEAD --pretty=format:"%H" --no-patch | cut -c 3-)
+# Determine the path to the second commit object
+COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
+COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
 
+# Unpack the contents of the commit
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
+
+We see an additional *parent* line in the commit, which references the hash of the commit that came before it. We can place this on our graph
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Create the graph, this time without filtering the commit
 tbl_graph(
@@ -304,13 +324,26 @@ tbl_graph(
     )
 ```
 
+This is the core of git. Three objects types resulting in content-addressable storage. THe commits represent 'snapshots' of the repository at a point int time, which point to a parent commit, and the root of a tree. The tree has nodes that represent directories, holding metadata about files, and point towards blobs of data. The data itself is just that: data. Git doesn't calculate any differences between file changes: a one byte change to a file, this results in a new hash and this a completely new blob object that will be pointed to. In terms of the [space-time trade-off](https://en.wikipedia.org/wiki/Space%E2%80%93time_tradeoff), git chooses space over time, resulting in a simple model of data changes over time.
+
+Working with 160 bit hashes is all well and good for a machine, but not human friendly. This is where branches come in.
 
 # Branches
 
+Branches are relatively simple: they are a named pointer to a commit hash. Local branches are stored in the *.git/refs/heads* directory.
+
 ```{zsh}
-cat .git/HEAD
 cat .git/refs/heads/master
 ```
+
+If we create a new branch, it will point to the same spot as our current HEAD:
+
+```{zsh}
+git branch new_branch
+
+cat .git/refs/heads/*
+```
+
 
 # Index
 ```{zsh}
