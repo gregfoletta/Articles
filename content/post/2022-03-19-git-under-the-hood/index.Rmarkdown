@@ -6,6 +6,22 @@ slug: git-under-the-hood
 categories: [git]
 ---
 
+---intro---
+
+In this article we're going to take a look under the covers and investigate the fundamental constructs that git uses. We'll start off with its storage model and take a look at blobs, trees and commits, using graphs to help visualize the connections between these objects. We'll look at how branches are implemented, and we'll unpack the git index file to understand what happens during the staging of a commit.
+
+All the way through we'll limit ourselves to five simple git commands:
+
+- git init
+- git add
+- git commit
+- git branch
+- git checkout
+
+Our actual invesitgation of git's internals will be done using simple command line utilities operating on files. The reason is simple: by removing the abstractions and focusing in on file operations, the elegance and simplicity of git becomes obvious, and (hopefully) makes it easier to understand.
+
+
+
 ```{zsh include=FALSE}
 touch file_x
 rm -rf .git file_* subdir
@@ -73,12 +89,13 @@ tree_to_blob_edges <-
 
 
 # Pull out the commits and add an edge from the commit to the root tree
+### Have removed parent commit link
 commit_to_tree <-
     odb_objects(repo = repo) %>%
     filter(type == 'commit') %>%
     mutate(tree = map_chr(sha, ~ {
         lookup(repo, .x) %>% tree() %>% .$sha
-    })) %>%
+    })) %>% 
     mutate(parent_commit = map(sha, ~ {
         lookup(repo, .x) %>% parents() %>% as.data.frame()  %>% magrittr::extract2('sha')
     })) %>%
@@ -103,7 +120,7 @@ commit_to_parent_commit <-
     bind_rows(
         tree_to_blob_edges,
         commit_to_tree,
-        commit_to_parent_commit
+  #      commit_to_parent_commit
     )
 }
 ```
@@ -112,11 +129,8 @@ commit_to_parent_commit <-
 ```{r include=FALSE}
 # Graphing function
 git_graph <- function(graph) {
-    # Order of the graph
-    graph_order <- graph %>% igraph::gorder()
-    
     graph %>% 
-    ggraph(layout = 'sugiyama', layers = c(1:graph_order)) +
+    ggraph(layout = 'sugiyama') +
     geom_node_point(aes(colour = type), size = 10) +
     geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, units = 'mm'))) +
     geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(sha, end = 4)}\n'{ str_trim(message) }'")), repel = TRUE) +
@@ -128,7 +142,7 @@ git_graph <- function(graph) {
 
 # Initialisation
 
-We'll start by initialising an empty git repository. This creates a *.git* directory in the root directory of the repository. It's a root in that all subdirectories and files below this point will be considered part of the the repository.
+We'll start by initialising an empty git repository. This creates a *.git* directory in the root directory of the repository. It's a root in that all subdirectories and files below this point will be considered part of the the repository. This is known as the **working tree**.
 
 There's a bunch of stuff that's created, but we'll prune it back to the absolute bare minimum of what git considers a git repository.
 
@@ -153,7 +167,7 @@ git add file_x
 tree .git
 ```
 
-We see that a new object has been created in what looks like some sort of hash value. The file is compressed data.
+We can see two new files - an index and an object. We'll get to the index later in the article, for now let's focus on the object. It appears to be names with some sort of hash value, and the file is compressed data.
 
 ```{zsh}
 file .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6
@@ -204,7 +218,6 @@ tbl_graph(
     )
 
 ```
-
 
 # Tree
 
@@ -330,7 +343,9 @@ Working with 160 bit hashes is all well and good for a machine, but not human fr
 
 # Branches
 
-Branches are relatively simple: they are a named pointer to a commit hash. Local branches are stored in the *.git/refs/heads* directory.
+Branches are relatively simple: they are a named pointer to a commit hash. This pointer is updated whenever a commit occurs. The default branch was master, but in git versions 2.28 and higher this is now configurable.
+
+Local branches are stored in the *.git/refs/heads* directory.
 
 ```{zsh}
 cat .git/refs/heads/master
@@ -341,21 +356,72 @@ If we create a new branch, it will point to the same spot as our current HEAD:
 ```{zsh}
 git branch new_branch
 
-cat .git/refs/heads/*
+sed -s 1F .git/refs/heads/*
+```
+
+If change a file and and commit, we'll see the hash that the branch points to change.
+
+```{zsh}
+echo "Branch Change" > file_x
+git add file_x
+git commit -q -m "Third Commit"
+
+sed -s 1F .git/refs/heads/*
+
 ```
 
 
 # Index
+
+The final file we're going to look at is the index. While it has a few different roles, we'll be focusing on it's main role as the 'staging area'. Let's crack it open and have a look at the structure:
+
 ```{zsh}
-perl -MData::Dumper -0777 -nE '
-my @index = unpack("A4 H8 N/(N4 N2 B16 B16 N N N H40 B8 W/A B16 x![4])");
-say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar (@index - 2) / 15) - 1)
+perl -0777 -nE '
+# Extract out each file in the index
+my @index = unpack("A4 H8 N (N4 N2 n B16 N N N H40 B16 A*)");
+
+say "Index Header: " . join " ", @index[0..2];
+say "lstat() info: " . join " ", @index[3..12];
+say "Object & Filepath: " . join " ", @index[13..16];
+
+' .git/index
+```
+The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We'll be unpacking only one of the entries. 
+
+The first fields contain information from the `lstat()` function: last changed and modified time, the device and inode, permissions, uid and gid, and file size. These values allow git to quickly determine if files in the working tree have been modified.
+
+We next have the hash of the object, a flags field (including the length of path), and the path of the object.
+
+If we recall back in the *Blobs* section, when we added a file to the staging are via `git add`, the index was created. Let's modify *file_x* and add it to the staging area:
+
+```{zsh}
+echo "Index Modification" > file_x
+git add file_x
+```
+
+And we'll re-take a look at the index:
+
+```{zsh echo=FALSE}
+perl -0777 -nE '
+my @index = unpack("A4 H8 N (N4 N2 n B16 N N N H40 B16 A*)");
+say "ctime, mtime: " . join " ", @index[(1, 3)];
+say "object, filepath: " . join " ", @index[(14, 16)];
 ' .git/index
 ```
 
+The `lstat()` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, this next commit will represent the current state of the index. In our example, a new tree object will be created with *file_x* pointing towards the object that's in the index (as well as pointing to the current, unchanged tree representing the sub-directory). As this is the root tree object, the new commit will point to this.
+
+# Summary
+
+In this article we dived in to the internals of git. We first looked at gits data model.
+
+We then looked at branches.
+
+Finally we looked at the index.
+
+---outro---
 
 
 ```{zsh include=FALSE}
 rm -rf .git file_* subdir
 ```
-

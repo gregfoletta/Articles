@@ -6,6 +6,22 @@ slug: git-under-the-hood
 categories: [git]
 ---
 
+---intro---
+
+In this article we're going to take a look under the covers and investigate the fundamental constructs that git uses. We'll start off with its storage model and take a look at blobs, trees and commits, using graphs to help visualize the connections between these objects. We'll look at how branches are implemented, and we'll unpack the git index file to understand what happens during the staging of a commit.
+
+All the way through we'll limit ourselves to five simple git commands:
+
+- git init
+- git add
+- git commit
+- git branch
+- git checkout
+
+Our actual invesitgation of git's internals will be done using simple command line utilities operating on files. The reason is simple: by removing the abstractions and focusing in on file operations, the elegance and simplicity of git becomes obvious, and (hopefully) makes it easier to understand.
+
+
+
 
 
 
@@ -19,7 +35,7 @@ categories: [git]
 
 # Initialisation
 
-We'll start by initialising an empty git repository. This creates a *.git* directory in the root directory of the repository. It's a root in that all subdirectories and files below this point will be considered part of the the repository.
+We'll start by initialising an empty git repository. This creates a *.git* directory in the root directory of the repository. It's a root in that all subdirectories and files below this point will be considered part of the the repository. This is known as the **working tree**.
 
 There's a bunch of stuff that's created, but we'll prune it back to the absolute bare minimum of what git considers a git repository.
 
@@ -67,7 +83,7 @@ tree .git
 3 directories, 3 files
 ```
 
-We see that a new object has been created in what looks like some sort of hash value. The file is compressed data.
+We can see two new files - an index and an object. We'll get to the index later in the article, for now let's focus on the object. It appears to be names with some sort of hash value, and the file is compressed data.
 
 
 ```zsh
@@ -140,7 +156,6 @@ Over the course of the article we'll build up a graph of the objects in the git 
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
-
 # Tree
 
 So where is the file system information stored? This is the role of the tree object. If we use the analogy of a disk filesystem and the blob is the raw data on the disk, then the tree object is similar to the inode. It holds the metadata of the file, as well as a pointer to the blob object.
@@ -155,7 +170,7 @@ tree .git
 ```
 
 ```
-[master (root-commit) cc91b39] First Commit
+[master (root-commit) 3845332] First Commit
  3 files changed, 3 insertions(+)
  create mode 100644 file_x
  create mode 100644 file_y
@@ -170,6 +185,8 @@ tree .git
 │       └── heads
 │           └── master
 ├── objects
+│   ├── 38
+│   │   └── 45332f28d78db53ac300cad361dcda4312300e
 │   ├── 4e
 │   │   └── eafbc980bb5cc210392fa9712eeca32ded0f7d
 │   ├── 67
@@ -177,13 +194,12 @@ tree .git
 │   ├── 93
 │   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
 │   └── cc
-│       ├── 23f67bb60997d9628f4fd1e9e84f92fd49780e
-│       └── 91b39186c0aff09544906e553154bcbe48d076
+│       └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
 └── refs
     └── heads
         └── master
 
-10 directories, 11 files
+11 directories, 11 files
 ```
 
 Ok, there's a lot there, but let's focus in again on the objects where we have an additional three. I've done the hard work of determining which is which, so let's take a look at the first of the tree objects.
@@ -262,8 +278,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 175
 tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
-author Greg Foletta <greg@foletta.org> 1651438298 +1000
-committer Greg Foletta <greg@foletta.org> 1651438298 +1000
+author Greg Foletta <greg@foletta.org> 1652303788 +1000
+committer Greg Foletta <greg@foletta.org> 1652303788 +1000
 
 First Commit
 ```
@@ -298,9 +314,9 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 224
 tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
-parent cc91b39186c0aff09544906e553154bcbe48d076
-author Greg Foletta <greg@foletta.org> 1651438299 +1000
-committer Greg Foletta <greg@foletta.org> 1651438299 +1000
+parent 3845332f28d78db53ac300cad361dcda4312300e
+author Greg Foletta <greg@foletta.org> 1652303789 +1000
+committer Greg Foletta <greg@foletta.org> 1652303789 +1000
 
 Second Commit
 ```
@@ -315,7 +331,9 @@ Working with 160 bit hashes is all well and good for a machine, but not human fr
 
 # Branches
 
-Branches are relatively simple: they are a named pointer to a commit hash. Local branches are stored in the *.git/refs/heads* directory.
+Branches are relatively simple: they are a named pointer to a commit hash. This pointer is updated whenever a commit occurs. The default branch was master, but in git versions 2.28 and higher this is now configurable.
+
+Local branches are stored in the *.git/refs/heads* directory.
 
 
 ```zsh
@@ -323,7 +341,7 @@ cat .git/refs/heads/master
 ```
 
 ```
-c7f3bbbe2c5f609cf7822e3420a65104074cf466
+1366250731dc508085ac22f1d06d03d2e5325cc2
 ```
 
 If we create a new branch, it will point to the same spot as our current HEAD:
@@ -332,31 +350,95 @@ If we create a new branch, it will point to the same spot as our current HEAD:
 ```zsh
 git branch new_branch
 
-cat .git/refs/heads/*
+sed -s 1F .git/refs/heads/*
 ```
 
 ```
-c7f3bbbe2c5f609cf7822e3420a65104074cf466
-c7f3bbbe2c5f609cf7822e3420a65104074cf466
+.git/refs/heads/master
+1366250731dc508085ac22f1d06d03d2e5325cc2
+.git/refs/heads/new_branch
+1366250731dc508085ac22f1d06d03d2e5325cc2
+```
+
+If change a file and and commit, we'll see the hash that the branch points to change.
+
+
+```zsh
+echo "Branch Change" > file_x
+git add file_x
+git commit -q -m "Third Commit"
+
+sed -s 1F .git/refs/heads/*
+
+```
+
+```
+.git/refs/heads/master
+6129793d80983cdb70d57dcefb489c3273981b21
+.git/refs/heads/new_branch
+1366250731dc508085ac22f1d06d03d2e5325cc2
 ```
 
 
 # Index
 
+The final file we're going to look at is the index. While it has a few different roles, we'll be focusing on it's main role as the 'staging area'. Let's crack it open and have a look at the structure:
+
+
 ```zsh
-perl -MData::Dumper -0777 -nE '
-my @index = unpack("A4 H8 N/(N4 N2 B16 B16 N N N H40 B8 W/A B16 x![4])");
-say join(" ", @index[ ($_ * 15) + 2 ..  ($_ * 15) + 17])  foreach (0 .. (scalar (@index - 2) / 15) - 1)
+perl -0777 -nE '
+# Extract out each file in the index
+my @index = unpack("A4 H8 N (N4 N2 n B16 N N N H40 B16 A*)");
+
+say "Index Header: " . join " ", @index[0..2];
+say "lstat() info: " . join " ", @index[3..12];
+say "Object & Filepath: " . join " ", @index[13..16];
+
 ' .git/index
 ```
 
 ```
-1651438299 957619201 1651438299 957619201 64769 7998115 0000000000000000 1000000110100100 1000 1000 13 33459b8faaeaf56a97f7ecba0ae2b1b4511c87e8 00000000 file_x 0000000000000000 1651438298
-1651438298 529612626 1651438298 529612626 64769 7998326 0000000000000000 1000000110100100 1000 1000 11 cc23f67bb60997d9628f4fd1e9e84f92fd49780e 00000000 file_y 0000000000000000 1651438298
-1651438298 529612626 1651438298 529612626 64769 8265379 0000000000000000 1000000110100100 1000 1000 11 cc23f67bb60997d9628f4fd1e9e84f92fd49780e 00000000 subdir/file_z 0000000000000000 
+Index Header: DIRC 00000002 3
+lstat() info: 1652303790 131180542 1652303790 131180542 64769 7998325 0 1000000110100100 1000 1000
+Object & Filepath: 14 fc3b51e93ad662d0bcf4df7e5253acbf4d14e53a 0000000000000110 file_x
+t)(<99><da><c9>Ґ<df><f9>e<cb><fc><b4><8c><f5><ad><f5><c3>subdir
+g!<ae><f2>z<e1>9<ec><83>?<8a><b1>N3aÍ<bd><89><de>ZM<bc>=<9e><d9>l<93>V<ec><bb>u
+```
+The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We'll be unpacking only one of the entries. 
+
+The first fields contain information from the `lstat()` function: last changed and modified time, the device and inode, permissions, uid and gid, and file size. These values allow git to quickly determine if files in the working tree have been modified.
+
+We next have the hash of the object, a flags field (including the length of path), and the path of the object.
+
+If we recall back in the *Blobs* section, when we added a file to the staging are via `git add`, the index was created. Let's modify *file_x* and add it to the staging area:
+
+
+```zsh
+echo "Index Modification" > file_x
+git add file_x
 ```
 
+And we'll re-take a look at the index:
 
+
+```
+ctime, mtime: 00000002 1652303790
+object, filepath: db12d29ef25db0f954787c6d620f1f6e9ce3c778 file_x
+subdir
+g!<ae><f2>z<e1>9<ec><83>?<8a><b1>N3aÍ<bd>,_w<b0>X6T<db>{i<fc>px-<ab>9#<b2>
+```
+
+The `lstat()` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, this next commit will represent the current state of the index. In our example, a new tree object will be created with *file_x* pointing towards the object that's in the index (as well as pointing to the current, unchanged tree representing the sub-directory). As this is the root tree object, the new commit will point to this.
+
+# Summary
+
+In this article we dived in to the internals of git. We first looked at gits data model.
+
+We then looked at branches.
+
+Finally we looked at the index.
+
+---outro---
 
 
 
