@@ -27,6 +27,48 @@ As always, the source code for this article is available up on [github](https://
 
 
 
+```r
+repo_branch_commit <- function(repo = '.') {
+    commit_parents <-
+        odb_objects(repo = repo) %>%
+        filter(type == 'commit') %>%
+        mutate(parent_commit = map(sha, ~ {
+            lookup(repo, .x) %>% parents() %>% as.data.frame() %>% magrittr::extract2('sha')
+        })) %>%
+        unnest(parent_commit) %>%
+        select(from = sha, to = parent_commit)
+    
+    branch_edges <-
+        tibble(branches = branches()) %>%
+        transmute(from = map_chr(branches, ~ pluck(.x, 'name')),
+                  to = map_chr(branches, ~ branch_target(.x)))
+    
+    commit_nodes <-
+        commit_parents %>%
+        pivot_longer(c(from, to)) %>%
+        distinct(value) %>%
+        mutate(type = 'commit') %>%
+        rename(name = value)
+    
+    branch_nodes <-
+        branch_edges %>%
+        mutate(type = 'branch') %>%
+        select(-to, name = from)
+    
+    tbl_graph(
+        nodes = bind_rows(commit_nodes, branch_nodes) %>%
+            mutate(type = fct_expand(
+                type, c('blob', 'tree', 'commit', 'branch')
+            ),
+            type = fct_relevel(
+                type, c('blob', 'tree', 'commit', 'branch')
+            )),
+        edges = bind_rows(commit_parents,
+                          branch_edges)
+    )
+}
+```
+
 
 
 # Initialisation
@@ -152,7 +194,7 @@ While we've added three files, there's only two objects. Blobs only contain raw 
 
 Over the course of the article we'll build up a graph of the objects in the git repository to gain a visual representation of the structure. Here's our starting point: two blobs, the first four characters of their hash, and their contents.
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 
 The two little blobs of data look pretty lonely out there. What they need is some context, and this is where the tree object comes in.
 # Tree
@@ -181,12 +223,12 @@ tree .git
 ├── objects
 │   ├── 4e
 │   │   └── eafbc980bb5cc210392fa9712eeca32ded0f7d
+│   ├── 61
+│   │   └── bdbd436ba0cc99fc54c46e5c0dda00b6238e0b
 │   ├── 67
 │   │   └── 21ae08f27ae139ec833f8ab14e3361c38d07bd
 │   ├── 93
 │   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
-│   ├── c1
-│   │   └── 16a629ec8850964f08075fb2aeb6e14ad06e60
 │   └── cc
 │       └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
 └── refs
@@ -207,8 +249,8 @@ find .git/objects -type f -exec sh -c \
 
 ```
 .git/objects/cc/23f67bb60997d9628f4fd1e9e84f92fd49780e -> blob 11
+.git/objects/61/bdbd436ba0cc99fc54c46e5c0dda00b6238e0b -> commit 175
 .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d -> tree 101
-.git/objects/c1/16a629ec8850964f08075fb2aeb6e14ad06e60 -> commit 175
 .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd -> tree 34
 .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 -> blob 5
 ```
@@ -246,7 +288,7 @@ cc23f67bb60997d9628f4fd1e9e84f92fd49780e
 ```
 This tree object points to the hash of the blob for the file in the subdirectory. Adding the tree objects to our graph should make things a little clearer.
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
 At the top is the root of the tree, with its pointers to two blobs and a subdirectory. The second tree is the subdirectory, with a single pointer to a blob. The root and subdirectory trees both point to the same blob, because both files have the same contents.
 
 With blobs and trees we've built up a pseudo-filesystem, but how does this help us with source control? The object that ties all of this together is the commit.
@@ -269,8 +311,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 175
 tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
-author Greg Foletta <greg@foletta.org> 1653434781 +1000
-committer Greg Foletta <greg@foletta.org> 1653434781 +1000
+author Greg Foletta <greg@foletta.org> 1653778033 +1000
+committer Greg Foletta <greg@foletta.org> 1653778033 +1000
 
 First Commit
 ```
@@ -281,7 +323,7 @@ The first is reference to a tree object. This is the tree object that represents
 
 Let's place this on our graph:
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
 So a commit points to the tree object representing the root directory. But there's something missing here, as this first commit is a special commit: as it has no parents. Every other commit from this point on will be a descendant of this commit. From any point, history of the changes to the files in the repository can be traced back all the way back to this nascent state. 
 
 Changing the contents of *file_z*, staging, and creating a second commit, will allow us to see this additional information in the commit object:
@@ -305,9 +347,9 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 224
 tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
-parent c116a629ec8850964f08075fb2aeb6e14ad06e60
-author Greg Foletta <greg@foletta.org> 1653434783 +1000
-committer Greg Foletta <greg@foletta.org> 1653434783 +1000
+parent 61bdbd436ba0cc99fc54c46e5c0dda00b6238e0b
+author Greg Foletta <greg@foletta.org> 1653778034 +1000
+committer Greg Foletta <greg@foletta.org> 1653778034 +1000
 
 Second Commit
 ```
@@ -316,14 +358,14 @@ We see an additional *parent* line in the commit, which references the hash of t
 
 Putting all the work we've done together, we place the second commit onto our graph, sans the link back to the parent (we'll get to that in the next section):
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-20-1.png" width="672" />
-What we see here represents the core of how git stores data. The commits represent 'snapshots' of the state of the files and directories in the repository. Each commit points to a different root tree object, which point to a different object representing the *file_x* in the root (the file we changed in the second commit). But the commits share the same tree object representing the subdirectory and it's contents, as no files or directories have changed in that part of the filesystem. 
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-21-1.png" width="672" />
+What we see here represents the core of how git stores data. The commits represent 'snapshots' of the state of the files and directories in the repository. The commits point to different root tree objects, each of which point to a different object representing the *file_x* in the root (the file we changed in the second commit). But they share the same tree object representing the subdirectory and the blob representing *file_y*. 
 
 There's no 'diffs' calculated between commits; if one byte of a file changes, this results in a new blob, resulting in a new tree (or trees), resulting in a new commit. In terms of the [space-time trade-off](https://en.wikipedia.org/wiki/Space%E2%80%93time_tradeoff), git chooses space over time, resulting in a simple model of data changes over time.
 
 The problem is, our commits are still addressed via a 160 bit hash. This is all well and good for a computer, but we'd like something a bit more human friendly. This is the role of branches.
 
-# Branches
+# Branches and HEAD
 
 Branches are relatively simple: they are a human-friendly, named pointer to a commit hash. Local branches are stored in *.git/reds/heads/*, and we see the current master[^1] branch points to the hash of our second commit:
 
@@ -335,131 +377,75 @@ cat .git/refs/heads/master
 ```
 
 ```
-bb8a58c0d16deb2210a6446899809af8e577280b
+ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
 ```
 If we create a new branch, it will point to the same spot:
 
 
 ```zsh
-git branch new_branch
+# Create a new branch
+git branch branch_2
 
+# List the branches and the hashes they point to
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/master -> bb8a58c0d16deb2210a6446899809af8e577280b
-.git/refs/heads/new_branch -> bb8a58c0d16deb2210a6446899809af8e577280b
+.git/refs/heads/branch_2 -> ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
+.git/refs/heads/master -> ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
 ```
 
-Committing on the new branch moves and points to the new commit:
+The branches are updated when a new commit occurs.
 
 
 ```zsh
 # Commit on the new branch
-git checkout new_branch
+git checkout -q branch_2
 echo $RANDOM > file_x
 git commit -q -am "Third Commit (new_branch)"
 
+# The 'new_branch' branch now points to a different commit.
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-Switched to branch 'new_branch'
-.git/refs/heads/master -> bb8a58c0d16deb2210a6446899809af8e577280b
-.git/refs/heads/new_branch -> b622eca17ec9a403656a5bd8e98a016024de96c6
+.git/refs/heads/branch_2 -> c206b4809f0d4499aa9d9a98404cf18fe7554b2d
+.git/refs/heads/master -> ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
 ```
 
-Going back to master and creating a new commit, we can visualise how the branches have diverged on a graph:
+Going back to master branch and creating a new commit allows us to visualise how the two branches have diverged:
 
 
 ```zsh
-# Commit on the new branch
-git checkout master 
+# Commit back on  the master branch
+git checkout -q master 
 echo $RANDOM > file_x
 git commit -q -am "Fourth Commit (master)"
 ```
 
-```
-Switched to branch 'master'
-```
-
-
-
-```r
-repo = '.'
-odb_objects(repo = repo) %>% 
-        filter(type == 'commit') %>% 
-        mutate(parent_commit = map(sha, ~ {
-            lookup(repo, .x) %>% parents() %>% as.data.frame() %>% magrittr::extract2('sha')
-        })) %>% 
-        unnest(parent_commit) %>%
-        select(from = sha, to = parent_commit) %>% 
-        tbl_graph(
-            nodes = repo_nodes(),
-            edges = .
-        ) %>% 
-        filter(type == 'commit') %>% 
-        git_graph()
-```
-
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-25-1.png" width="672" />
-
-The third and fourth commits are both descendants of the third commit. Adding in our branches we see they point to the tip of this graph:
-
-
-```r
-repo = '.'
-
-commit_parents <-
-    odb_objects(repo = repo) %>% 
-    filter(type == 'commit') %>% 
-    mutate(parent_commit = map(sha, ~ {
-        lookup(repo, .x) %>% parents() %>% as.data.frame() %>% magrittr::extract2('sha')
-    })) %>% 
-    unnest(parent_commit) %>%
-    select(from = sha, to = parent_commit) 
-
-branch_edges <-
-    tibble(branches = branches()) %>% 
-    transmute(
-        from = map_chr(branches, ~pluck(.x, 'name')),
-        to = map_chr(branches, ~branch_target(.x))
-    ) 
-
-commit_nodes <-
-    commit_parents %>% 
-    pivot_longer(c(from, to)) %>% 
-    distinct(value) %>%
-    mutate(type = 'commit') %>% 
-    rename(name = value)
-
-branch_nodes <-
-    branch_edges %>% 
-    mutate(type = 'branch') %>% 
-    select(-to, name = from)
-
-    tbl_graph(
-        nodes = bind_rows(
-            commit_nodes,
-            branch_nodes
-        ),
-        edges = bind_rows(
-            commit_parents,
-            branch_edges
-        )
-    ) %>% 
-    git_graph_branches()
-```
-
-```
-Warning: Ignoring unknown aesthetics: repel
-```
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-26-1.png" width="672" />
 
+The third and fourth commits are both descendants of the third commit. Adding in our branches we see they point to the tip of this graph:
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-27-1.png" width="672" />
+There's nothing stopping us from creating more branches, even if they point to the same location:
+
+
+```zsh
+# Create new branches
+git branch branch_3 
+git branch branch_4 
+git branch branch_5 
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-29-1.png" width="672" />
+
+Branches make the underlying structure of git navigable by a human.
+
 # Index
 
-The final file we're going to look at is the index. While it has a few different roles, we'll be focusing on it's main role as the 'staging area'. Let's crack it open and have a look at the structure:
+The final file we're going to look at is the index. While it has a few different roles, we'll be focusing on it's main role as the 'staging area'. The index will have entry for
 
 
 ```zsh
@@ -475,8 +461,8 @@ say "Object & Filepath: " . join " ", @index[13..16];
 
 ```
 Index Header: DIRC 00000002 3
-lstat() info: 1653434783 959939490 1653434783 959939490 64769 7999094 0 1000000110100100 1000 1000
-Object & Filepath: 5 2e5d6e73f3d597ee99aeb5ad7e2fdce259d46eaf 0000000000000110 file_x
+lstat() info: 1653778035 148739955 1653778035 148739955 64769 7999136 0 1000000110100100 1000 1000
+Object & Filepath: 6 bf3a1f34302301d165c8c9b52eaef52499a055ad 0000000000000110 file_x
 ```
 The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We'll be unpacking only one of the entries. 
 
@@ -492,13 +478,14 @@ echo "Index Modification" > file_x
 git add file_x
 ```
 
-And we'll re-take a look at the index:
+Now we'll re-take a look at the index:
 
 
 ```
-ctime, mtime: 00000002 1653434784
+ctime, mtime: 00000002 1653778036
 object, filepath: db12d29ef25db0f954787c6d620f1f6e9ce3c778 file_x
 ```
+
 The `lstat()` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, this next commit will represent the current state of the index. In our example, a new tree object will be created with *file_x* pointing towards the object that's in the index (as well as pointing to the current, unchanged tree representing the sub-directory). As this is the root tree object, the new commit will point to this.
 
 # Conclusion

@@ -67,7 +67,8 @@ repo_nodes <- function(repo = '.') {
         })) %>% 
         right_join(one_commit_nodes, by = 'sha')
     
-    one_commit_nodes
+    one_commit_nodes %>% 
+        mutate(type = as_factor(type) %>% fct_relevel(c('commit', 'tree', 'blob')))
 }
 
 repo_edges <- function(repo = '.') {
@@ -126,6 +127,47 @@ commit_dag <- function(repo = '.') {
 
 ```
 
+```{r}
+repo_branch_commit <- function(repo = '.') {
+    commit_parents <-
+        odb_objects(repo = repo) %>%
+        filter(type == 'commit') %>%
+        mutate(parent_commit = map(sha, ~ {
+            lookup(repo, .x) %>% parents() %>% as.data.frame() %>% magrittr::extract2('sha')
+        })) %>%
+        unnest(parent_commit) %>%
+        select(from = sha, to = parent_commit)
+    
+    branch_edges <-
+        tibble(branches = branches()) %>%
+        transmute(from = map_chr(branches, ~ pluck(.x, 'name')),
+                  to = map_chr(branches, ~ branch_target(.x)))
+    
+    commit_nodes <-
+        commit_parents %>%
+        pivot_longer(c(from, to)) %>%
+        distinct(value) %>%
+        mutate(type = 'commit') %>%
+        rename(name = value)
+    
+    branch_nodes <-
+        branch_edges %>%
+        mutate(type = 'branch') %>%
+        select(-to, name = from)
+    
+    tbl_graph(
+        nodes = bind_rows(commit_nodes, branch_nodes) %>%
+            mutate(type = fct_expand(
+                type, c('blob', 'tree', 'commit', 'branch')
+            ),
+            type = fct_relevel(
+                type, c('blob', 'tree', 'commit', 'branch')
+            )),
+        edges = bind_rows(commit_parents,
+                          branch_edges)
+    )
+}
+```
 
 ```{r include=FALSE}
 # Graphing function
@@ -146,7 +188,8 @@ git_graph <- function(graph) {
 
 git_graph_branches <- function(graph) {
     git_graph_base(graph) +
-    geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(name, end = 4)}")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(name, end = 4)
+                                                                }")), repel = TRUE) +
     geom_node_label(aes(filter = type == 'branch', label = name, repel = TRUE), repel = TRUE)
 }
 ```
@@ -346,7 +389,7 @@ Putting all the work we've done together, we place the second commit onto our gr
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Create the graph, this time without filtering the commit
 tbl_graph(
-    nodes = repo_nodes(),
+    nodes = repo_nodes() %>% arrange(desc(message)),
     edges = repo_edges()
 ) %>%
     git_graph() +
@@ -356,13 +399,13 @@ tbl_graph(
         subtitle = 'Multiple Commit Hierarchy'
     )
 ```
-What we see here represents the core of how git stores data. The commits represent 'snapshots' of the state of the files and directories in the repository. Each commit points to a different root tree object, which point to a different object representing the *file_x* in the root (the file we changed in the second commit). But the commits share the same tree object representing the subdirectory and it's contents, as no files or directories have changed in that part of the filesystem. 
+What we see here represents the core of how git stores data. The commits represent 'snapshots' of the state of the files and directories in the repository. The commits point to different root tree objects, each of which point to a different object representing the *file_x* in the root (the file we changed in the second commit). But they share the same tree object representing the subdirectory and the blob representing *file_y*. 
 
 There's no 'diffs' calculated between commits; if one byte of a file changes, this results in a new blob, resulting in a new tree (or trees), resulting in a new commit. In terms of the [space-time trade-off](https://en.wikipedia.org/wiki/Space%E2%80%93time_tradeoff), git chooses space over time, resulting in a simple model of data changes over time.
 
 The problem is, our commits are still addressed via a 160 bit hash. This is all well and good for a computer, but we'd like something a bit more human friendly. This is the role of branches.
 
-# Branches
+# Branches and HEAD
 
 Branches are relatively simple: they are a human-friendly, named pointer to a commit hash. Local branches are stored in *.git/reds/heads/*, and we see the current master[^1] branch points to the hash of our second commit:
 
@@ -374,33 +417,36 @@ cat .git/refs/heads/master
 If we create a new branch, it will point to the same spot:
 
 ```{zsh}
-git branch new_branch
+# Create a new branch
+git branch branch_2
 
+# List the branches and the hashes they point to
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
-Committing on the new branch moves and points to the new commit:
+The branches are updated when a new commit occurs.
 
 ```{zsh}
 # Commit on the new branch
-git checkout new_branch
+git checkout -q branch_2
 echo $RANDOM > file_x
 git commit -q -am "Third Commit (new_branch)"
 
+# The 'new_branch' branch now points to a different commit.
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
-Going back to master and creating a new commit, we can visualise how the branches have diverged on a graph:
+Going back to master branch and creating a new commit allows us to visualise how the two branches have diverged:
 
 ```{zsh}
-# Commit on the new branch
-git checkout master 
+# Commit back on  the master branch
+git checkout -q master 
 echo $RANDOM > file_x
 git commit -q -am "Fourth Commit (master)"
 ```
 
 
-```{r echo=TRUE}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 repo = '.'
 odb_objects(repo = repo) %>% 
         filter(type == 'commit') %>% 
@@ -413,59 +459,40 @@ odb_objects(repo = repo) %>%
             nodes = repo_nodes(),
             edges = .
         ) %>% 
-        filter(type == 'commit') %>% 
-        git_graph()
+        filter(type == 'commit') %>%
+        git_graph() +
+        labs(
+            colour = "Object Type",
+            title = "Commit Directed Acyclic Graph",
+            subtitle = "Divergence of Two Branches"
+        )
 ```
 
 The third and fourth commits are both descendants of the third commit. Adding in our branches we see they point to the tip of this graph:
 
-```{r}
-repo = '.'
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+repo_branch_commit() %>% 
+    git_graph_branches()
+```
+There's nothing stopping us from creating more branches, even if they point to the same location:
 
-commit_parents <-
-    odb_objects(repo = repo) %>% 
-    filter(type == 'commit') %>% 
-    mutate(parent_commit = map(sha, ~ {
-        lookup(repo, .x) %>% parents() %>% as.data.frame() %>% magrittr::extract2('sha')
-    })) %>% 
-    unnest(parent_commit) %>%
-    select(from = sha, to = parent_commit) 
+```{zsh}
+# Create new branches
+git branch branch_3 
+git branch branch_4 
+git branch branch_5 
+```
 
-branch_edges <-
-    tibble(branches = branches()) %>% 
-    transmute(
-        from = map_chr(branches, ~pluck(.x, 'name')),
-        to = map_chr(branches, ~branch_target(.x))
-    ) 
-
-commit_nodes <-
-    commit_parents %>% 
-    pivot_longer(c(from, to)) %>% 
-    distinct(value) %>%
-    mutate(type = 'commit') %>% 
-    rename(name = value)
-
-branch_nodes <-
-    branch_edges %>% 
-    mutate(type = 'branch') %>% 
-    select(-to, name = from)
-
-    tbl_graph(
-        nodes = bind_rows(
-            commit_nodes,
-            branch_nodes
-        ),
-        edges = bind_rows(
-            commit_parents,
-            branch_edges
-        )
-    ) %>% 
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+repo_branch_commit() %>% 
     git_graph_branches()
 ```
 
+Branches make the underlying structure of git navigable by a human.
+
 # Index
 
-The final file we're going to look at is the index. While it has a few different roles, we'll be focusing on it's main role as the 'staging area'. Let's crack it open and have a look at the structure:
+The final file we're going to look at is the index. While it has a few different roles, we'll be focusing on it's main role as the 'staging area'. The index will have entry for
 
 ```{zsh}
 perl -0777 -nE '
@@ -490,7 +517,7 @@ echo "Index Modification" > file_x
 git add file_x
 ```
 
-And we'll re-take a look at the index:
+Now we'll re-take a look at the index:
 
 ```{zsh echo=FALSE}
 perl -0777 -nE '
@@ -499,6 +526,7 @@ say "ctime, mtime: " . join " ", @index[(1, 3)];
 say "object, filepath: " . join " ", @index[(14, 16)];
 ' .git/index
 ```
+
 The `lstat()` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, this next commit will represent the current state of the index. In our example, a new tree object will be created with *file_x* pointing towards the object that's in the index (as well as pointing to the current, unchanged tree representing the sub-directory). As this is the root tree object, the new commit will point to this.
 
 # Conclusion
