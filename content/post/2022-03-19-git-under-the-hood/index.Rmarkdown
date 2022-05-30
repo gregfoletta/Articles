@@ -39,7 +39,7 @@ knitr::opts_chunk$set(
 ```
 
 
-```{r include=FALSE}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 repo_nodes <- function(repo = '.') {
     # First get all of the objects in the repo
     one_commit_nodes <- 
@@ -127,7 +127,7 @@ commit_dag <- function(repo = '.') {
 
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 repo_branch_commit <- function(repo = '.') {
     commit_parents <-
         odb_objects(repo = repo) %>%

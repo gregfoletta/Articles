@@ -27,47 +27,6 @@ As always, the source code for this article is available up on [github](https://
 
 
 
-```r
-repo_branch_commit <- function(repo = '.') {
-    commit_parents <-
-        odb_objects(repo = repo) %>%
-        filter(type == 'commit') %>%
-        mutate(parent_commit = map(sha, ~ {
-            lookup(repo, .x) %>% parents() %>% as.data.frame() %>% magrittr::extract2('sha')
-        })) %>%
-        unnest(parent_commit) %>%
-        select(from = sha, to = parent_commit)
-    
-    branch_edges <-
-        tibble(branches = branches()) %>%
-        transmute(from = map_chr(branches, ~ pluck(.x, 'name')),
-                  to = map_chr(branches, ~ branch_target(.x)))
-    
-    commit_nodes <-
-        commit_parents %>%
-        pivot_longer(c(from, to)) %>%
-        distinct(value) %>%
-        mutate(type = 'commit') %>%
-        rename(name = value)
-    
-    branch_nodes <-
-        branch_edges %>%
-        mutate(type = 'branch') %>%
-        select(-to, name = from)
-    
-    tbl_graph(
-        nodes = bind_rows(commit_nodes, branch_nodes) %>%
-            mutate(type = fct_expand(
-                type, c('blob', 'tree', 'commit', 'branch')
-            ),
-            type = fct_relevel(
-                type, c('blob', 'tree', 'commit', 'branch')
-            )),
-        edges = bind_rows(commit_parents,
-                          branch_edges)
-    )
-}
-```
 
 
 
@@ -221,16 +180,16 @@ tree .git
 │       └── heads
 │           └── master
 ├── objects
+│   ├── 41
+│   │   └── 276b75bbee9a87f2d781a1705c3d4fa034251d
 │   ├── 4e
 │   │   └── eafbc980bb5cc210392fa9712eeca32ded0f7d
 │   ├── 67
 │   │   └── 21ae08f27ae139ec833f8ab14e3361c38d07bd
 │   ├── 93
 │   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
-│   ├── cc
-│   │   └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
-│   └── fa
-│       └── 2ccfd54fbb5e879b3972454878505509cd06fc
+│   └── cc
+│       └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
 └── refs
     └── heads
         └── master
@@ -249,10 +208,10 @@ find .git/objects -type f -exec sh -c \
 
 ```
 .git/objects/cc/23f67bb60997d9628f4fd1e9e84f92fd49780e -> blob 11
+.git/objects/41/276b75bbee9a87f2d781a1705c3d4fa034251d -> commit 175
 .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d -> tree 101
 .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd -> tree 34
 .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 -> blob 5
-.git/objects/fa/2ccfd54fbb5e879b3972454878505509cd06fc -> commit 175
 ```
 So in addition to our two blobs, we've got two trees and a commit. Our starting point for will be the first of the tree objects. Unlike the others, trees contain some binary information rather than UTF-8 strings. I'll use Perl's `unpack()` function so decode this into hex:
 
@@ -311,8 +270,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 175
 tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
-author Greg Foletta <greg@foletta.org> 1653890777 +1000
-committer Greg Foletta <greg@foletta.org> 1653890777 +1000
+author Greg Foletta <greg@foletta.org> 1653891604 +1000
+committer Greg Foletta <greg@foletta.org> 1653891604 +1000
 
 First Commit
 ```
@@ -347,9 +306,9 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 224
 tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
-parent fa2ccfd54fbb5e879b3972454878505509cd06fc
-author Greg Foletta <greg@foletta.org> 1653890778 +1000
-committer Greg Foletta <greg@foletta.org> 1653890778 +1000
+parent 41276b75bbee9a87f2d781a1705c3d4fa034251d
+author Greg Foletta <greg@foletta.org> 1653891605 +1000
+committer Greg Foletta <greg@foletta.org> 1653891605 +1000
 
 Second Commit
 ```
@@ -377,7 +336,7 @@ cat .git/refs/heads/master
 ```
 
 ```
-d96913f5eac02802d8864790b5993feda80670d7
+cd4b1c6d185b012ab5a5e5120e6ad93e9ef6e291
 ```
 If we create a new branch, it will point to the same spot:
 
@@ -391,8 +350,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> d96913f5eac02802d8864790b5993feda80670d7
-.git/refs/heads/master -> d96913f5eac02802d8864790b5993feda80670d7
+.git/refs/heads/branch_2 -> cd4b1c6d185b012ab5a5e5120e6ad93e9ef6e291
+.git/refs/heads/master -> cd4b1c6d185b012ab5a5e5120e6ad93e9ef6e291
 ```
 
 The branches are updated when a new commit occurs.
@@ -409,8 +368,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> 842853d019027081eef53fad71822a18ef7fcc81
-.git/refs/heads/master -> d96913f5eac02802d8864790b5993feda80670d7
+.git/refs/heads/branch_2 -> 6b38d3b77faa1acca8f3e3fcc27cf856762723c7
+.git/refs/heads/master -> cd4b1c6d185b012ab5a5e5120e6ad93e9ef6e291
 ```
 
 Going back to master branch and creating a new commit allows us to visualise how the two branches have diverged:
@@ -461,8 +420,8 @@ say "Object & Filepath: " . join " ", @index[13..16];
 
 ```
 Index Header: DIRC 00000002 3
-lstat() info: 1653890778 757182752 1653890778 757182752 64769 7735400 0 1000000110100100 1000 1000
-Object & Filepath: 6 4bba48f989016ce163084851a2c81fb2c27d68a4 0000000000000110 file_x
+lstat() info: 1653891606 49092227 1653891606 49092227 64769 7735414 0 1000000110100100 1000 1000
+Object & Filepath: 6 1bf13a62894e9de05ba7eb363368d631c65e1980 0000000000000110 file_x
 ```
 The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We'll be unpacking only one of the entries. 
 
@@ -482,7 +441,7 @@ Now we'll re-take a look at the index:
 
 
 ```
-ctime, mtime: 00000002 1653890779
+ctime, mtime: 00000002 1653891607
 object, filepath: db12d29ef25db0f954787c6d620f1f6e9ce3c778 file_x
 ```
 
