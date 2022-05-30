@@ -24,7 +24,7 @@ touch file_x
 rm -rf .git file_* subdir
 ```
 
-```{r include=FALSE}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
 library(tidygraph)
 library(ggraph)

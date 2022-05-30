@@ -223,14 +223,14 @@ tree .git
 ├── objects
 │   ├── 4e
 │   │   └── eafbc980bb5cc210392fa9712eeca32ded0f7d
-│   ├── 61
-│   │   └── bdbd436ba0cc99fc54c46e5c0dda00b6238e0b
 │   ├── 67
 │   │   └── 21ae08f27ae139ec833f8ab14e3361c38d07bd
 │   ├── 93
 │   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
-│   └── cc
-│       └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
+│   ├── cc
+│   │   └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
+│   └── fa
+│       └── 2ccfd54fbb5e879b3972454878505509cd06fc
 └── refs
     └── heads
         └── master
@@ -249,10 +249,10 @@ find .git/objects -type f -exec sh -c \
 
 ```
 .git/objects/cc/23f67bb60997d9628f4fd1e9e84f92fd49780e -> blob 11
-.git/objects/61/bdbd436ba0cc99fc54c46e5c0dda00b6238e0b -> commit 175
 .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d -> tree 101
 .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd -> tree 34
 .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 -> blob 5
+.git/objects/fa/2ccfd54fbb5e879b3972454878505509cd06fc -> commit 175
 ```
 So in addition to our two blobs, we've got two trees and a commit. Our starting point for will be the first of the tree objects. Unlike the others, trees contain some binary information rather than UTF-8 strings. I'll use Perl's `unpack()` function so decode this into hex:
 
@@ -311,8 +311,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 175
 tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
-author Greg Foletta <greg@foletta.org> 1653778033 +1000
-committer Greg Foletta <greg@foletta.org> 1653778033 +1000
+author Greg Foletta <greg@foletta.org> 1653890777 +1000
+committer Greg Foletta <greg@foletta.org> 1653890777 +1000
 
 First Commit
 ```
@@ -347,9 +347,9 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 224
 tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
-parent 61bdbd436ba0cc99fc54c46e5c0dda00b6238e0b
-author Greg Foletta <greg@foletta.org> 1653778034 +1000
-committer Greg Foletta <greg@foletta.org> 1653778034 +1000
+parent fa2ccfd54fbb5e879b3972454878505509cd06fc
+author Greg Foletta <greg@foletta.org> 1653890778 +1000
+committer Greg Foletta <greg@foletta.org> 1653890778 +1000
 
 Second Commit
 ```
@@ -377,7 +377,7 @@ cat .git/refs/heads/master
 ```
 
 ```
-ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
+d96913f5eac02802d8864790b5993feda80670d7
 ```
 If we create a new branch, it will point to the same spot:
 
@@ -391,8 +391,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
-.git/refs/heads/master -> ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
+.git/refs/heads/branch_2 -> d96913f5eac02802d8864790b5993feda80670d7
+.git/refs/heads/master -> d96913f5eac02802d8864790b5993feda80670d7
 ```
 
 The branches are updated when a new commit occurs.
@@ -409,8 +409,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> c206b4809f0d4499aa9d9a98404cf18fe7554b2d
-.git/refs/heads/master -> ebf4de1b8fe8ee55e7ad07794df6788fc2135cd0
+.git/refs/heads/branch_2 -> 842853d019027081eef53fad71822a18ef7fcc81
+.git/refs/heads/master -> d96913f5eac02802d8864790b5993feda80670d7
 ```
 
 Going back to master branch and creating a new commit allows us to visualise how the two branches have diverged:
@@ -461,8 +461,8 @@ say "Object & Filepath: " . join " ", @index[13..16];
 
 ```
 Index Header: DIRC 00000002 3
-lstat() info: 1653778035 148739955 1653778035 148739955 64769 7999136 0 1000000110100100 1000 1000
-Object & Filepath: 6 bf3a1f34302301d165c8c9b52eaef52499a055ad 0000000000000110 file_x
+lstat() info: 1653890778 757182752 1653890778 757182752 64769 7735400 0 1000000110100100 1000 1000
+Object & Filepath: 6 4bba48f989016ce163084851a2c81fb2c27d68a4 0000000000000110 file_x
 ```
 The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We'll be unpacking only one of the entries. 
 
@@ -482,7 +482,7 @@ Now we'll re-take a look at the index:
 
 
 ```
-ctime, mtime: 00000002 1653778036
+ctime, mtime: 00000002 1653890779
 object, filepath: db12d29ef25db0f954787c6d620f1f6e9ce3c778 file_x
 ```
 
