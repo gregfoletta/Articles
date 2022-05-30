@@ -1,20 +1,19 @@
 ---
 title: Git Under the Hood
 author: 'Greg Foletta'
-date: '2022-05-23'
+date: '2022-05-29'
 slug: git-under-the-hood
-categories: [git]
+categories: [git R shell]
 ---
 
-While my day-job is not a "programming" job per se, I use git all the time and find it a fantastic tool for source control and versioning of plain text files. But I don't think there's any doubt that it is [not the easiest tool to use](https://xkcd.com/1597/). Despite it's unintuitive user interface, under the hood git is quite simple and elegant. I believe that if you can understand the fundamental constructs git uses to store, track, and manage files, then the using git from the top down becomes easier.
+While I'm not a programmer per se, I do use git almost daily and find it a great tool for source control and versioning of plain text files. But I don't think can be any doubt that it is [not the easiest tool to use](https://xkcd.com/1597/).  Despite it's unintuitive user interface, under the hood git is quite simple and elegant. I believe that if you can understand the fundamental constructs git uses to store, track, and manage files, then the using git becomes easy.
 
-In this article we're going to take a look under the covers and investigate these constructs. We'll start off with its storage model and take a look at blobs, trees and commits. We'll look at how branches are implemented, and finally we'll unpack the git index file to understand what happens during the staging of a commit. 
+In this article we're going to take a look under the covers and investigate git's fundamental constructs. We'll start off with its storage model and look at blobs, trees and commits. We'll see how branches are implemented, and finally we'll unpack the git index file to understand what happens during the staging of a commit. 
 
-There's already [loads](https://jwiegley.github.io/git-from-the-bottom-up/) of [articles](https://medium.com/hackernoon/understanding-git-fcffd87c15a3) out there on git internals, so what's different about this one? 
+There's already [loads](https://jwiegley.github.io/git-from-the-bottom-up/) of [articles](https://medium.com/hackernoon/understanding-git-fcffd87c15a3) out there on git internals, so what's different about this one? Two things:
 
-First, we'll try to avoid the lower level 'plumbing' git commands and limit ourselves to the five most common 'porcelain' commands: `git {init, add, commit, branch, checkout}`. All other analysis will be done using standard command line utilities operating on git's internal files. By removing the as many abstractions as possible and focusing in on file operations, the simplicity of git should become obvious, and will (hopefully) make it easier to understand.
-
-Second, using the R packages [git2r](https://github.com/ropensci/git2r) and [tidygraph](https://github.com/thomasp85/tidygraph), we'll dynamically build up a picture of the connections between git's fundamental objects and understand how they are tied together.
+1. We're going to avoid the lower level 'plumbing' git commands and limit ourselves to the five most common 'porcelain' commands: `git {init, add, commit, branch, checkout}`. All other work will be done using standard command line utilities. 
+1. Using the R packages [git2r](https://github.com/ropensci/git2r) and [tidygraph](https://github.com/thomasp85/tidygraph), we'll dynamically build up a picture of the connections between git's objects to understand how they are tied together.
 
 As always, the source code for this article is available up on [github](https://github.com/gregfoletta/articles.foletta.org/blob/production/content/post/2022-03-19-git-under-the-hood/index.Rmarkdown).
 
@@ -68,7 +67,7 @@ repo_nodes <- function(repo = '.') {
         right_join(one_commit_nodes, by = 'sha')
     
     one_commit_nodes %>% 
-        mutate(type = as_factor(type) %>% fct_relevel(c('commit', 'tree', 'blob')))
+        mutate(type = as_factor(type) %>% fct_relevel(c('blob', 'tree', 'commit', 'branch')))
 }
 
 repo_edges <- function(repo = '.') {
@@ -181,22 +180,22 @@ git_graph_base <- function(graph) {
 # Graphing function
 git_graph <- function(graph) {
     git_graph_base(graph) +
+    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 4)}\n'{ content }'")), repel = TRUE) +
     geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(sha, end = 4)}\n'{ str_trim(message) }'")), repel = TRUE) +
-    geom_node_label(aes(filter = type == 'tree', label = glue("{ str_sub(sha, end = 4)}")), repel = TRUE) +
-    geom_node_label(aes(filter = type == 'blob', label = glue("{ str_sub(sha, end = 4)}\n'{ content }'")), repel = TRUE)
+    geom_node_label(aes(filter = type == 'tree', label = glue("{ str_sub(sha, end = 4)}")), repel = TRUE)
 }
 
 git_graph_branches <- function(graph) {
     git_graph_base(graph) +
-    geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(name, end = 4)
-                                                                }")), repel = TRUE) +
+    geom_node_label(aes(filter = type == 'commit', label = glue("{ str_sub(name, end = 4)}")), repel = TRUE) +
     geom_node_label(aes(filter = type == 'branch', label = name, repel = TRUE), repel = TRUE)
 }
 ```
 
 # Initialisation
 
-We'll start by initialising an empty git repository. This creates a *.git* directory in which git will hold all of the information git needs for source control, as well as other metadata. The intialisation process creates a number of files and directories, but we'll prune it back as far as we can while still maintaining it as git repository.
+We'll start by initialising a repository which creates a *.git* directory, in which git holds all of the files and metadata it needs for source control. The intialisation process creates a number of files and directories, but we'll prune it back as far as we can while still maintaining it as git repository.
+
 
 ```{zsh}
 # Initialise the repository (quietly)
@@ -209,10 +208,11 @@ rm -rf .git/refs/{heads,tags}
 
 tree .git
 ```
+With a nice clean slate we can move on to our first object: the blob.
 
 # Blobs
 
-The first fundamental git object we'll look at is the *blob*. We create a file, add it to the staging area, and see what this has done in our .git directory.
+The first fundamental git object we'll look at is the *blob*. If we create a file and add it to the staging area, we see what has changed in the .git directory.
 
 ```{zsh}
 # Create a file
@@ -236,14 +236,14 @@ Decompressing and looking inside, we see the file is in a structured as a "type,
 pigz -cd .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 | hexdump -C
 ```
 
-How is the path to the blob object created? It's simply the SHA1 hash of the blob itself. The first two hexadecimal digits are used as a folder, with the remaining digits used as the object file name. We can show this by recreating the object and taking the hash.
+How is the path to the blob object created? It's simply the SHA1 hash of the blob itself. The first two hexadecimal digits are used as a folder, with the remaining digits used as the object file name. We can show this by recreating the object, taking the hash, and noting it's the same as our object's path:
 
 ```{zsh}
 # The hash matches the object's path
 echo "blob 5\0Root" | shasum
 ```
 
-What this means is that git uses content addressable storage, with the location of the file is based on its contents. Let's explore this further: we'll add two files with the same contents, one in the root directory and one in a subdirectory. 
+It can therefore be helpful to understand git as a form of content addressable storage: the location of the data that is under its control is based on the content of the data itself. Let's explore this further: we'll add two files with the same contents, one in the root directory and one in a subdirectory. 
 
 ```{zsh}
 # Cerate a subdir
@@ -259,9 +259,9 @@ git add file_y subdir
 tree .git
 ```
 
-While we've added three files, there's only two objects. Blobs only contain raw data, with no reference to files or directories. Even though there's three files, there's only two pieces of unique data, and thus two objects. The file/directory information is stored in tree objects which we will take a look at in the next section.
+While we've added three files but there's only two objects. Blobs only contain raw data, with no reference to files or directories. There's only two pieces of unique data, and thus two objects. The file/directory information is stored in tree objects which we will take a look at in the next section.
 
-Over the course of the article we'll build up a graph of the objects in the git repository to gain a visual representation of the structure. Here's our starting point: two blobs, the first four characters of their hash, and their contents.
+Over the course of the article we're going to build up a graph of the objects in the git repository to gain a visual representation of the structure. Here's our starting point: two blobs, the first four characters of their hash, and their contents:
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 tbl_graph(
@@ -277,11 +277,10 @@ tbl_graph(
 ```
 
 The two little blobs of data look pretty lonely out there. What they need is some context, and this is where the tree object comes in.
+
 # Tree
 
-As we've seen, there's no file or directory information in the blob object. The storage of this information is the role of the tree object. If we use the analogy of a disk filesystem and the blob object is the raw data on storage, then the tree object is similar to the inode. It holds the metadata of the file, as well as a pointer to the blob object.
-
-Let's perform our first commit and see what's changed in the repository.
+As we've seen, there's no file or directory information in the blob object. The storage of this information is the role of the tree object. Let's perform our first commit and see what's changed in the repository:
 
 ```{zsh}
 git commit --quiet -m "First Commit"
@@ -289,28 +288,28 @@ git commit --quiet -m "First Commit"
 tree .git
 ```
 
-A lot has changed here, and at first glance it may be a bit overwhelming, but focus in on the objects subdirectory. There's an additional three objects on top of the two blob objects we saw before. What are they? If you'll forgive me, I'll use a pretty ugly set of commands to pull out the type and length from each of the objects:
+A lot has changed and at first glance it may be a bit overwhelming, but focus in on the *objects* subdirectory. There's an additional three objects on top of the two blob objects we saw before. What are they? If you'll forgive me, I'll use a very ugly set of commands to pull out the type and length from each of the objects:
 
 ```{zsh}
 # May god have mercy on my soul
 find .git/objects -type f -exec sh -c \
 "echo -n '{} -> ' && pigz -cd {} | perl -0777 -nE 'say unpack qw(Z*)'" \;
 ```
-So in addition to our two blobs, we've got two trees and a commit. Our starting point for will be the first of the tree objects. Unlike the others, trees contain some binary information rather than UTF-8 strings. I'll use Perl's `unpack()` function so decode this into hex:
+So in addition to our two blobs, we've got two trees and a commit. Our starting point for will be the first of the tree objects. Unlike the others, trees contain some binary information rather than UTF-8 strings. I'll use Perl's `unpack()` function so decode this into hexadecimal:
 
 ```{zsh}
 pigz -cd .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
-Like the blob we have the type and length of the object. Following this there's an entry for two files and subdirectory that reside in the root directory. The digits preceding the filename are the *mode*, capturing the type of filesystem object (regular file/symbolic link/directory) and it's permissions. Git doesn't track all combinations of permissions, only whether the file is user executable or not.    
+Like the blob we have the type and length of the object. Following this there's an entry for each of the two files and the subdirectory that reside in the root directory. The digits preceding the file name are the *mode*, capturing the type of filesystem object (regular file/symbolic link/directory) and its permissions. Git doesn't track all combinations of permissions, only whether the file is user executable or not.    
 
-The two files point to the hashes of the blob objects, but you might have noticed that the subdirectory points to the hash of the other tree object. Looking inside of that:
+Each of the the two file entries point to the hashes of the blob objects, but the subdirectory points to the hash of another tree object. Looking inside that tree object:
 
 ```{zsh}
 pigz -cd .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd |\
 perl -nE 'print join "\n", unpack("Z*(Z*H40)*")'
 ```
-This tree object points to the hash of the blob for the file in the subdirectory. Adding the tree objects to our graph should make things a little clearer.
+We see this has an entry for the *file_z* in the subdirectory, and this points to the same hash as the *file_y* entry in the previous tree. A graph should make this clearer:
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Create the graph, filtering out the commit
@@ -326,13 +325,13 @@ tbl_graph(
         subtitle = 'Tree and Blob Objects'
     )
 ``` 
-At the top is the root of the tree, with its pointers to two blobs and a subdirectory. The second tree is the subdirectory, with a single pointer to a blob. The root and subdirectory trees both point to the same blob, because both files have the same contents.
+At the top is the root of the tree, with vertices to the two blobs (*file_x* and *file_y*) and a tree (the subdirectory). The second tree is has a single vertex to a blob (*file_z*). The root and subdirectory trees both point to the same blob, because both files have the same contents.
 
 With blobs and trees we've built up a pseudo-filesystem, but how does this help us with source control? The object that ties all of this together is the commit.
 
 # Commit
 
-Our third object - and the one most visible to the end user - is the commit. As we'll see soon, the hash of the commit (and thus the path to the object) is based on the time it was generated. As I generate this article dynamically, there's a little bit of overhead to get the commit object.
+Our third object - and the one most visible to the end user - is the commit. We're going to open our commit up, but as we'll learn about shortly, the hash of the commit (and thus the path to the object) depends partially on the time the commit was made. As I generate this article dynamically, there's a little bit of overhead to get the commit object:
 
 ```{zsh}
 # Get the commit object 
@@ -344,7 +343,7 @@ pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |\
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 
-Again we have the type and length of the object, then there's a few different pieces of information.
+Again we have the type and length of the object at the start, then there's a few different pieces of information.
 
 The first is reference to a tree object. This is the tree object that represents the root directory of the repository. The next is the author of the commit, with their name, email address, commit time and the UTC offset. As the person who authored the commit doesn't necessarily have to be the person who committed it to the repository, there's also a line for the committer. Following this is the commit message, which is free text input entered at the time of the commit.
 
@@ -363,9 +362,9 @@ tbl_graph(
         subtitle = 'Git, Tree, and Blob Objects'
     )
 ```
-So a commit points to the tree object representing the root directory. But there's something missing here, as this first commit is a special commit: as it has no parents. Every other commit from this point on will be a descendant of this commit. From any point, history of the changes to the files in the repository can be traced back all the way back to this nascent state. 
+The commit points to the tree object representing the root directory. But this first commit is a special commit, missing a piece of information: parents. Every other commit in this repository from this point onwards will point to one or more parent entries. This creates a *directed acyclic graph* (DAG), allowing any commit to be traced back to the first commit. As every commit's hash is dependent on its parents' hash, the graph is also a form of [Merkle tree](https://en.wikipedia.org/). 
 
-Changing the contents of *file_z*, staging, and creating a second commit, will allow us to see this additional information in the commit object:
+If we change the contents of *file_z*, stage, and create a second commit, will allow us to see this additional information in the commit object:
 
 ```{zsh}
 # Change the contents, add, and create a second commit
@@ -381,10 +380,7 @@ COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
 perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
-
-We see an additional *parent* line in the commit, which references the hash of the commit that came before it. A commit can have multiple parents: two or more "branches" can be merged together, resulting in commits having multiple parents. We're not going to cover any merging in this article.
-
-Putting all the work we've done together, we place the second commit onto our graph, sans the link back to the parent (we'll get to that in the next section):
+We can then place the second commit onto our graph, omitting the link back to the parent (we'll get to that in the next section):
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Create the graph, this time without filtering the commit
@@ -399,22 +395,29 @@ tbl_graph(
         subtitle = 'Multiple Commit Hierarchy'
     )
 ```
-What we see here represents the core of how git stores data. The commits represent 'snapshots' of the state of the files and directories in the repository. The commits point to different root tree objects, each of which point to a different object representing the *file_x* in the root (the file we changed in the second commit). But they share the same tree object representing the subdirectory and the blob representing *file_y*. 
+What we see here represents the core of how git stores data. The commits represent 'snapshots' of the state of the files and directories in the repository. In this particular scenario commits point to different root tree objects, each of which point to different objects representing the *file_x*. But they share the same tree object representing the subdirectory and the blob representing *file_y*. 
 
-There's no 'diffs' calculated between commits; if one byte of a file changes, this results in a new blob, resulting in a new tree (or trees), resulting in a new commit. In terms of the [space-time trade-off](https://en.wikipedia.org/wiki/Space%E2%80%93time_tradeoff), git chooses space over time, resulting in a simple model of data changes over time.
+There's no 'diffs' calculated between commits; if one byte changes in a file, a new blob is created, resulting in a new tree (or trees), resulting in a new commit. In terms of the [space-time trade-off](https://en.wikipedia.org/wiki/Space%E2%80%93time_tradeoff), git chooses space over time, resulting in a simple model of data changes over time.
 
 The problem is, our commits are still addressed via a 160 bit hash. This is all well and good for a computer, but we'd like something a bit more human friendly. This is the role of branches.
 
 # Branches and HEAD
 
-Branches are relatively simple: they are a human-friendly, named pointer to a commit hash. Local branches are stored in *.git/reds/heads/*, and we see the current master[^1] branch points to the hash of our second commit:
+Branches are relatively simple: they are a human-friendly, named pointer to a commit hash. Local branches (as opposed to remote branches, which we won't cover in this article) are stored in *.git/refs/heads/*, and right now the current master[^1] branch points to the hash of our second commit:
 
-[^1]: the default branch, which is now configurable in git version 2.28 and above
+[^1]: The default branch, which is now configurable in git version 2.28 and above
 
 ```{zsh}
 cat .git/refs/heads/master
 ```
-If we create a new branch, it will point to the same spot:
+We also need to briefly mention *HEAD*. This file tracks which commit is currently 'active', i.e. the checked out files match those in the commit. We see *HEAD* currently refers to our master branch[^2]:
+
+[^2]: HEAD doesn't doesn't have to refer to a branch, it can refer to an arbitrary commit. This is known as a 'detatched HEAD'.
+
+```{zsh}
+cat .git/HEAD
+```
+If we create a new branch, it will recurse on what HEAD points to until it finds a commit:
 
 ```{zsh}
 # Create a new branch
@@ -423,11 +426,10 @@ git branch branch_2
 # List the branches and the hashes they point to
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
-
-The branches are updated when a new commit occurs.
+When a new commit is issued, the current branch is moved to point to the new commit (and head will indirectly point to the commit through this branch):
 
 ```{zsh}
-# Commit on the new branch
+# Checkout a branch and commit on it
 git checkout -q branch_2
 echo $RANDOM > file_x
 git commit -q -am "Third Commit (new_branch)"
@@ -435,8 +437,7 @@ git commit -q -am "Third Commit (new_branch)"
 # The 'new_branch' branch now points to a different commit.
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
-
-Going back to master branch and creating a new commit allows us to visualise how the two branches have diverged:
+If we checkout the master branch and creating a new commit, we ca visualise how the two branches have diverged:
 
 ```{zsh}
 # Commit back on  the master branch
@@ -468,11 +469,16 @@ odb_objects(repo = repo) %>%
         )
 ```
 
-The third and fourth commits are both descendants of the third commit. Adding in our branches we see they point to the tip of this graph:
+The third and fourth commits are both descendants of the third commit. Adding in our branches to the graph we see they point to the tip of this graph:
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 repo_branch_commit() %>% 
-    git_graph_branches()
+    git_graph_branches() +
+    labs(
+        colour = "Object Type",
+        title = "Commit Directed Acyclic Graph with Branches",
+        subtitle = "Single Branch per Leaf"
+    )
 ```
 There's nothing stopping us from creating more branches, even if they point to the same location:
 
@@ -480,19 +486,23 @@ There's nothing stopping us from creating more branches, even if they point to t
 # Create new branches
 git branch branch_3 
 git branch branch_4 
-git branch branch_5 
 ```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 repo_branch_commit() %>% 
-    git_graph_branches()
+    git_graph_branches() +
+    labs(
+        colour = "Object Type",
+        title = "Commit Directed Acyclic Graph with Branches",
+        subtitle = "Multiple Branch per Leaf"
+    )
 ```
 
-Branches make the underlying structure of git navigable by a human.
+The key takeaway is that branches provide a human-friendly way of navigating the git's commit DAG.
 
 # Index
 
-The final file we're going to look at is the index. While it has a few different roles, we'll be focusing on it's main role as the 'staging area'. The index will have entry for
+The final file we're going to look at is the index. While it has a few purposes, we'll focus on it's main role as the 'staging area'. The exact structure is [available here](https://git-scm.com/docs/index-format), and I've converted this into Perl *unpack()* language: 
 
 ```{zsh}
 perl -0777 -nE '
@@ -504,13 +514,13 @@ say "lstat() info: " . join " ", @index[3..12];
 say "Object & Filepath: " . join " ", @index[13..16];
 ' .git/index
 ```
-The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We'll be unpacking only one of the entries. 
+The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We've only unpacked one of the files. 
 
-The first fields contain information from the `lstat()` function: last changed and modified time, the device and inode, permissions, uid and gid, and file size. These values allow git to quickly determine if files in the working tree have been modified.
+The first fields contain information from the `lstat(2)` function: last changed and modified time, the device and inode, permissions, uid and gid, and file size. These values allow git to quickly determine if files in the working tree have been modified.
 
-We next have the hash of the object, a flags field (including the length of path), and the path of the object.
+Then comes the hash of the object, a flags field (which includes the length of path), and the path to the object.
 
-If we recall back in the *Blobs* section, when we added a file to the staging are via `git add`, the index was created. Let's modify *file_x* and add it to the staging area:
+If we recall back in the *blobs* section, when we added a file to the staging are via `git add`, the index was created. Let's modify *file_x* and add it to the staging area:
 
 ```{zsh}
 echo "Index Modification" > file_x
@@ -527,17 +537,16 @@ say "object, filepath: " . join " ", @index[(14, 16)];
 ' .git/index
 ```
 
-The `lstat()` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, this next commit will represent the current state of the index. In our example, a new tree object will be created with *file_x* pointing towards the object that's in the index (as well as pointing to the current, unchanged tree representing the sub-directory). As this is the root tree object, the new commit will point to this.
+The `lstat(2)` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, the tree underlying the commit is based upon the current state of this index. When a different branch is checked out, the index is rebuilt so that the files point to the correct *blobs*.
 
 # Conclusion
 
-In this article we dived in to the internals of git. We first looked at git's data model and learned about the raw blobs of data, the trees that hold the filesystem information, and the commits that point the root of the tree and hold information about the author, time, and a description of the commit. We also saw how these commits point to other parent commits, giving us a graph that allows you to trace any the changed in the repository back to the first embryonic commit. 
+In this article we dived in to the internals of git. We've looked at git's data model and learned about the raw blobs of data, the trees that hold the filesystem information, and the commits that point the root of the tree. We've seen how commits have parents, creating a directed acyclic grapg of differing states of the repository.
 
-We needed a human readable way to track commits and learned about branches, which are simple files that point to commit hashes.
+Branches were shown to be quite simple, human-readable pointers to commit hashes, allowing us to navigate around git's commit graph. Finally we cracked open index, which is a staging area for the next commit.
 
-Finally we looked at the index which acts as the staging area for a commit and helps to speed up file comparison operations.
+It's perhaps a sad indictment when you have to understand the internals of something in order to use it. This could be bad design, the inherent complexity of the problem domain, or perhaps a little bit of both. Nevertheless git is a widely used tool that's incredibly powerful, and investing some time to understand it will surely pay dividends down the line when want to manage configuration, code, or almost any other type of text-based content.
 
-It's perhaps a sad indictment when you have to understand the internals of something in order to use it. This could be bad design, the inherent complexity of the problem domain, or perhaps a litle bit of both. Nevertheless it's a piece of software that's incredibly powerful and investing some time to understand it will pay dividends down the line when you're trying to manage configuration, code, almost any other type of text-based content.
 
 ```{zsh include=FALSE}
 rm -rf .git file_* subdir
