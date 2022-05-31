@@ -188,8 +188,8 @@ tree .git
 │   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
 │   ├── cc
 │   │   └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
-│   └── ee
-│       └── 160cec73495fe074f02b541312c59257f29a78
+│   └── df
+│       └── 3c98bd39f60ed5bcaab79160844e41aee54bfd
 └── refs
     └── heads
         └── master
@@ -211,7 +211,7 @@ find .git/objects -type f -exec sh -c \
 .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d -> tree 101
 .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd -> tree 34
 .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 -> blob 5
-.git/objects/ee/160cec73495fe074f02b541312c59257f29a78 -> commit 175
+.git/objects/df/3c98bd39f60ed5bcaab79160844e41aee54bfd -> commit 175
 ```
 So in addition to our two blobs, we've got two trees and a commit. Our starting point for will be the first of the tree objects. Unlike the others, trees contain some binary information rather than UTF-8 strings. I'll use Perl's `unpack()` function so decode this into hexadecimal:
 
@@ -259,8 +259,8 @@ Our third object - and the one most visible to the end user - is the commit. We'
 
 ```zsh
 # Get the commit object 
-COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
-COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
+COMMIT_DIR=$(cut -c 1-2 .git/refs/heads/master)
+COMMIT_OBJ=$(cut -c 3- .git/refs/heads/master)
 
 # Open it up
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |\
@@ -270,8 +270,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 175
 tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
-author Greg Foletta <greg@foletta.org> 1653955218 +1000
-committer Greg Foletta <greg@foletta.org> 1653955218 +1000
+author Greg Foletta <greg@foletta.org> 1653981318 +1000
+committer Greg Foletta <greg@foletta.org> 1653981318 +1000
 
 First Commit
 ```
@@ -295,8 +295,8 @@ git add file_x
 git commit -q -m "Second Commit"
 
 # Determine the path to the second commit object
-COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
-COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
+COMMIT_DIR=$(cut -c 1-2 .git/refs/heads/master)
+COMMIT_OBJ=$(cut -c 3- .git/refs/heads/master)
 
 # Unpack the contents of the commit
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
@@ -306,9 +306,9 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 224
 tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
-parent ee160cec73495fe074f02b541312c59257f29a78
-author Greg Foletta <greg@foletta.org> 1653955219 +1000
-committer Greg Foletta <greg@foletta.org> 1653955219 +1000
+parent df3c98bd39f60ed5bcaab79160844e41aee54bfd
+author Greg Foletta <greg@foletta.org> 1653981319 +1000
+committer Greg Foletta <greg@foletta.org> 1653981319 +1000
 
 Second Commit
 ```
@@ -333,7 +333,7 @@ cat .git/refs/heads/master
 ```
 
 ```
-c4c0eeb4747c5d26bdaf18f4053fb2010f601691
+14a9ca6989e1020d02f5edb9b8082111228c614d
 ```
 We also need to briefly mention *HEAD*. This file tracks which commit is currently 'active', i.e. the checked out files match those in the commit. We see *HEAD* currently refers to our master branch[^2]:
 
@@ -359,8 +359,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> c4c0eeb4747c5d26bdaf18f4053fb2010f601691
-.git/refs/heads/master -> c4c0eeb4747c5d26bdaf18f4053fb2010f601691
+.git/refs/heads/branch_2 -> 14a9ca6989e1020d02f5edb9b8082111228c614d
+.git/refs/heads/master -> 14a9ca6989e1020d02f5edb9b8082111228c614d
 ```
 When a new commit is issued, the current branch is moved to point to the new commit (and head will indirectly point to the commit through this branch):
 
@@ -376,8 +376,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> 8c2f2d8582bc96753906b54b75f46a33886f6e38
-.git/refs/heads/master -> c4c0eeb4747c5d26bdaf18f4053fb2010f601691
+.git/refs/heads/branch_2 -> 396e754242bc040021885288aa1e13efdf34382b
+.git/refs/heads/master -> 14a9ca6989e1020d02f5edb9b8082111228c614d
 ```
 If we checkout the master branch and creating a new commit, we ca visualise how the two branches have diverged:
 
@@ -426,8 +426,8 @@ say "Object & Filepath: " . join " ", @index[13..16];
 
 ```
 Index Header: DIRC 00000002 3
-lstat() info: 1653955219 992633164 1653955219 992633164 64769 7735451 0 1000000110100100 1000 1000
-Object & Filepath: 6 94907966eaaf3b65ac50ba97d0a859edbcb0939e 0000000000000110 file_x
+lstat() info: 1653981319 833351143 1653981319 833351143 64769 7734837 0 1000000110100100 1000 1000
+Object & Filepath: 6 d096edfe66c3b2c27b24f765eb0aaef248977cd4 0000000000000110 file_x
 ```
 The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We've only unpacked one of the files. 
 
@@ -447,11 +447,11 @@ Now we'll re-take a look at the index:
 
 
 ```
-ctime, mtime: 00000002 1653955221
+ctime, mtime: 00000002 1653981320
 object, filepath: db12d29ef25db0f954787c6d620f1f6e9ce3c778 file_x
 ```
 
-The `lstat(2)` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, the tree underlying the commit is based upon the current state of this index. When a different branch is checked out, the index is rebuilt so that the files point to the correct *blobs*.
+The `lstat(2)` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, the tree underlying the commit is based upon the current state of this index. When a different branch is checked out, the index is rebuilt so that the files in index point to the correct *blobs* for that particular commit.
 
 # Conclusion
 

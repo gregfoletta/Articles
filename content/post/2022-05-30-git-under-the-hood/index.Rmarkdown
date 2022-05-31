@@ -335,8 +335,8 @@ Our third object - and the one most visible to the end user - is the commit. We'
 
 ```{zsh}
 # Get the commit object 
-COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
-COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
+COMMIT_DIR=$(cut -c 1-2 .git/refs/heads/master)
+COMMIT_OBJ=$(cut -c 3- .git/refs/heads/master)
 
 # Open it up
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |\
@@ -373,8 +373,8 @@ git add file_x
 git commit -q -m "Second Commit"
 
 # Determine the path to the second commit object
-COMMIT_DIR=$(cat .git/refs/heads/master | cut -c 1-2)
-COMMIT_OBJ=$(cat .git/refs/heads/master | cut -c 3-)
+COMMIT_DIR=$(cut -c 1-2 .git/refs/heads/master)
+COMMIT_OBJ=$(cut -c 3- .git/refs/heads/master)
 
 # Unpack the contents of the commit
 pigz -cd .git/objects/$COMMIT_DIR/$COMMIT_OBJ |
@@ -537,7 +537,7 @@ say "object, filepath: " . join " ", @index[(14, 16)];
 ' .git/index
 ```
 
-The `lstat(2)` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, the tree underlying the commit is based upon the current state of this index. When a different branch is checked out, the index is rebuilt so that the files point to the correct *blobs*.
+The `lstat(2)` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, the tree underlying the commit is based upon the current state of this index. When a different branch is checked out, the index is rebuilt so that the files in index point to the correct *blobs* for that particular commit.
 
 # Conclusion
 
