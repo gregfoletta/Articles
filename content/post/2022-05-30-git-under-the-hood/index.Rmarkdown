@@ -6,16 +6,16 @@ slug: git-under-the-hood
 categories: [git R shell]
 ---
 
-While I'm not a programmer per se, I do use git almost daily and find it a great tool for source control and versioning of plain text files. But I don't think can be any doubt that it is [not the easiest tool to use](https://xkcd.com/1597/).  Despite it's unintuitive user interface, under the hood git is quite simple and elegant. I believe that if you can understand the fundamental constructs git uses to store, track, and manage files, then the using git becomes easy.
+While I'm not a programmer per se, I do use git almost daily and find it a great tool for source control and versioning of plain text files. But I don't think there can be any doubt that it is [not the easiest tool to use](https://xkcd.com/1597/). But despite its unintuitive user interface, under the hood git is quite simple and elegant. I believe that if you can understand the fundamental constructs git uses to store, track, and manage files, then the using git becomes a lot easier.
 
 In this article we're going to take a look under the covers and investigate git's fundamental constructs. We'll start off with its storage model and look at blobs, trees and commits. We'll see how branches are implemented, and finally we'll unpack the git index file to understand what happens during the staging of a commit. 
 
 There's already [loads](https://jwiegley.github.io/git-from-the-bottom-up/) of [articles](https://medium.com/hackernoon/understanding-git-fcffd87c15a3) out there on git internals, so what's different about this one? Two things:
 
 1. We're going to avoid the lower level 'plumbing' git commands and limit ourselves to the five most common 'porcelain' commands: `git {init, add, commit, branch, checkout}`. All other work will be done using standard command line utilities. 
-1. Using the R packages [git2r](https://github.com/ropensci/git2r) and [tidygraph](https://github.com/thomasp85/tidygraph), we'll dynamically build up a picture of the connections between git's objects to understand how they are tied together.
+1. Using the R packages [git2r](https://github.com/ropensci/git2r) and [tidygraph](https://github.com/thomasp85/tidygraph), we'll dynamically build up a picture of the connections between git's objects to help understand how they are tied together.
 
-As always, the source code for this article is available up on [github](https://github.com/gregfoletta/articles.foletta.org/blob/production/content/post/2022-03-19-git-under-the-hood/index.Rmarkdown).
+As always, the source code for this article is available up on [github](https://github.com/gregfoletta/articles.foletta.org/blob/production/content/post/2022-05-30-git-under-the-hood/index.Rmarkdown).
 
 
 ```{zsh include=FALSE}
@@ -194,7 +194,7 @@ git_graph_branches <- function(graph) {
 
 # Initialisation
 
-We'll start by initialising a repository which creates a *.git* directory, in which git holds all of the files and metadata it needs for source control. The intialisation process creates a number of files and directories, but we'll prune it back as far as we can while still maintaining it as git repository.
+We'll start by initialising a git repository, which creates a *.git* directory and some initial files. Git holds all of the files and metadata it needs for source control in this directory. To clarify things we'll prune back as many of the initial files as possible, while still ensuring git recognises it as a valid repository.
 
 
 ```{zsh}

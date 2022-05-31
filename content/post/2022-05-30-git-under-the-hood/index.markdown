@@ -6,16 +6,16 @@ slug: git-under-the-hood
 categories: [git R shell]
 ---
 
-While I'm not a programmer per se, I do use git almost daily and find it a great tool for source control and versioning of plain text files. But I don't think can be any doubt that it is [not the easiest tool to use](https://xkcd.com/1597/).  Despite it's unintuitive user interface, under the hood git is quite simple and elegant. I believe that if you can understand the fundamental constructs git uses to store, track, and manage files, then the using git becomes easy.
+While I'm not a programmer per se, I do use git almost daily and find it a great tool for source control and versioning of plain text files. But I don't think there can be any doubt that it is [not the easiest tool to use](https://xkcd.com/1597/). But despite its unintuitive user interface, under the hood git is quite simple and elegant. I believe that if you can understand the fundamental constructs git uses to store, track, and manage files, then the using git becomes a lot easier.
 
 In this article we're going to take a look under the covers and investigate git's fundamental constructs. We'll start off with its storage model and look at blobs, trees and commits. We'll see how branches are implemented, and finally we'll unpack the git index file to understand what happens during the staging of a commit. 
 
 There's already [loads](https://jwiegley.github.io/git-from-the-bottom-up/) of [articles](https://medium.com/hackernoon/understanding-git-fcffd87c15a3) out there on git internals, so what's different about this one? Two things:
 
 1. We're going to avoid the lower level 'plumbing' git commands and limit ourselves to the five most common 'porcelain' commands: `git {init, add, commit, branch, checkout}`. All other work will be done using standard command line utilities. 
-1. Using the R packages [git2r](https://github.com/ropensci/git2r) and [tidygraph](https://github.com/thomasp85/tidygraph), we'll dynamically build up a picture of the connections between git's objects to understand how they are tied together.
+1. Using the R packages [git2r](https://github.com/ropensci/git2r) and [tidygraph](https://github.com/thomasp85/tidygraph), we'll dynamically build up a picture of the connections between git's objects to help understand how they are tied together.
 
-As always, the source code for this article is available up on [github](https://github.com/gregfoletta/articles.foletta.org/blob/production/content/post/2022-03-19-git-under-the-hood/index.Rmarkdown).
+As always, the source code for this article is available up on [github](https://github.com/gregfoletta/articles.foletta.org/blob/production/content/post/2022-05-30-git-under-the-hood/index.Rmarkdown).
 
 
 
@@ -31,7 +31,7 @@ As always, the source code for this article is available up on [github](https://
 
 # Initialisation
 
-We'll start by initialising a repository which creates a *.git* directory, in which git holds all of the files and metadata it needs for source control. The intialisation process creates a number of files and directories, but we'll prune it back as far as we can while still maintaining it as git repository.
+We'll start by initialising a git repository, which creates a *.git* directory and some initial files. Git holds all of the files and metadata it needs for source control in this directory. To clarify things we'll prune back as many of the initial files as possible, while still ensuring git recognises it as a valid repository.
 
 
 
@@ -184,12 +184,12 @@ tree .git
 │   │   └── eafbc980bb5cc210392fa9712eeca32ded0f7d
 │   ├── 67
 │   │   └── 21ae08f27ae139ec833f8ab14e3361c38d07bd
-│   ├── 74
-│   │   └── 9e99cea15f102a0d3f53fa888774c3d83f61cf
 │   ├── 93
 │   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
-│   └── cc
-│       └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
+│   ├── cc
+│   │   └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
+│   └── ee
+│       └── 160cec73495fe074f02b541312c59257f29a78
 └── refs
     └── heads
         └── master
@@ -208,10 +208,10 @@ find .git/objects -type f -exec sh -c \
 
 ```
 .git/objects/cc/23f67bb60997d9628f4fd1e9e84f92fd49780e -> blob 11
-.git/objects/74/9e99cea15f102a0d3f53fa888774c3d83f61cf -> commit 175
 .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d -> tree 101
 .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd -> tree 34
 .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 -> blob 5
+.git/objects/ee/160cec73495fe074f02b541312c59257f29a78 -> commit 175
 ```
 So in addition to our two blobs, we've got two trees and a commit. Our starting point for will be the first of the tree objects. Unlike the others, trees contain some binary information rather than UTF-8 strings. I'll use Perl's `unpack()` function so decode this into hexadecimal:
 
@@ -270,8 +270,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 175
 tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
-author Greg Foletta <greg@foletta.org> 1653953138 +1000
-committer Greg Foletta <greg@foletta.org> 1653953138 +1000
+author Greg Foletta <greg@foletta.org> 1653955218 +1000
+committer Greg Foletta <greg@foletta.org> 1653955218 +1000
 
 First Commit
 ```
@@ -306,9 +306,9 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 224
 tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
-parent 749e99cea15f102a0d3f53fa888774c3d83f61cf
-author Greg Foletta <greg@foletta.org> 1653953139 +1000
-committer Greg Foletta <greg@foletta.org> 1653953139 +1000
+parent ee160cec73495fe074f02b541312c59257f29a78
+author Greg Foletta <greg@foletta.org> 1653955219 +1000
+committer Greg Foletta <greg@foletta.org> 1653955219 +1000
 
 Second Commit
 ```
@@ -333,7 +333,7 @@ cat .git/refs/heads/master
 ```
 
 ```
-b9b89e504fbc35d7f6b673af69e46f59e89d8d22
+c4c0eeb4747c5d26bdaf18f4053fb2010f601691
 ```
 We also need to briefly mention *HEAD*. This file tracks which commit is currently 'active', i.e. the checked out files match those in the commit. We see *HEAD* currently refers to our master branch[^2]:
 
@@ -359,8 +359,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> b9b89e504fbc35d7f6b673af69e46f59e89d8d22
-.git/refs/heads/master -> b9b89e504fbc35d7f6b673af69e46f59e89d8d22
+.git/refs/heads/branch_2 -> c4c0eeb4747c5d26bdaf18f4053fb2010f601691
+.git/refs/heads/master -> c4c0eeb4747c5d26bdaf18f4053fb2010f601691
 ```
 When a new commit is issued, the current branch is moved to point to the new commit (and head will indirectly point to the commit through this branch):
 
@@ -376,8 +376,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> a8fe0816b9a70c4982d7c7113adb2bc6d191c9e4
-.git/refs/heads/master -> b9b89e504fbc35d7f6b673af69e46f59e89d8d22
+.git/refs/heads/branch_2 -> 8c2f2d8582bc96753906b54b75f46a33886f6e38
+.git/refs/heads/master -> c4c0eeb4747c5d26bdaf18f4053fb2010f601691
 ```
 If we checkout the master branch and creating a new commit, we ca visualise how the two branches have diverged:
 
@@ -426,8 +426,8 @@ say "Object & Filepath: " . join " ", @index[13..16];
 
 ```
 Index Header: DIRC 00000002 3
-lstat() info: 1653953140 423995718 1653953140 423995718 64769 7735447 0 1000000110100100 1000 1000
-Object & Filepath: 6 60cf69405b5bdd4b9ebbd87104335c20ec1a9ea5 0000000000000110 file_x
+lstat() info: 1653955219 992633164 1653955219 992633164 64769 7735451 0 1000000110100100 1000 1000
+Object & Filepath: 6 94907966eaaf3b65ac50ba97d0a859edbcb0939e 0000000000000110 file_x
 ```
 The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We've only unpacked one of the files. 
 
@@ -447,7 +447,7 @@ Now we'll re-take a look at the index:
 
 
 ```
-ctime, mtime: 00000002 1653953141
+ctime, mtime: 00000002 1653955221
 object, filepath: db12d29ef25db0f954787c6d620f1f6e9ce3c778 file_x
 ```
 
