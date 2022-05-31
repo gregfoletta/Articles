@@ -532,12 +532,12 @@ Now we'll re-take a look at the index:
 ```{zsh echo=FALSE}
 perl -0777 -nE '
 my @index = unpack("A4 H8 N (N4 N2 n B16 N N N H40 B16 Z*)");
-say "ctime, mtime: " . join " ", @index[(1, 3)];
-say "object, filepath: " . join " ", @index[(14, 16)];
+say "ctime, mtime: " . join " ", @index[3, 5];
+say "object, filepath: " . join " ", @index[14, 16];
 ' .git/index
 ```
 
-The `lstat(2)` values have changed, and so has the object that *file_x* points to. If a `git commit` is issued, the tree underlying the commit is based upon the current state of this index. When a different branch is checked out, the index is rebuilt so that the files in index point to the correct *blobs* for that particular commit.
+The create and modify times have changed, and so has the object that *file_x* points to. If a `git commit` is issued, the tree underlying the commit is based upon the current state of this index. When a different branch is checked out, the index is rebuilt so that the files in index point to the correct *blobs* for that particular commit.
 
 # Conclusion
 
