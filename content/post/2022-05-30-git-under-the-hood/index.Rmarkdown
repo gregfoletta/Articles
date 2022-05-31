@@ -432,7 +432,7 @@ When a new commit is issued, the current branch is moved to point to the new com
 # Checkout a branch and commit on it
 git checkout -q branch_2
 echo $RANDOM > file_x
-git commit -q -am "Third Commit (new_branch)"
+git commit -q -am "Third Commit (branch_2)"
 
 # The 'new_branch' branch now points to a different commit.
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
@@ -521,6 +521,12 @@ The first fields contain information from the `lstat(2)` function: last changed 
 Then comes the hash of the object, a flags field (which includes the length of path), and the path to the object.
 
 If we recall back in the *blobs* section, when we added a file to the staging are via `git add`, the index was created. Let's modify *file_x* and add it to the staging area:
+
+```{zsh include=FALSE}
+# Ensure there's a time difference on the index
+sleep 2
+```
+
 
 ```{zsh}
 echo "Index Modification" > file_x

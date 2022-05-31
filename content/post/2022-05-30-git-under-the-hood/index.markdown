@@ -180,16 +180,16 @@ tree .git
 │       └── heads
 │           └── master
 ├── objects
+│   ├── 36
+│   │   └── 58bfd8a7cda8ee50181497ab8ec4e699428877
 │   ├── 4e
 │   │   └── eafbc980bb5cc210392fa9712eeca32ded0f7d
 │   ├── 67
 │   │   └── 21ae08f27ae139ec833f8ab14e3361c38d07bd
 │   ├── 93
 │   │   └── 39e13010d12194986b13e3a777ae5ec4f7c8a6
-│   ├── cc
-│   │   └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
-│   └── e3
-│       └── fcd34109e83489cef1a71c181bf6a686775971
+│   └── cc
+│       └── 23f67bb60997d9628f4fd1e9e84f92fd49780e
 └── refs
     └── heads
         └── master
@@ -208,8 +208,8 @@ find .git/objects -type f -exec sh -c \
 
 ```
 .git/objects/cc/23f67bb60997d9628f4fd1e9e84f92fd49780e -> blob 11
+.git/objects/36/58bfd8a7cda8ee50181497ab8ec4e699428877 -> commit 175
 .git/objects/4e/eafbc980bb5cc210392fa9712eeca32ded0f7d -> tree 101
-.git/objects/e3/fcd34109e83489cef1a71c181bf6a686775971 -> commit 175
 .git/objects/67/21ae08f27ae139ec833f8ab14e3361c38d07bd -> tree 34
 .git/objects/93/39e13010d12194986b13e3a777ae5ec4f7c8a6 -> blob 5
 ```
@@ -270,8 +270,8 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 175
 tree 4eeafbc980bb5cc210392fa9712eeca32ded0f7d
-author Greg Foletta <greg@foletta.org> 1653990491 +1000
-committer Greg Foletta <greg@foletta.org> 1653990491 +1000
+author Greg Foletta <greg@foletta.org> 1654027280 +1000
+committer Greg Foletta <greg@foletta.org> 1654027280 +1000
 
 First Commit
 ```
@@ -306,9 +306,9 @@ perl -0777 -nE 'print join "\n", unpack("Z*A*")'
 ```
 commit 224
 tree 6e09d0dbb13d342d66580c40a49dd1583958ccc8
-parent e3fcd34109e83489cef1a71c181bf6a686775971
-author Greg Foletta <greg@foletta.org> 1653990492 +1000
-committer Greg Foletta <greg@foletta.org> 1653990492 +1000
+parent 3658bfd8a7cda8ee50181497ab8ec4e699428877
+author Greg Foletta <greg@foletta.org> 1654027282 +1000
+committer Greg Foletta <greg@foletta.org> 1654027282 +1000
 
 Second Commit
 ```
@@ -333,7 +333,7 @@ cat .git/refs/heads/master
 ```
 
 ```
-38e2eb7f2037a21212862096edeb4ad87528335f
+89ec2b06b21f25cdbd763924c751c8b24886d5c2
 ```
 We also need to briefly mention *HEAD*. This file tracks which commit is currently 'active', i.e. the checked out files match those in the commit. We see *HEAD* currently refers to our master branch[^2]:
 
@@ -359,8 +359,8 @@ find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> 38e2eb7f2037a21212862096edeb4ad87528335f
-.git/refs/heads/master -> 38e2eb7f2037a21212862096edeb4ad87528335f
+.git/refs/heads/branch_2 -> 89ec2b06b21f25cdbd763924c751c8b24886d5c2
+.git/refs/heads/master -> 89ec2b06b21f25cdbd763924c751c8b24886d5c2
 ```
 When a new commit is issued, the current branch is moved to point to the new commit (and head will indirectly point to the commit through this branch):
 
@@ -369,15 +369,15 @@ When a new commit is issued, the current branch is moved to point to the new com
 # Checkout a branch and commit on it
 git checkout -q branch_2
 echo $RANDOM > file_x
-git commit -q -am "Third Commit (new_branch)"
+git commit -q -am "Third Commit (branch_2)"
 
 # The 'new_branch' branch now points to a different commit.
 find .git/refs/heads/* -type f -exec sh -c 'echo -n "{} -> " && cat {}' \;
 ```
 
 ```
-.git/refs/heads/branch_2 -> 4e6b27411e3c8af3d1afbd09d7894a47e0411002
-.git/refs/heads/master -> 38e2eb7f2037a21212862096edeb4ad87528335f
+.git/refs/heads/branch_2 -> 54d46328e009399d656f158c04df8ad9c2b24cf6
+.git/refs/heads/master -> 89ec2b06b21f25cdbd763924c751c8b24886d5c2
 ```
 If we checkout the master branch and creating a new commit, we ca visualise how the two branches have diverged:
 
@@ -426,8 +426,8 @@ say "Object & Filepath: " . join " ", @index[13..16];
 
 ```
 Index Header: DIRC 00000002 3
-lstat() info: 1653990493 218752865 1653990493 218752865 64769 7734839 0 1000000110100100 1000 1000
-Object & Filepath: 6 554658763e340b7d5a64f0524b502d6e4f29ca8c 0000000000000110 file_x
+lstat() info: 1654027283 118849971 1654027283 118849971 64769 7734889 0 1000000110100100 1000 1000
+Object & Filepath: 6 511c5ae2b662376b23658fe922231d824d4e03e6 0000000000000110 file_x
 ```
 The first line shows the the four byte 'DIRC' signature (which stands for 'directory cache'), the version number, and the number of entries (files in the index). We've only unpacked one of the files. 
 
@@ -436,6 +436,9 @@ The first fields contain information from the `lstat(2)` function: last changed 
 Then comes the hash of the object, a flags field (which includes the length of path), and the path to the object.
 
 If we recall back in the *blobs* section, when we added a file to the staging are via `git add`, the index was created. Let's modify *file_x* and add it to the staging area:
+
+
+
 
 
 ```zsh
@@ -447,7 +450,7 @@ Now we'll re-take a look at the index:
 
 
 ```
-ctime, mtime: 1653990494 1653990494
+ctime, mtime: 1654027286 1654027286
 object, filepath: db12d29ef25db0f954787c6d620f1f6e9ce3c778 file_x
 ```
 
