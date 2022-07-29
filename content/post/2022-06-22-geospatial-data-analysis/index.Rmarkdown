@@ -1,14 +1,22 @@
 ---
-title: Geospatial Data Analysis
-author: ''
+title: Telling a Spatial Story 
+author: 'Greg Foletta'
 date: '2022-06-20'
 slug: geospatial_data_analysis
-categories: []
-tags: []
-images: []
+categories: [R Geospatial Animation]
 ---
 
+The last few years I've been focused on writing long form articles on this site; analyses of packets, betting, and bandwidth. In this article I'm going to buck the trend and write shorter, less in-depth article. 
 
+My friend Jen is currently writing a thesis and had a presentation coming up. She reached out and wanted to see if I could help with some data visualisation. I jumped at the chance as it forced me to take a look at two topics that I'd not yet taken a look at yet: spatial data and animation.
+
+This article is a "making of", telling the story of how I helped Jen with this visualisation.
+
+# What is the Story to Tell?
+
+Jen's thesis is on post-war migration into the innter-northern suburbs of Melbourne, Australia. Using census data from the 50s, 60s, and 70, she wanted to tell the story of this migration, specifically the increase in concentrations on a per suburb basis and how how the migrations fanned out over this time period.
+
+My thought was that I could take the data Jen has and overlay this on to the actual geography of Melbourne. I could then animate the graphic, transitioning between the years in the census. The ultimate goal being to clearly visualise the change in migration in a way no bar or line graph could do.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -17,51 +25,102 @@ library(sf)
 library(openxlsx)
 library(gganimate)
 library(scales)
+library(gt)
 ```
+
+# Step 1: The Data
+
+Jen was able to provide me the migration data in *.xlsx* format in a human readable format, to which I manually changed into a tidy format. My preference would have been to script this tidying as well for reproducibility, but due to time constraints the manual method was chosen.
+
+We can see the data below, showing the year of the census, the suburb, and the total number and percentage of the population born overseas. 
+```{r echo=FALSE}
+migrant_data <- 
+    read.xlsx('data/migrant_population_growth.xlsx', sheet = 'Tidied') %>%
+    as_tibble() %>% 
+    print()
+```
+The next step was to get geospatial data for these suburbs. Thankfully the Australian government has [shapefile data](https://data.gov.au/dataset/ds-dga-af33dd8c-0534-4e18-9245-fc64440f742e/distribution/dist-dga-4d6ec8bb-1039-4fef-aa58-6a14438f29b1/details?q=) available for suburbs and locality within Victoria.
+
+We can render the full context of this geospatial data:
 
 ```{r}
 vic_localities <- read_sf('data/VIC_LOC_POLYGON_shp GDA2020/vic_localities.shp')
 
-migrant_data <- 
-    read.xlsx('data/migrant_population_growth.xlsx', sheet = 'Tidied') %>%
-    as_tibble()
-```
-
-```{r}
 vic_localities %>% 
     ggplot() +
-    geom_sf()
+    geom_sf(size = .1)
 ```
 
-```{r}
-vic_localities %>% 
-    left_join(migrant_data, by = c('LOC_NAME' = 'Suburb')) %>% 
-    st_crop(xmin=144.5, xmax=145.2, ymin=-38, ymax=-37.4) %>%
-    ggplot() +
-    geom_sf()
+This data shows local government areas for the entire state of Victoria, Australia. We're only interested in the inner-Melbourne area, so we crop this to the relevant latitudes and longitudes:
+
+```{r warning=FALSE}
+inner_melb_localities <-
+    vic_localities %>% 
+    st_crop(xmin=144.7, xmax=145.1, ymin=-37.95, ymax=-37.6)
 ```
+```{r, echo = FALSE}
+inner_melb_localities %>% 
+    ggplot() +
+    geom_sf(size = .3)
+```
+
+With our two key pieces of data, we can start to put it together.
+
+# Step 2 - Data Wrangling
+
+Next step is to merge our migration data with our geospatial data, using suburb as our key. However it's a little more complex that a simple join as we want to ensure, for every year, we have all of the geospatial information so we can render the full map.
+
+The way to takle this is with a `group()`, `nest()`, `mutate()` and `unnest()`. This would normally be one big pipeline, but I'll break it out so we can see the intermediary outputs.
+
+I first take our migration data and group by the *Year* variable, then nest the 
 
 ```{r}
 migrant_data_geo <-
     migrant_data %>% 
     group_by(Year) %>% 
-    nest() %>% 
-    mutate(geo = map(data, ~{ right_join(.x, vic_localities, by = c('Suburb' = 'LOC_NAME')) })) %>% 
-    unnest(geo) %>%
+    nest()
+```
+
+```{r, echo = FALSE}
+migrant_data_geo %>% 
+    print()
+```
+
+
+```{r}
+migrant_data_geo <-
+    migrant_data_geo %>% 
+    mutate(geo = map(data, ~{ right_join(.x, inner_melb_localities, by = c('Suburb' = 'LOC_NAME')) })) %>% 
+    unnest(geo) 
+```
+```{r, echo = FALSE}
+migrant_data_geo %>% print()
+```
+```{r}
+migrant_data_geo <-
+    migrant_data_geo %>% 
     arrange(Suburb) %>% 
-    mutate(Percentage = replace_na(Percentage, 0)) %>%
+    mutate(
+        Percentage = replace_na(Percentage, 0),
+        Total = replace_na(Total, 0),
+        ) %>%
     select(-data) %>%
     ungroup() %>% 
-    st_as_sf() %>% 
-    st_crop(xmin=144.7, xmax=145.1, ymin=-37.95, ymax=-37.6) 
+    st_as_sf() 
 ```
+
+```{r echo=, message=FALSE, warning=FALSE}
+migrant_data_geo %>% print()
+```
+
+# Step 3 - Rendering
 
 ```{r}
 migrant_data_geo %>%
     ggplot() +
     geom_sf(aes(fill = Percentage)) +
     labs(
-        title = "Melbourne Local Government Areas with the largest percentage\nof local residents born overseas*",
+        title = "",
         subtitle = "Year: {closest_state}"
     ) +
     theme(
