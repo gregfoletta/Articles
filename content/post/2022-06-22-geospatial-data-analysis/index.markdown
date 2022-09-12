@@ -1,26 +1,30 @@
 ---
-title: Geospatial Data Analysis
+title: Telling a Spatial Story 
 author: 'Greg Foletta'
 date: '2022-06-20'
 slug: geospatial_data_analysis
 categories: [R Geospatial Animation]
 ---
 
-Over the past couple of years I've been focused on writing long form, detailed analyses of "things": packets, betting, bandwidth forecasting. This article bucks the trend and is more of a short form, fun article.
+The last few years I've been focused on writing long form articles on this site; analyses of packets, betting, and bandwidth. In this article I'm going to buck the trend and write shorter, less in-depth article. 
 
-My friend Jen is currently writing a thesis on migration in Melbourne, Australia during the 1950s, 60s, and 70s. Specifically she is looking at their movement within the northern suburbs of Melbourne.
+My friend Jen is currently writing a thesis and had a presentation coming up. She reached out and wanted to see if I could help with some data visualisation. I jumped at the chance as it forced me to take a look at two topics that I'd not yet taken a look at yet: spatial data and animation.
 
-Jen had census data on percentage of non-English speaking within each suburb during different years, and with a conference coming up wanted to be able to tell a visual story of the movement over the years. She reached out to me and I grabbed on to the opportunity to learn to R tools I'd never used before: geospatial data and animations.
+This article is a "making of", telling the story of how I helped Jen with this visualisation.
 
-This article is a "making of", documenting the process to get from data to a nice animtation that tells a story. There's nothing crazy or even very hard. If there's anything I want to show it's just how easy it is - in a few lines of R - to go from raw data to a visualisation that tells a story no table or bar graph could ever tell.
+# What is the Story to Tell?
 
+Jen's thesis is on post-war migration into the innter-northern suburbs of Melbourne, Australia. Using census data from the 50s, 60s, and 70, she wanted to tell the story of this migration, specifically the increase in concentrations on a per suburb basis and how how the migrations fanned out over this time period.
+
+My thought was that I could take the data Jen has and overlay this on to the actual geography of Melbourne. I could then animate the graphic, transitioning between the years in the census. The ultimate goal being to clearly visualise the change in migration in a way no bar or line graph could do.
 
 
 
 # Step 1: The Data
 
-The fist step was to ingest the data. Jen provided me Excel files in a human readable format, to which I tidied up manually. The *Year* column is the census year, the *Suburb* is the suburb in Melbourne, and the *Percentage* is the percentage of non-English speaking people within that suburb. 
+Jen was able to provide me the migration data in *.xlsx* format in a human readable format, to which I manually changed into a tidy format. My preference would have been to script this tidying as well for reproducibility, but due to time constraints the manual method was chosen.
 
+We can see the data below, showing the year of the census, the suburb, and the total number and percentage of the population born overseas. 
 
 ```r
 migrant_data <- 
@@ -47,6 +51,8 @@ migrant_data <-
 ```
 The next step was to get geospatial data for these suburbs. Thankfully the Australian government has [shapefile data](https://data.gov.au/dataset/ds-dga-af33dd8c-0534-4e18-9245-fc64440f742e/distribution/dist-dga-4d6ec8bb-1039-4fef-aa58-6a14438f29b1/details?q=) available for suburbs and locality within Victoria.
 
+We can render the full context of this geospatial data:
+
 
 ```r
 vic_localities <- read_sf('data/VIC_LOC_POLYGON_shp GDA2020/vic_localities.shp')
@@ -58,7 +64,7 @@ vic_localities %>%
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-2-1.png" width="672" />
 
-As Jen is only interested in inner-Melbourne, I can crop this down:
+This data shows local government areas for the entire state of Victoria, Australia. We're only interested in the inner-Melbourne area, so we crop this to the relevant latitudes and longitudes:
 
 
 ```r
@@ -66,29 +72,41 @@ inner_melb_localities <-
     vic_localities %>% 
     st_crop(xmin=144.7, xmax=145.1, ymin=-37.95, ymax=-37.6)
 ```
-
-```
-## Warning: attribute variables are assumed to be spatially constant throughout all
-## geometries
-```
-
-
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" />
+
+With our two key pieces of data, we can start to put it together.
+
+# Step 2 - Data Wrangling
+
+Next step is to merge our migration data with our geospatial data, using suburb as our key. However it's a little more complex that a simple join as we want to ensure, for every year, we have all of the geospatial information so we can render the full map.
+
+The way to takle this is with a `group()`, `nest()`, `mutate()` and `unnest()`. This would normally be one big pipeline, but I'll break it out so we can see the intermediary outputs.
+
+I first take our migration data and group by the *Year* variable, then nest the 
 
 
 ```r
 migrant_data_geo <-
     migrant_data %>% 
     group_by(Year) %>% 
-    nest() %>% 
-    mutate(geo = map(data, ~{ right_join(.x, inner_melb_localities, by = c('Suburb' = 'LOC_NAME')) })) %>% 
-    unnest(geo) %>%
+    nest() |> 
+    mutate(
+        geo = map(data, ~{ right_join(.x, inner_melb_localities, by = c('Suburb' = 'LOC_NAME')) })
+    ) %>% 
+    unnest(geo) |> 
     arrange(Suburb) %>% 
-    mutate(Percentage = replace_na(Percentage, 0)) %>%
+    mutate(
+        Percentage = replace_na(Percentage, 0),
+        Total = replace_na(Total, 0),
+    ) %>%
     select(-data) %>%
     ungroup() %>% 
     st_as_sf() 
 ```
+
+
+# Step 3 - Rendering
+
 
 
 ```r
@@ -96,17 +114,21 @@ migrant_data_geo %>%
     ggplot() +
     geom_sf(aes(fill = Percentage)) +
     labs(
-        title = "Melbourne Local Government Areas with the largest percentage\nof local residents born overseas*",
+        title = "",
         subtitle = "Year: {closest_state}"
     ) +
     theme(
-        plot.title = element_text(size = 20),
-        plot.subtitle = element_text(size = 17),
-        legend.title = element_text(size = 17),
-        legend.text= element_text(size = 17)
+        plot.title = element_text(size = 10),
+        plot.subtitle = element_text(size = 8),
+        legend.title = element_text(size = 6),
+        legend.text= element_text(size = 4)
     ) +
     scale_fill_distiller(name = "Percent", trans = 'reverse', labels = percent) +
-    transition_states(Year, transition_length = 3, state_length = 5) 
+    transition_states(Year, transition_length = 3, state_length = 5) +
+    labs(
+        title = "Melbourne - Percentage Residents Born Overseas",
+        subtitle = "Non-English Speaking Source Countries\nModern boundaries used"
+    )
 ```
 
 ![](index_files/figure-html/unnamed-chunk-6-1.gif)<!-- -->

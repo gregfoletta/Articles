@@ -1,7 +1,7 @@
 ---
 title: Telling a Spatial Story 
 author: 'Greg Foletta'
-date: '2022-06-20'
+date: '2022-09-12'
 slug: geospatial_data_analysis
 categories: [R Geospatial Animation]
 ---
@@ -33,7 +33,7 @@ library(gt)
 Jen was able to provide me the migration data in *.xlsx* format in a human readable format, to which I manually changed into a tidy format. My preference would have been to script this tidying as well for reproducibility, but due to time constraints the manual method was chosen.
 
 We can see the data below, showing the year of the census, the suburb, and the total number and percentage of the population born overseas. 
-```{r echo=FALSE}
+```{r}
 migrant_data <- 
     read.xlsx('data/migrant_population_growth.xlsx', sheet = 'Tidied') %>%
     as_tibble() %>% 
@@ -78,42 +78,24 @@ I first take our migration data and group by the *Year* variable, then nest the
 migrant_data_geo <-
     migrant_data %>% 
     group_by(Year) %>% 
-    nest()
-```
-
-```{r, echo = FALSE}
-migrant_data_geo %>% 
-    print()
-```
-
-
-```{r}
-migrant_data_geo <-
-    migrant_data_geo %>% 
-    mutate(geo = map(data, ~{ right_join(.x, inner_melb_localities, by = c('Suburb' = 'LOC_NAME')) })) %>% 
-    unnest(geo) 
-```
-```{r, echo = FALSE}
-migrant_data_geo %>% print()
-```
-```{r}
-migrant_data_geo <-
-    migrant_data_geo %>% 
+    nest() |> 
+    mutate(
+        geo = map(data, ~{ right_join(.x, inner_melb_localities, by = c('Suburb' = 'LOC_NAME')) })
+    ) %>% 
+    unnest(geo) |> 
     arrange(Suburb) %>% 
     mutate(
         Percentage = replace_na(Percentage, 0),
         Total = replace_na(Total, 0),
-        ) %>%
+    ) %>%
     select(-data) %>%
     ungroup() %>% 
     st_as_sf() 
 ```
 
-```{r echo=, message=FALSE, warning=FALSE}
-migrant_data_geo %>% print()
-```
 
 # Step 3 - Rendering
+
 
 ```{r}
 migrant_data_geo %>%
@@ -124,11 +106,15 @@ migrant_data_geo %>%
         subtitle = "Year: {closest_state}"
     ) +
     theme(
-        plot.title = element_text(size = 20),
-        plot.subtitle = element_text(size = 17),
-        legend.title = element_text(size = 17),
-        legend.text= element_text(size = 17)
+        plot.title = element_text(size = 10),
+        plot.subtitle = element_text(size = 8),
+        legend.title = element_text(size = 6),
+        legend.text= element_text(size = 4)
     ) +
     scale_fill_distiller(name = "Percent", trans = 'reverse', labels = percent) +
-    transition_states(Year, transition_length = 3, state_length = 5) 
+    transition_states(Year, transition_length = 3, state_length = 5) +
+    labs(
+        title = "Melbourne - Percentage Residents Born Overseas",
+        subtitle = "Non-English Speaking Source Countries\nModern boundaries used"
+    )
 ```
