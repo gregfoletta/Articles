@@ -1,0 +1,208 @@
+---
+title: Lebesgue Curves
+author: Greg Foletta
+date: '2022-10-19'
+slug: lebesgue-curves
+categories: [R, C]
+---
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(gganimate)
+knitr::opts_chunk$set(comment = "")
+```
+
+Before we start a note: this post is a sidebar for another article I'm currently writing. There aren't any grand conclusions or deep insights, it's more exploratory.
+
+Whilst writing an article on memory allocations, I needed a way to map a one-dimensional number (the memory location) on to two-dimensional space. By doing this I could visualise where in memory these allocation were occurring.
+
+My initial reaction was to reach for the space-filling Hilbert curve à la the [XKCD "Map of the Internet"](https://xkcd.com/195/), but whist researching I discovered the [Lebesgue Curve](https://en.wikipedia.org/wiki/Z-order_curve), also known as the *Z-order* or *Morton* curve. At first glance it looked to have reasonable locality, and its inherent binary nature meant it appeared easier to implement.
+
+In this article I'll implement the Lebesgue curve and explore some of its properties.
+
+# Lebesgue Curve 
+
+The Lebesgue curve maps an one-dimensional integer into integers in two or more dimensions. In can also be used in reverse to map two or more integers back into a single integer. If we get a bit fancy with our notation, we can define the Lebesgue function \\(l\\) as:
+
+$$ l : \mathbb{N} \to \mathbb{N^2}  $$
+
+The algorithm is relatively simple:
+
+- Take an \\(n\\) bit integer \\(Z\\)
+- Mask the even bits \\([0, 2, \ldots, n - 2]\\) into \\(x\\)
+- Mask the odd bits \\([1, 2, \ldots, n - 1]\\) into \\(y\\)
+- Collapse/shift the masked bits down so that they are "next" to each other
+    - This results in an \\(\frac{n}{2}\\) bit integer
+
+In the C++ code below I've defined the `lebesgue_coords()` function that implements the above algorithm. It's certainly not the most optimal implementation (it iterates through all the bits even if they're 0), but it should have clarity. I've then vectorised it in the `lebesgue()` function that returns a list of \\(x\\) and \\(y\\) coordinates for each \\(z\\) integer, and exported using Rcpp so it can be used in the R environment:
+
+
+```{r, engine='Rcpp'}
+#include <Rcpp.h>
+using namespace Rcpp;
+
+//The x,y vertice generated from the single z value
+struct vert { unsigned long x; unsigned long y; };
+
+//Lebesgue calculation for a single z value
+struct vert lebesgue_coords(unsigned long z) {
+    struct vert coords;
+    unsigned long shift_mask;
+    
+    //Mask out even bits
+    coords.x = z & 0x55555555;
+    //Mask out odd bits, then shift back
+    coords.y = (z & 0xaaaaaaaa) >> 1;
+    
+    //This bit compresses the masked out bits.
+    //i.e. 1010101 -> 1111
+    shift_mask = 0xfffffffc;
+    do {
+        //Extract the top bits, then shift them down one
+        long int x_upper = (coords.x & shift_mask) >> 1;
+        long int y_upper = (coords.y & shift_mask) >> 1;
+        
+        //Clear out the top bits from x and re-introduce
+        //the shift top bits, thereby compressing them together
+        coords.x = x_upper | (coords.x & ~shift_mask) ;
+        coords.y = y_upper | (coords.y & ~shift_mask);
+        
+    } while (shift_mask <<= 1);
+    
+    return coords;
+}
+
+// [[Rcpp::export]]
+List lebesgue(IntegerVector z) {
+    int i;
+    struct vert v;
+    IntegerVector x,y;
+    
+    for (i = 0; i < z.size(); i++) {
+        v = lebesgue_coords(z[i]);
+        x.push_back(v.x);
+        y.push_back(v.y);
+    }
+    return List::create(Named("x") = x, Named("y") = y);
+}
+```
+
+With this function we can have a look at how this function works across the integers \\([0,255]\\). You should be able to see the fractal-like behaviour, with clusters of 4, 16, 64, etc: 
+
+```{r include=FALSE}
+lebesgue_points <-
+tibble(z = 0 : 255) |> 
+    mutate(l = as_tibble(lebesgue(z))) |> 
+    unnest(l)
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+p <-
+lebesgue_points |> 
+    ggplot(aes(x,y, colour = z)) +
+    geom_path() +
+    scale_color_viridis_c() +
+    transition_reveal(z) +
+    labs(
+        title = "Lebesgue Space Filling Curve",
+        subtitle = "Z Value: {frame_along} within [0,255]",
+        colour = "Z Value"
+    )
+
+animate(p, duration = 30, nframes = 512)
+```
+
+# Locality
+
+I mentioned at the start that the Lebesgue has 'good locality', but what exactly does this mean? There are multiple ways to define it, with a more rigorous take in [this paper](https://link.springer.com/chapter/10.1007/978-3-540-24587-2_40). I'll be a little more little more hand-wavy and define it as "points that are close together in one-dimensions should be close together in two dimensions."
+
+We'll look at consecutive numbers - which have a distance of 1 in one-dimension - and compare their distance in two dimensions. More formally, we'll determine see how far away \\((x_{z},y_{z})\\) is away from \\((x_{z-1}, y_{z-1})\\) using good old fashioned Pythagoras to determine the distance:
+
+$$ d = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2} $$
+Let's take a look at the average distance between the \\(z\\) values \\([0,255]\\):
+```{r}
+lebesgue_locality <-
+    lebesgue_points |>
+    mutate(
+        coord_distance = sqrt(
+            (x - lag(x,1))^2 +
+            (y - lag(y,1))^2
+        )
+    ) |> 
+    filter(!is.na(coord_distance))
+
+lebesgue_locality |> 
+    summarise(mean_distance = mean(coord_distance))
+```
+So on average, each point is 1.55 times further away in the two dimensional representation that in the one-dimensional representation. But as we all (should) know, an average is a summary and hides specifics. Taking a look at \\(z\)) versus the distance paints a more accurate picture of the underlying process:
+
+```{r echo=FALSE}
+lebesgue_locality |> 
+    ggplot() +
+    geom_line(aes(z, coord_distance)) +
+    labs(
+        title = "One-Dimensional vs Two-Dimensional Locality",
+        subtitle = "2D Distance Between lebesgue(z) versus lebesgue(z-1)",
+        x = "Z",
+        y = "Distance"
+    )
+```
+Locality is good, except every so often we get a spike of distance between points. This spike is where we're moving between our different power-of-two regions: \\(2^4, 2^6, 2^8, \ldots\\). For a different perspective, we map our two-dimensional points with colour and size conveying the distance:
+
+```{r echo=FALSE}
+lebesgue_locality |> 
+    ggplot() +
+    geom_point(aes(x,y, colour = coord_distance, size = coord_distance)) +
+    scale_color_viridis_c() +
+    labs(
+        title = "One-Dimensional vs Two-Dimensional Locality",
+        subtitle = "lebesgue(z) versus lebesgue(z-1)",
+        colour = "2D Distance",
+        size = "2D Distance"
+    ) +
+    guides(colour = guide_legend(), size = guide_legend())
+```
+
+We see the large outlier, but in general most points are reasonably close to each other, should be fine for my purposes.
+
+# Additive Properties
+
+Finally, we'll look at some additive properties that yielded an interesting result. As part of the aforementioned article I am using the Lebesgue curve in, a really useful property would have been this:
+
+$$ l(a + b) = l(a) + l(b) $$
+Unfortunately I quickly determined that this was not the case:
+
+```{r}
+lebesgue(0:10 + 3)$x == lebesgue(0:10)$x + lebesgue(3)$x
+```
+But as I played around with different ranges and different addends, I couldn't determine the pattern. The next step was to visualise it to try and understand the interaction. In the code below we take the `crossing()` of the integers \\([0,127]\\) (which generates all 128x128 combinations of each number) and determine whether adding each combination inside the function versus individually leads to a true or false result. The result of this boolean is then visualed for each point on the graph:
+
+```{r}
+equality <-
+    crossing(a = 0:127, b = 0:127) |> 
+    mutate(
+        x = (lebesgue(a + b))$x == (lebesgue(a)$x + lebesgue(b)$x),
+        y = (lebesgue(a + b))$y == (lebesgue(a)$y + lebesgue(b)$y)
+    ) |>
+    pivot_longer(cols = c(x, y), names_to = 'coord', values_to = 'equality')
+
+print(equality)
+```
+```{r echo=FALSE}
+equality |> 
+    ggplot() +
+    geom_point(aes(a,b, colour = equality), size = 1) +
+    facet_grid(~coord) +
+    labs(
+        x = 'Lebesgue X Coordinate',
+        y = 'Lebesgue Y Coordinate',
+        colour = "Equality"
+    ) +
+    scale_color_viridis_d()
+```
+I must admit, I was a bit stunned when I saw this pop out; it was not at all what I expected. You can see some interesting fractal behaviour, with each boolean pattern being repeated in larger and larger sections. It looks a little like a [Sierpiński triangle](https://en.wikipedia.org/wiki/Sierpi%C5%84ski_triangle), but I'm not sure if there's any relation. It may be somewhat anticlimactic, but I haven't delved any deeper into this. That gets added to the ever-growing todo list. 
+
+# Summary
+
+In this article we had a brief, exploratory look at the space-filling "Lebesgue" curve. We looked at how it's implemented, some of its locality behaviour, and some interesting results under addition. In a future article we'll use this algorithm to help visualise the dynamic memory allocations of a process.

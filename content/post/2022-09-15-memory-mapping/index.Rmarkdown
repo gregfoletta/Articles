@@ -1,0 +1,171 @@
+---
+title: Memory Mapping
+author: Greg Foletta
+date: '2022-09-15'
+slug: memory_mapping
+categories: []
+tags: []
+images: []
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(gganimate)
+```
+
+```{r engine='Rcpp', include=FALSE}
+#include <Rcpp.h>
+#include <gnu/libc-version.h>
+#include <stdio.h>
+#include <unistd.h>
+
+// [[Rcpp::export]]
+void libc_version() {
+    printf("%d.%d\n", __GLIBC__, __GLIBC_MINOR__);
+}
+```
+
+```{r}
+libc_version()
+```
+
+
+```{r, engine='Rcpp'}
+#include <stdlib.h>
+#include <Rcpp.h>
+
+using namespace Rcpp;
+
+//The x,y vertice generated from the single z value
+struct vert {
+    unsigned long x;
+    unsigned long y;
+};
+
+//Non-R lebesgue calculation for a single z value
+struct vert lebesgue_coords(unsigned long z) {
+    struct vert coords;
+    unsigned long shift_mask;
+    
+    //Mask out even bits
+    coords.x = z & 0x55555555;
+    //Mask out odd bits, then shift back
+    coords.y = (z & 0xaaaaaaaa) >> 1;
+    
+    shift_mask = 0xfffffffc;
+    //Compress a bits together
+    do {
+        //Extract the top bits, then shift them down one
+        int x_upper = (coords.x & shift_mask) >> 1;
+        //Clear out the top bits from x and re-introduce
+        //the shift top bits, thereby compressing them together
+        coords.x = x_upper | (coords.x & ~shift_mask) ;
+
+        //Same as above for y
+        int y_upper = (coords.y & shift_mask) >> 1;
+        coords.y = y_upper | (coords.y & ~shift_mask);
+    } while (shift_mask <<= 1);
+    
+    return coords;
+}
+
+
+// [[Rcpp::export]]
+List lebesgue(IntegerVector z) {
+    int i;
+    struct vert v;
+    IntegerVector x,y;
+    
+    for (i = 0; i < z.size(); i++) {
+        v = lebesgue_coords(z[i]);
+        x.push_back(v.x);
+        y.push_back(v.y);
+    }
+    
+    return List::create(Named("x") = x, Named("y") = y);
+}
+
+// [[Rcpp::export]]
+List lebesgue_memory(IntegerVector alloc_size) {
+    int i;
+    size_t len = alloc_size.length();
+    struct vert v;
+    unsigned char *l[len];
+    IntegerVector x, y;
+    
+    
+    //Allocate, calculate lebesgue, and push onto x and y vectors
+    for (i = 0; i < len; i++) {
+        l[i] = (unsigned char *) malloc(alloc_size[i]);
+        v = lebesgue_coords((unsigned long) l[i]);
+        x.push_back(v.x);
+        y.push_back(v.y);
+    }
+    
+    //Be polite and free
+    for (i = 0; i < len; i++) {
+        free(l[i]);
+    }
+    
+    return List::create(Named("x") = x, Named("y") = y);
+}
+```
+
+```{r}
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+p <-
+tibble(z = 0:1023) |> 
+    mutate(l = as_tibble(lebesgue(z))) |> 
+    unnest(l) |> 
+    ggplot(aes(x,y, colour = z)) +
+    geom_path() +
+    scale_color_viridis_c() +
+    transition_reveal(z) +
+    labs(
+        title = "Lebesgue Space Filling Curve",
+        subtitle = "Z Value: {frame_along} within [0,2047]",
+        colour = "Z Value"
+    )
+
+animate(p, duration = 60, nframes = 1023)
+```
+
+```{r}
+tibble(
+    memory_size = as.integer(rnorm(1000, 40000, 4000))
+) |> 
+    mutate(n = 1:n()) |>
+    mutate(mem = as_tibble((lebesgue_memory(memory_size)))) |>
+    unnest(mem) |>
+    ggplot() +
+    geom_point(aes(x,y))
+```
+
+
+# Sierpinski
+
+```{r}
+equality <-
+    crossing(a = 0:255, b = 0:255) |> 
+    mutate(
+        x = (lebesgue(a + b))$x == (lebesgue(a)$x + lebesgue(b)$x),
+        y = (lebesgue(a + b))$y == (lebesgue(a)$y + lebesgue(b)$y)
+    ) |>
+    pivot_longer(cols = c(x, y), names_to = 'coord', values_to = 'equality')
+```
+```{r}
+equality |> 
+    ggplot() +
+    geom_point(aes(a,b, colour = equality), size = .01) +
+    facet_grid(~coord) +
+    labs(
+        x = 'Lebesgue X Coordinate',
+        y = 'Lebesgue Y Coordinate',
+        colour = "Equality"
+    ) +
+    scale_color_viridis_d()
+```
+
