@@ -164,7 +164,7 @@ integral_ratio
 ```
 
 ```
-## [1] 0.1135797
+## [1] 0.1135646
 ```
 
 Just above 11%. Multiplying this by the total area gives us the answer we need:
@@ -175,7 +175,7 @@ total_area * integral_ratio
 ```
 
 ```
-## [1] 3.142736
+## [1] 3.142316
 ```
 Immediately we something interesting about that number: it's very close to Pi. Remember we're here for a quick and dirty way to get the WiFi password, so my first guess would be the first 10 digits of Pi. 
 
