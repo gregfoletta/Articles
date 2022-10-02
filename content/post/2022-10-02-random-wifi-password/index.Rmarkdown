@@ -1,23 +1,27 @@
 ---
-title: Getting Free Wi-Fi
+title: Free WiFi with Randomness
 author: 'Greg Foletta'
 date: '2022-10-02'
-slug: getting-free-wifi
+slug: random-wifi-password
 categories: []
 tags: []
 images: []
 ---
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
+knitr::opts_chunk$set(comment = "")
 ```
 
-There's a funny picture that's been making its way around social media showing a complicated definite integral, and asking guests to evalutate it to get the password for free WiFi. Here's an example:
+There's a funny picture that's been making its way around social media showing a complicated definite integral, and asking guests to evaluate it to get the password for free WiFi. Here's an example:
 
-![WiFi Integral](wifi_integral.jpg) 
+```{r, echo=FALSE, fig.align="center"}
+knitr::include_graphics("wifi_integral.jpg")
+```
+
 
 I loved calculus back at uni, but uni was a fair while ago now and I'm more than a little dusty. I did start to have a go at integrating the equation, looking up some terms I could just remember (integration by parts? product rule?). But I thought: if I'm sitting in a cafe trying to get WiFi, I'm going to want a quick and dirty numerical solution, not some beautiful mathematical 'proof'.
 
-So in this article I'm going to show you that quick and dirty solution. We're going to take - you guessed it - a statistical approach to finding the definite integral and getting ourselves that sweet free WiFi.
+So in this article I'm going to show you that quick and dirty solution. We're going to randomness to find a numerical solution to the definite integral, hopefully getting us that sweet free WiFi.
 
 # The Function
 
@@ -29,7 +33,7 @@ f <- function(x) {
 
 ```
 
-We'll than calculate \\(f(x)\\) for values of x between \\([-2,2]\)), using a small increments beween each \\(x\\) value to ensure we're got reasonable accuracy for our subsequent calculations.
+We'll than calculate \\(f(x)\\) for values of x between \\( [-2,2] \)), using a small increments between each \\(x\\) value to ensure we're got reasonable accuracy for our subsequent calculations.
 
 ```{r}
 coords <- 
@@ -38,16 +42,20 @@ coords <-
     ) |> 
     mutate(y = f(x)) 
 ```
-Let's take a look at what the function looks like (I've taken a sample as there's no reason to render every single point):
+Let's take a look at what the function looks like:
 ```{r echo=FALSE}
 coords |> 
     sample_n(10000) |> 
     ggplot() +
-    geom_point(aes(x,y), size = .01) +
+    geom_line(aes(x,y)) +
     geom_vline(xintercept = 0, size = .2) +
-    geom_hline(yintercept = 0, size = .2)
+    geom_hline(yintercept = 0, size = .2) +
+    labs(
+        title = "f(x) = (x^3 * cos(x/2) + 1/2) * sqrt(4 - x^2)",
+    )
 ```
-There's two areas we'll need to take into consideration when integrating: from -2 to around -1.2, and from -1.2 to 2. We need to remember that when integrating, regions above the x-axis evaluate to positive numbers, but regions below evaluate to negative numbers. When calculating the total, we'll have to subtract that left region awat from the right region.
+
+There's two areas we'll need to take into consideration when integrating: from -2 to around -1.2, and from -1.2 to 2. We need to remember that when integrating, regions above the x-axis evaluate to positive numbers, but regions below evaluate to negative numbers. When calculating the total, we'll have to subtract that left region away from the right region.
 
 We're going to need the minimum and maximum values of \\(f(x)\\) in our calculate, so let's pull them out:
 ```{r}
@@ -64,7 +72,7 @@ We can now move on to integrating this function.
 
 # Statistical Integration
 
-How are we going calculate a numerical answer to this integral? We'll take a stastical approach:
+How are we going calculate a numerical answer to this integral? We'll take a statistical approach:
 
 - Draw a number of random x and y values from a uniform distribution.
 - Calculate \\(f(x)\\) for each of the random values.
@@ -113,7 +121,7 @@ ratio |>
     guides(colour = guide_legend(override.aes = list(size = 5)))
 ```
 
-We can see all of our random points, and their associated encodings whether they're in the integral area or now. We'll do another run now but this time we'll use 100,000,000 points to increase our precision. We then summarise the mea
+We can see all of our random points, and their associated encoding whether they're in the integral area or now. We'll do another run now but this time we'll use 100,000,000 points to increase our precision (I've omitted this code, as it's the same as above). We then summarise the mean, giving us our ratio.
 
 ```{r include=FALSE}
 integral_ratio <-
@@ -128,7 +136,11 @@ integral_ratio <-
             fx < 0 & y > fx & y < 0 ~ -1,
             TRUE ~ 0
         )
-    ) |> 
+    )
+```
+
+```{r}
+integral_ratio |> 
     summarise(
         ratio = mean(integral_encoding)
     ) |> 
@@ -150,11 +162,13 @@ Immediately we something interesting about that number: it's very close to Pi. R
 
 Why didn't we get the value? Setting aside any mistakes I may have made in my calculations above, I'd guess that the number of random points isn't enough to get good enough precision. The reason I've not gone larger is I run out of memory trying to generate anything more than 100,000,000.
 
-I have been a little deceptive, as there's actually a quick and easy way to approximate the definite integral in base R. It doesn't make for a very exciting article on its own:
+I've been a little deceptive, as there's actually a quick and easy way to approximate the definite integral in base R. It doesn't make for a very exciting article on its own:
 
 ```{r}
 integrate(f, -2, 2)
 ```
+
+Clearly this implementation is far superior, being faster and using less memory. A brief investigation leads me to believe it's using [adaptive quadrature](https://en.wikipedia.org/wiki/Adaptive_quadrature) under the hood.
 
 # Summary
 
