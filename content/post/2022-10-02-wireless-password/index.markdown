@@ -8,30 +8,10 @@ tags: []
 images: []
 ---
 
-```r
-library(tidyverse)
-```
-
-```
-## ── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
-```
-
-```
-## ✔ ggplot2 3.3.6     ✔ purrr   0.3.4
-## ✔ tibble  3.1.7     ✔ dplyr   1.0.9
-## ✔ tidyr   1.2.0     ✔ stringr 1.4.0
-## ✔ readr   2.1.2     ✔ forcats 0.5.1
-```
-
-```
-## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
-## ✖ dplyr::filter() masks stats::filter()
-## ✖ dplyr::lag()    masks stats::lag()
-```
 
 There's a funny picture that's been making its way around social media showing a complicated definite integral, and asking guests to evalutate it to get the password for free WiFi. Here's an example:
 
-![WiFi Integral](wifi_integral.jpg)
+![WiFi Integral](wifi_integral.jpg) 
 
 I loved calculus back at uni, but uni was a fair while ago now and I'm more than a little dusty. I did start to have a go at integrating the equation, looking up some terms I could just remember (integration by parts? product rule?). But I thought: if I'm sitting in a cafe trying to get WiFi, I'm going to want a quick and dirty numerical solution, not some beautiful mathematical 'proof'.
 
@@ -39,7 +19,7 @@ So in this article I'm going to show you that quick and dirty solution. We're go
 
 # The Function
 
-Let's first define the function that is to be integrated in R, calling it `\(f()\)`:
+Let's first define the function that is to be integrated in R, calling it \\(f()\\):
 
 ```r
 f <- function(x) {
@@ -47,7 +27,7 @@ f <- function(x) {
 }
 ```
 
-We'll than calculate `\(f(x)\)` for values of x between `\([-2,2]\)`, using a small increments beween each `\(x\)` value to ensure we're got reasonable accuracy for our subsequent calculations.
+We'll than calculate \\(f(x)\\) for values of x between \\([-2,2]\)), using a small increments beween each \\(x\\) value to ensure we're got reasonable accuracy for our subsequent calculations.
 
 
 ```r
@@ -57,21 +37,11 @@ coords <-
     ) |> 
     mutate(y = f(x)) 
 ```
-Let's take a look at what the function looks like (I've taken a smaple as there's no reason to render every single point):
-
-```r
-coords |> 
-    sample_n(10000) |> 
-    ggplot() +
-    geom_point(aes(x,y), size = .01) +
-    geom_vline(xintercept = 0, size = .2) +
-    geom_hline(yintercept = 0, size = .2)
-```
-
+Let's take a look at what the function looks like (I've taken a sample as there's no reason to render every single point):
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-4-1.png" width="672" />
 There's two areas we'll need to take into consideration when integrating: from -2 to around -1.2, and from -1.2 to 2. We need to remember that when integrating, regions above the x-axis evaluate to positive numbers, but regions below evaluate to negative numbers. When calculating the total, we'll have to subtract that left region awat from the right region.
 
-We're going to need the minimum and maximum values of `\(f(x)\)` in our calculate, so let's pull them out:
+We're going to need the minimum and maximum values of \\(f(x)\\) in our calculate, so let's pull them out:
 
 ```r
 min_max <-
@@ -97,12 +67,12 @@ We can now move on to integrating this function.
 How are we going calculate a numerical answer to this integral? We'll take a stastical approach:
 
 - Draw a number of random x and y values from a uniform distribution.
-- Calculate `\(f(x)\)` for each of the random values.
+- Calculate \\(f(x)\\) for each of the random values.
 - Determine whether the result is inside our outside of our integral areas.
 - Find the ratio of points inside the areas versus points outside.
 - Multiply this ratio by the size the total areas to find the definite integral area.
 
-The minimum and maximum for for our random distribution are the extremes of our x and y values. So for x it's `\([-2, 2]\)`, and for y it's our calculated values `\([-2.89, 4.02]\)`. While we're here we'll calculate the toal area of our rectangle:
+
 
 
 ```r
@@ -114,7 +84,7 @@ total_area
 ## [1] 27.66986
 ```
 
-As mentioned before, we'll have to be wary of the area under the x-axis. We'll use an encoding shceme where points outside are encoded as 0, points inside the positive area are encoded as 1, and points inside the negative area are encoded as -1. When can then simply take the `mean()` of these encodings to derermine the ratio of the area. 
+    As mentioned before, we'll have to be wary of the area under the x-axis. We'll use an encoding shceme where points outside are encoded as 0, points inside the positive area are encoded as 1, and points inside the negative area are encoded as -1. When can then simply take the `mean()` of these encodings to derermine the ratio of the area. 
 
 Here's a first pass with 50,000 points to show how it works. I've omitted the graph rendering code:
 
@@ -137,19 +107,6 @@ ratio <-
         )
     )
 ```
-
-```r
-ratio |> 
-    ggplot() +
-    geom_point(aes(x,y, colour = as_factor(integral_encoding)), size = .1) +
-    labs(
-        title = "Numerical Integration of f(x) = (x^3 * cos(x/2) + 1/2) * sqrt(4 - x^2)",
-        subtitle = "50,000 points",
-        colour = "Encoding"
-    ) +
-    guides(colour = guide_legend(override.aes = list(size = 5)))
-```
-
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
 We can see all of our random points, and their associated encodings whether they're in the integral area or now. We'll do another run now but this time we'll use 100,000,000 points to increase our precision. We then summarise the mea
@@ -164,7 +121,7 @@ integral_ratio
 ```
 
 ```
-## [1] 0.1135646
+## [1] 0.1134008
 ```
 
 Just above 11%. Multiplying this by the total area gives us the answer we need:
@@ -175,7 +132,7 @@ total_area * integral_ratio
 ```
 
 ```
-## [1] 3.142316
+## [1] 3.137783
 ```
 Immediately we something interesting about that number: it's very close to Pi. Remember we're here for a quick and dirty way to get the WiFi password, so my first guess would be the first 10 digits of Pi. 
 

@@ -7,13 +7,13 @@ categories: []
 tags: []
 images: []
 ---
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
 ```
 
 There's a funny picture that's been making its way around social media showing a complicated definite integral, and asking guests to evalutate it to get the password for free WiFi. Here's an example:
 
-![WiFi Integral](wifi_integral.jpg)
+![WiFi Integral](wifi_integral.jpg) 
 
 I loved calculus back at uni, but uni was a fair while ago now and I'm more than a little dusty. I did start to have a go at integrating the equation, looking up some terms I could just remember (integration by parts? product rule?). But I thought: if I'm sitting in a cafe trying to get WiFi, I'm going to want a quick and dirty numerical solution, not some beautiful mathematical 'proof'.
 
@@ -21,7 +21,7 @@ So in this article I'm going to show you that quick and dirty solution. We're go
 
 # The Function
 
-Let's first define the function that is to be integrated in R, calling it $f()$:
+Let's first define the function that is to be integrated in R, calling it \\(f()\\):
 ```{r}
 f <- function(x) {
     (x^3 * cos(x/2) + 1/2) * sqrt(4 - x^2)
@@ -29,7 +29,7 @@ f <- function(x) {
 
 ```
 
-We'll than calculate $f(x)$ for values of x between $[-2,2]$, using a small increments beween each $x$ value to ensure we're got reasonable accuracy for our subsequent calculations.
+We'll than calculate \\(f(x)\\) for values of x between \\([-2,2]\)), using a small increments beween each \\(x\\) value to ensure we're got reasonable accuracy for our subsequent calculations.
 
 ```{r}
 coords <- 
@@ -38,8 +38,8 @@ coords <-
     ) |> 
     mutate(y = f(x)) 
 ```
-Let's take a look at what the function looks like (I've taken a smaple as there's no reason to render every single point):
-```{r}
+Let's take a look at what the function looks like (I've taken a sample as there's no reason to render every single point):
+```{r echo=FALSE}
 coords |> 
     sample_n(10000) |> 
     ggplot() +
@@ -49,7 +49,7 @@ coords |>
 ```
 There's two areas we'll need to take into consideration when integrating: from -2 to around -1.2, and from -1.2 to 2. We need to remember that when integrating, regions above the x-axis evaluate to positive numbers, but regions below evaluate to negative numbers. When calculating the total, we'll have to subtract that left region awat from the right region.
 
-We're going to need the minimum and maximum values of $f(x)$ in our calculate, so let's pull them out:
+We're going to need the minimum and maximum values of \\(f(x)\\) in our calculate, so let's pull them out:
 ```{r}
 min_max <-
     coords |> 
@@ -67,19 +67,19 @@ We can now move on to integrating this function.
 How are we going calculate a numerical answer to this integral? We'll take a stastical approach:
 
 - Draw a number of random x and y values from a uniform distribution.
-- Calculate $f(x)$ for each of the random values.
+- Calculate \\(f(x)\\) for each of the random values.
 - Determine whether the result is inside our outside of our integral areas.
 - Find the ratio of points inside the areas versus points outside.
 - Multiply this ratio by the size the total areas to find the definite integral area.
 
-The minimum and maximum for for our random distribution are the extremes of our x and y values. So for x it's $[-2, 2]$, and for y it's our calculated values $[-2.89, 4.02]$. While we're here we'll calculate the toal area of our rectangle:
+
 
 ```{r}
 total_area <- (2 - -2) * (min_max[['max_y']] - min_max[['min_y']])
 total_area
 ```
 
-As mentioned before, we'll have to be wary of the area under the x-axis. We'll use an encoding shceme where points outside are encoded as 0, points inside the positive area are encoded as 1, and points inside the negative area are encoded as -1. When can then simply take the `mean()` of these encodings to derermine the ratio of the area. 
+    As mentioned before, we'll have to be wary of the area under the x-axis. We'll use an encoding shceme where points outside are encoded as 0, points inside the positive area are encoded as 1, and points inside the negative area are encoded as -1. When can then simply take the `mean()` of these encodings to derermine the ratio of the area. 
 
 Here's a first pass with 50,000 points to show how it works. I've omitted the graph rendering code:
 
@@ -101,7 +101,7 @@ ratio <-
         )
     )
 ```
-```{r}
+```{r echo=FALSE}
 ratio |> 
     ggplot() +
     geom_point(aes(x,y, colour = as_factor(integral_encoding)), size = .1) +
