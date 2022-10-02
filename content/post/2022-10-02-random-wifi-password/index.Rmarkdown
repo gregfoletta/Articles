@@ -12,7 +12,7 @@ library(tidyverse)
 knitr::opts_chunk$set(comment = "")
 ```
 
-There's a few different humorous pictures been their way around social media showing a complicated definite integral, and asking guests to evaluate it to get the password for free WiFi. Here's an example:
+There's a few different pictures making their way around social media showing a complicated definite integral, and asking guests to evaluate it to get the password for free WiFi. Here's an example:
 
 ```{r, echo=FALSE, fig.align="center"}
 knitr::include_graphics("wifi_integral.jpg")

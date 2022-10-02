@@ -9,7 +9,7 @@ images: []
 ---
 
 
-There's a few different humorous pictures been their way around social media showing a complicated definite integral, and asking guests to evaluate it to get the password for free WiFi. Here's an example:
+There's a few different pictures making their way around social media showing a complicated definite integral, and asking guests to evaluate it to get the password for free WiFi. Here's an example:
 
 <img src="wifi_integral.jpg" style="display: block; margin: auto;" />
 
@@ -133,7 +133,7 @@ integral_ratio
 ```
 
 ```
-[1] 0.1136036
+[1] 0.1135775
 ```
 
 Just above 11%. Multiplying this by the total area gives us the answer we need:
@@ -144,7 +144,7 @@ total_area * integral_ratio
 ```
 
 ```
-[1] 3.143395
+[1] 3.142675
 ```
 Immediately we something interesting about that number: it's very close to Pi. Remember we're here for a quick and dirty way to get the WiFi password, so my first guess would be the first 10 digits of Pi. 
 
