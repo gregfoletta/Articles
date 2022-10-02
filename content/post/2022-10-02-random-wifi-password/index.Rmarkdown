@@ -12,16 +12,16 @@ library(tidyverse)
 knitr::opts_chunk$set(comment = "")
 ```
 
-There's a funny picture that's been making its way around social media showing a complicated definite integral, and asking guests to evaluate it to get the password for free WiFi. Here's an example:
+There's a few different humorous pictures been their way around social media showing a complicated definite integral, and asking guests to evaluate it to get the password for free WiFi. Here's an example:
 
 ```{r, echo=FALSE, fig.align="center"}
 knitr::include_graphics("wifi_integral.jpg")
 ```
 
 
-I loved calculus back at uni, but uni was a fair while ago now and I'm more than a little dusty. I did start to have a go at integrating the equation, looking up some terms I could just remember (integration by parts? product rule?). But I thought: if I'm sitting in a cafe trying to get WiFi, I'm going to want a quick and dirty numerical solution, not some beautiful mathematical 'proof'.
+I loved calculus back at uni, but uni was a fair while ago now and I'm more than a little dusty. I briefly attempted integrating the equation, looking up some terms I could remember (integration by parts? product rule?). But then I thought: if I'm sitting in a cafe trying to get WiFi, I'm going to want a quick and dirty numerical solution, not some beautiful mathematical 'proof'.
 
-So in this article I'm going to show you that quick and dirty solution. We're going to randomness to find a numerical solution to the definite integral, hopefully getting us that sweet free WiFi.
+So in this article I'm going to show you that quick and dirty solution. We're going to use randomness to find a numerical solution to the definite integral, hopefully getting us access to that sweet free WiFi.
 
 # The Function
 
@@ -33,7 +33,7 @@ f <- function(x) {
 
 ```
 
-We'll than calculate \\(f(x)\\) for values of x between \\( [-2,2] \)), using a small increments between each \\(x\\) value to ensure we're got reasonable accuracy for our subsequent calculations.
+We'll than calculate \\(f(x)\\) for values of x between [-2,2], using a small increments between each x value to ensure we're got reasonable accuracy for our subsequent calculations.
 
 ```{r}
 coords <- 
@@ -57,7 +57,7 @@ coords |>
 
 There's two areas we'll need to take into consideration when integrating: from -2 to around -1.2, and from -1.2 to 2. We need to remember that when integrating, regions above the x-axis evaluate to positive numbers, but regions below evaluate to negative numbers. When calculating the total, we'll have to subtract that left region away from the right region.
 
-We're going to need the minimum and maximum values of \\(f(x)\\) in our calculate, so let's pull them out:
+We're going to need the minimum and maximum values of \\(f(x)\\) in our calculation, so let's pull them out:
 ```{r}
 min_max <-
     coords |> 
@@ -70,24 +70,24 @@ min_max
 ```
 We can now move on to integrating this function.
 
-# Statistical Integration
+# Integration with Randomness 
 
-How are we going calculate a numerical answer to this integral? We'll take a statistical approach:
+How are we going calculate a numerical answer to this integral? We'll use randomness to help us:
 
 - Draw a number of random x and y values from a uniform distribution.
-- Calculate \\(f(x)\\) for each of the random values.
-- Determine whether the result is inside our outside of our integral areas.
+- Calculate f(x) for each of the x random values.
+- Determine whether f(x) above/below the random y and above/below the x-axis (both depending on the region).
 - Find the ratio of points inside the areas versus points outside.
-- Multiply this ratio by the size the total areas to find the definite integral area.
+- Multiply this ratio by the total rectangular size of the area to find the definite integral area.
 
-
+As a first step, let's find the total area:
 
 ```{r}
 total_area <- (2 - -2) * (min_max[['max_y']] - min_max[['min_y']])
 total_area
 ```
 
-    As mentioned before, we'll have to be wary of the area under the x-axis. We'll use an encoding shceme where points outside are encoded as 0, points inside the positive area are encoded as 1, and points inside the negative area are encoded as -1. When can then simply take the `mean()` of these encodings to derermine the ratio of the area. 
+As mentioned before, we'll have to be wary of the area under the x-axis. We'll use an encoding scheme where points outside are encoded as 0, points inside the positive area are encoded as 1, and points inside the negative area are encoded as -1. When can then simply take the `mean()` of these encoded values to determine the ratio of the area. 
 
 Here's a first pass with 50,000 points to show how it works. I've omitted the graph rendering code:
 
@@ -121,10 +121,10 @@ ratio |>
     guides(colour = guide_legend(override.aes = list(size = 5)))
 ```
 
-We can see all of our random points, and their associated encoding whether they're in the integral area or now. We'll do another run now but this time we'll use 100,000,000 points to increase our precision (I've omitted this code, as it's the same as above). We then summarise the mean, giving us our ratio.
+We see the random points, and their associated encoding which tells us which area they're in. 50,000 points probably isn't enough for an accurate answer, so we'll do another run with 100,000,000 points. I've omitted the code in this run, but the results are in `ratio`. We then summarise the mean of the encoding, giving us our ratio.
 
 ```{r include=FALSE}
-integral_ratio <-
+ratio <-
     tibble(
         x = runif(100000000, -2, 2),
         y = runif(100000000, min_max[['min_y']], min_max[['max_y']]),
@@ -140,14 +140,15 @@ integral_ratio <-
 ```
 
 ```{r}
-integral_ratio |> 
+integral_ratio <-
+    ratio |> 
     summarise(
         ratio = mean(integral_encoding)
     ) |> 
     pull(ratio)
 ```
 
-And the calculated ratio is (*drumroll*):
+The calculated ratio is (*drumroll*):
 
 ```{r}
 integral_ratio
