@@ -16,7 +16,7 @@ There's a few different pictures making their way around social media showing a 
 
 I loved calculus back at uni, but uni was a fair while ago now and I'm more than a little dusty. I briefly attempted integrating the equation, looking up some terms I could remember (integration by parts? product rule?). But then I thought: if I'm sitting in a cafe trying to get WiFi, I'm going to want a quick and dirty numerical solution, not some beautiful mathematical 'proof'.
 
-So in this article I'm going to show you that quick and dirty solution. We're going to use randomness to find a numerical solution to the definite integral, hopefully getting us access to that sweet free WiFi.
+So in this article I'm going to show you that quick and dirty solution. We're going to use randomness via the Monte Carlo method to find a numerical solution to the definite integral, hopefully getting us access to that sweet free WiFi.
 
 # The Function
 
@@ -133,7 +133,7 @@ integral_ratio
 ```
 
 ```
-[1] 0.1135775
+[1] 0.1134934
 ```
 
 Just above 11%. Multiplying this by the total area gives us the answer we need:
@@ -144,7 +144,7 @@ total_area * integral_ratio
 ```
 
 ```
-[1] 3.142675
+[1] 3.140347
 ```
 Immediately we something interesting about that number: it's very close to Pi. Remember we're here for a quick and dirty way to get the WiFi password, so my first guess would be the first 10 digits of Pi. 
 
@@ -162,6 +162,15 @@ integrate(f, -2, 2)
 ```
 
 Clearly this implementation is far superior, being faster and using less memory. A brief investigation leads me to believe it's using [adaptive quadrature](https://en.wikipedia.org/wiki/Adaptive_quadrature) under the hood.
+
+# What's the Point?
+
+You may rightfully ask: why not simply use the built in function already available to us? Or instead of using random x & y values, use a grid?
+
+For this simple 2-dimensional example you would be correct: this is not the best method. But more complicated integrals in higher dimensions become difficult. The `integrate()` function does not support these, and the compute resources required to use the grid method would increase exponentially by the dimension. 
+
+By using randomness, a reasonable approximation of a definite integral can still be achieved using minimal resources and despite the complexity of the problem.
+
 
 # Summary
 
