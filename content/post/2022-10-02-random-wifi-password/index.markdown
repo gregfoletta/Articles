@@ -165,12 +165,11 @@ Clearly this implementation is far superior, being faster and using less memory.
 
 # What's the Point?
 
-You may rightfully ask: why not simply use the built in function already available to us? Or instead of using random x & y values, use a grid?
+You may rightfully say "your method is slow, uses lots of resources, and isn't even that accurate in the end: why use it?". And you'd be correct, we could use the in-built integation function, or even use a 2-dimensional grid rather than random points. It's probably not the best method.
 
-For this simple 2-dimensional example you would be correct: this is not the best method. But more complicated integrals in higher dimensions become difficult. The `integrate()` function does not support these, and the compute resources required to use the grid method would increase exponentially by the dimension. 
+But for more complicated integrals in higher dimensions, things become increasingly difficult. The `integrate()` function doesn't work, and the compute resources required to use the grid method would increase exponentially by the dimension.
 
-By using randomness, a reasonable approximation of a definite integral can still be achieved using minimal resources and despite the complexity of the problem.
-
+By using randomness, a reasonable approximation of a definite integral can still be achieved using less compute resources and despite the complexity of the problem.
 
 # Summary
 
