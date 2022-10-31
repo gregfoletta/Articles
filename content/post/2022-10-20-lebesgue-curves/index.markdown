@@ -22,6 +22,8 @@ The Lebesgue curve maps an one-dimensional integer into integers in two or more 
 
 $$ l : \mathbb{N} \to \mathbb{N^2}  $$
 
+where \\(\mathbb{N}\\) is the set of natural numbers, including 0.
+
 The algorithm is relatively simple:
 
 - Take an \\(n\\) bit integer \\(Z\\)
@@ -87,15 +89,32 @@ List lebesgue(IntegerVector z) {
 With this function we can have a look at how this function works across the integers \\([0,255]\\). You should be able to see the fractal-like behaviour, with clusters of 4, 16, 64, etc: 
 
 
+```r
+lebesgue_points <-
+tibble(z = 0 : 255) |> 
+    mutate(l = as_tibble(lebesgue(z))) |> 
+    unnest(l)
 
-
+print(lebesgue_points)
+```
 
 ```
-geom_path: Each group consists of only one observation. Do you need to adjust
-the group aesthetic?
-geom_path: Each group consists of only one observation. Do you need to adjust
-the group aesthetic?
+# A tibble: 256 × 3
+       z     x     y
+   <int> <int> <int>
+ 1     0     0     0
+ 2     1     1     0
+ 3     2     0     1
+ 4     3     1     1
+ 5     4     2     0
+ 6     5     3     0
+ 7     6     2     1
+ 8     7     3     1
+ 9     8     0     2
+10     9     1     2
+# … with 246 more rows
 ```
+
 
 ![](index_files/figure-html/unnamed-chunk-4-1.gif)<!-- -->
 
@@ -129,14 +148,14 @@ lebesgue_locality |>
           <dbl>
 1          1.56
 ```
-So on average, each point is 1.55 times further away in the two dimensional representation that in the one-dimensional representation. But as we all (should) know, an average is a summary and hides specifics. Taking a look at \\(z\)) versus the distance paints a more accurate picture of the underlying process:
+So on average, each point is 1.56 times further away in the two dimensional representation that in the one-dimensional representation. But as we all (should) know, an average is a summary and hides specifics. Taking a look at \\(z\\) versus the distance paints a more accurate picture of the underlying process:
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-6-1.png" width="672" />
 Locality is good, except every so often we get a spike of distance between points. This spike is where we're moving between our different power-of-two regions: \\(2^4, 2^6, 2^8, \ldots\\). For a different perspective, we map our two-dimensional points with colour and size conveying the distance:
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-7-1.png" width="672" />
 
-We see the large outlier, but in general most points are reasonably close to each other, should be fine for my purposes.
+We see the large outlier, but in general most points are reasonably close to each other. More importantly it should be good enough for my original purposes.
 
 # Additive Properties
 
@@ -153,7 +172,9 @@ lebesgue(0:10 + 3)$x == lebesgue(0:10)$x + lebesgue(3)$x
 ```
  [1]  TRUE  TRUE FALSE  TRUE  TRUE FALSE FALSE FALSE  TRUE  TRUE FALSE
 ```
-But as I played around with different ranges and different addends, I couldn't determine the pattern. The next step was to visualise it to try and understand the interaction. In the code below we take the `crossing()` of the integers \\([0,127]\\) (which generates all 128x128 combinations of each number) and determine whether adding each combination inside the function versus individually leads to a true or false result. The result of this boolean is then visualed for each point on the graph:
+As I played around with different ranges and different addends, I couldn't discern the pattern. The next move was to visualise it to try and better understand the interaction. 
+
+We do this in the code below. The `crossing()` is a handy function to know, generating which generates all 128x128 combinations of the integers 0 through 127. For each of these pairs, we determine whether adding each combination inside the function versus individually leads to a true or false result. The result of this boolean is then visualised on each point on the graph:
 
 
 ```r
