@@ -1,14 +1,14 @@
 ---
 title: Telling a Spatial Story 
 author: 'Greg Foletta'
-date: '2023-03-08'
+date: '2023-03-09'
 slug: spatial_story 
 categories: [R Geospatial Animation]
 ---
 
-My friend Jen is currently writing a thesis and reached out to me for some help. She had a presentation coming up wanted to add a visualisation to it. I jumped at the opportunity as it was the impetus to familiarise myself with a area I'd been wanting to use: spatial data analysis. 
+My friend Jen is writing a thesis and recently reached out to me to see if I could help. She had an upcoming presentation up wanted to add some visualisation to it to better tell the story. I jumped at the opportunity as it was the an opportunity to familiarise myself with a area I'd explored: spatial data. 
 
-In this short article I'll take you through how the cretion of this visualisation, based on spatial data for Jen. What I hope to show is the the transition from pure data to something that tells a story with a relatively small amount of R code.
+In this short article I'll take you through the creation of the visualisation. It's not very complex, but what I hope to show is that the transition from data to something that tells a story can be done elegantly and with a relatively small amount of R code.
 
 # What's the Story?
 
@@ -20,7 +20,7 @@ Jen had provided me with the data, and I thought the best way to communicate thi
 
 # Step 1: The Data
 
-Jen gave me the migration data in an Excel spreadsheet that was suited to, which I manually changed into a tidy format. Were I doing this on an ongoing basis I would have scripted this tidying for reproducibility, but due to time constraints the manual method was chosen.
+Jen sent me the migration data in an Excel spreadsheet, an I manually changed it into a tidy format. Were I doing this on an ongoing basis I would have scripted this tidying for reproducibility, but due to time constraints the manual was quicker and easier.
 
 We see a sample of the data below, showing the year of the census, the suburb, and the total number and percentage of the population born overseas. 
 
@@ -34,20 +34,21 @@ migrant_data |> sample_n(10)
 
 ```
 ## # A tibble: 10 × 4
-##     Year Suburb     Total Percentage
-##    <dbl> <chr>      <dbl>      <dbl>
-##  1  1954 Werribee     935      0.14 
-##  2  1961 Keilor      9331      0.316
-##  3  1966 Prahran    13434      0.246
-##  4  1971 Coburg     17246      0.263
-##  5  1971 Richmond   10820      0.382
-##  6  1954 Brunswick   6603      0.123
-##  7  1971 Springvale 11779      0.202
-##  8  1954 St Kilda    8598      0.161
-##  9  1966 Richmond   11587      0.356
-## 10  1966 Footscray  14378      0.244
+##     Year Suburb       Total Percentage
+##    <dbl> <chr>        <dbl>      <dbl>
+##  1  1971 Broadmeadows 20355      0.201
+##  2  1966 Northcote    14297      0.254
+##  3  1966 Brunswick    19013      0.366
+##  4  1971 Prahran      14081      0.248
+##  5  1961 Keilor        9331      0.316
+##  6  1971 Collingwood   8569      0.408
+##  7  1954 St Kilda      8598      0.161
+##  8  1954 Melbourne    17252      0.185
+##  9  1961 Collingwood   7037      0.277
+## 10  1971 Essendon     12697      0.22
 ```
-The next step was to get geospatial data for these suburbs. Thankfully the Australian government has [shapefile data](https://data.gov.au/dataset/ds-dga-af33dd8c-0534-4e18-9245-fc64440f742e/distribution/dist-dga-4d6ec8bb-1039-4fef-aa58-6a14438f29b1/details?q=) available for suburbs and locality within Victoria. 
+
+The next step was to get the geospatial data for these Melbourne suburbs. Thankfully the Australian government has [shapefile data](https://data.gov.au/dataset/ds-dga-af33dd8c-0534-4e18-9245-fc64440f742e/distribution/dist-dga-4d6ec8bb-1039-4fef-aa58-6a14438f29b1/details?q=) available for suburbs and locality within Victoria. 
 
 Here's a render of the full content of the geospatial data:
 
@@ -78,7 +79,17 @@ With our two key pieces of data in place, we can start to put them together.
 
 Next step is to merge our migration data with our geospatial data, using suburb as our key, however it's a little more complex that a simple join. As we want to ensure for every year we have all of the geospatial information so we can render the full map, we need to do a bit of `group()`ing and `nest()`ing.
 
-The way I've tackled this is to first group by each year and the data, performing a join on this nested data with the spatial data. In this way we ensure that for each year the spatial data for each suburb is present and the map is complete. The suburbs that aren't in the data will have `NA` values for the **Percetnage** and **Total** columns. I talked to Jen about this, and she made a decision in the short term to replace these with 0. Were more rigor required for the visualisation other options may need to be considered around this missing data.
+The way I've tackled this is as such:
+
+- First group by each year.
+- Nest the data based on these groups.
+- Performing a join on this nested data with the spatial data.
+ - In this way we ensure that for each year, the spatial data for each suburb is present and the map is complete.
+- Unnest the data
+- Suburbs that aren't in the data will have `NA` values for the **Percetnage** and **Total** columns. 
+  - I talked to Jen about this, and she made a decision in the short term to replace these with 0.
+  - Were more rigor required for the visualisation other options may need to be considered around this missing data.
+- Convert to a geospatial object.
 
 Below is the full pipeline interspersed with comments to help understand what's happening in each stage:
 
@@ -131,7 +142,6 @@ migrant_data_geo |> head()
 ## #   ¹​LOC_CLASS
 ```
 
-
 # Step 3 - Rendering
 
 The final step is the easiest: the rendering. The map is rendered with the fill of each polygon representing the percentage of population born overseas. We then animate the map, transitioning between the data within each *Year*
@@ -162,7 +172,7 @@ What we have in the end is what I handed over to Jen for her presentation: an an
 
 # Is That It?
 
-Is this vidualisation perfect? Far from it. There's probably two areas where it could be improved. The first (and least important) is the aestheitcs of it; I think it could simply look better. Better fonts, better arrangement, different colours. 
+Is this visualisation perfect? Far from it. There's probably two areas where it could be improved. The first (and least important) is the aestheitcs of it; I think it could simply look better. Better fonts, better arrangement, different colours. 
 
 But more importantly I think there that there are choices to be made about how the information is presented. The suburbs with no information have been zeroed out, is that the right choice? Does the colour scale accurately convey the change, or does it need to have multiple colours in it? Do the suburbs need to be labelled? What exactly is the definition of "inner-north Melbourne"?
 
