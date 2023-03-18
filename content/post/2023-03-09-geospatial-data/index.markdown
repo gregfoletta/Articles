@@ -34,18 +34,18 @@ migrant_data |> sample_n(10)
 
 ```
 ## # A tibble: 10 × 4
-##     Year Suburb       Total Percentage
-##    <dbl> <chr>        <dbl>      <dbl>
-##  1  1971 Broadmeadows 20355      0.201
-##  2  1966 Northcote    14297      0.254
-##  3  1966 Brunswick    19013      0.366
-##  4  1971 Prahran      14081      0.248
-##  5  1961 Keilor        9331      0.316
-##  6  1971 Collingwood   8569      0.408
-##  7  1954 St Kilda      8598      0.161
-##  8  1954 Melbourne    17252      0.185
-##  9  1961 Collingwood   7037      0.277
-## 10  1971 Essendon     12697      0.22
+##     Year Suburb          Total Percentage
+##    <dbl> <chr>           <dbl>      <dbl>
+##  1  1966 Fitzroy         12314      0.452
+##  2  1971 Fitzroy         11857      0.461
+##  3  1971 Essendon        12697      0.22 
+##  4  1971 South Melbourne  6520      0.242
+##  5  1961 Collingwood      7037      0.277
+##  6  1971 Springvale      11779      0.202
+##  7  1954 Melbourne       17252      0.185
+##  8  1971 Coburg          17246      0.263
+##  9  1971 Caulfield       16696      0.204
+## 10  1966 Altona           7186      0.287
 ```
 
 The next step was to get the geospatial data for these Melbourne suburbs. Thankfully the Australian government has [shapefile data](https://data.gov.au/dataset/ds-dga-af33dd8c-0534-4e18-9245-fc64440f742e/distribution/dist-dga-4d6ec8bb-1039-4fef-aa58-6a14438f29b1/details?q=) available for suburbs and locality within Victoria. 
