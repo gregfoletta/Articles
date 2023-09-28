@@ -1,0 +1,122 @@
+---
+title: Honest Insurance Company
+author: Greg Foletta
+date: '2023-09-28'
+slug: []
+categories: []
+tags: []
+images: []
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(RSelenium)
+library(rvest)
+library(glue)
+```
+
+
+
+# Data Aquisition
+
+```{sh}
+docker container stop rsel
+docker container rm rsel
+```
+
+```{sh}
+docker run -d -p 4444:4444 --name rsel selenium/standalone-firefox:latest
+docker container inspect rsel | jq '.[].NetworkSettings.Networks.bridge.IPAddress'
+sleep 5
+```
+
+
+```{r include=FALSE}
+rs <- remoteDriver(remoteServerAddr = '172.17.0.2', port = 4444L)
+rs$open()
+```
+
+```{r cache = TRUE}
+kluger_raw <-
+    tibble(
+        offset = 12 * c(0:10)
+    ) |> 
+    mutate(
+        source = map(offset, ~{ 
+                rs$navigate(glue("https://www.carsales.com.au/cars/used/toyota/kluger/?offset={.x}"))
+                rs$getPageSource() |> pluck(1) |> read_html()
+        } )
+    )
+```
+
+
+```{r}
+xpath_text <- function(html, xpath) {
+    html_elements(html, xpath = xpath) |> html_text()
+}
+```
+
+```{r}
+kluger_data <- 
+    kluger_raw |> 
+    mutate(
+        price = map(source, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-price']")),
+        title = map(source, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-title']")),
+        odometer = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Odometer']")),
+        body = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Body Style']")),
+        transmission = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Transmission']")),
+        engine = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Engine']"))
+    ) |>
+    mutate(
+        o_len = map_int(odometer, ~length(.x)),
+        t_len = map_int(title, ~length(.x))
+    ) |>
+    filter(o_len == t_len) |>
+    select(-source, offset, o_len, t_len) |>
+    unnest(everything())
+```
+
+```{r}
+kluger_data <-
+kluger_data |>
+    mutate(
+        odometer = parse_number(odometer),
+        price = parse_number(price),
+        year = as.integer( str_extract(title, "^(\\d{4})", group = TRUE) ),
+        drivetrain = str_extract(title, "\\w+$"),
+        model = str_extract(title, "Toyota Kluger ([-\\w]+)", group = TRUE)
+    )
+
+print(kluger_data)
+```
+
+```{r}
+kluger_data |>
+    ggplot() +
+    geom_point(aes(odometer, price, colour = model))
+```
+```{r}
+kluger_data <-
+    kluger_data |>
+    mutate(
+        log_price = log10(price),
+    )
+```
+
+```{r}
+kluger_data |>
+    ggplot() +
+    geom_point(aes(odometer, log_price, colour = model))
+
+kluger_data |>
+    ggplot() +
+    geom_point(aes(odometer, log_price, colour = model)) +
+    facet_wrap(~engine)
+```
+
+
+```{sh}
+docker container stop rsel
+docker container rm rsel
+```
+
