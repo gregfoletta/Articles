@@ -10,6 +10,7 @@ images: []
 
 ```{r include=FALSE}
 library(tidyverse)
+library(tidybayes)
 library(RSelenium)
 library(rvest)
 library(glue)
@@ -19,30 +20,38 @@ library(glue)
 
 # Data Aquisition
 
-```{sh}
-docker container stop rsel
-docker container rm rsel
+```{sh include = FALSE}
+# Stop running containers
+if [ $(docker container ls -q --filter name=rsel --all) ]
+then
+        docker container stop rsel
+        docker container rm rsel
+fi
 ```
 
-```{sh}
+```{sh include=FALSE}
 docker run -d -p 4444:4444 --name rsel selenium/standalone-firefox:latest
-docker container inspect rsel | jq '.[].NetworkSettings.Networks.bridge.IPAddress'
+```
+```{sh include=FALSE}
 sleep 5
 ```
 
 
+
 ```{r include=FALSE}
 rs <- remoteDriver(remoteServerAddr = '172.17.0.2', port = 4444L)
+rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
 ```
 
-```{r cache = TRUE}
-kluger_raw <-
+```{r cache=TRUE, include=FALSE}
+kluger_source <-
     tibble(
-        offset = 12 * c(0:10)
+        offset = 12 * c(0:80)
     ) |> 
     mutate(
         source = map(offset, ~{ 
+                print(glue("Reqesting {.x}"))
                 rs$navigate(glue("https://www.carsales.com.au/cars/used/toyota/kluger/?offset={.x}"))
                 rs$getPageSource() |> pluck(1) |> read_html()
         } )
@@ -51,28 +60,24 @@ kluger_raw <-
 
 
 ```{r}
-xpath_text <- function(html, xpath) {
-    html_elements(html, xpath = xpath) |> html_text()
-}
+xpath_text <- function(html, xpath) { html_elements(html, xpath = xpath) |> html_text() }
 ```
 
 ```{r}
-kluger_data <- 
-    kluger_raw |> 
+kluger_data <-
+    kluger_source |> 
     mutate(
-        price = map(source, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-price']")),
-        title = map(source, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-title']")),
-        odometer = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Odometer']")),
-        body = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Body Style']")),
-        transmission = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Transmission']")),
-        engine = map(source, ~xpath_text(.x, xpath = ".//li[@data-type = 'Engine']"))
+        # Get entires that have odometer
+        cards = map(source, ~html_elements(.x, xpath = "//li[@data-type = 'Odometer']/ancestor::div[@class = 'card-body']")),
+        # Extract specific properties 
+        price = map(cards, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-price']")),
+        title = map(cards, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-title']")),
+        odometer = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Odometer']")),
+        body = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Body Style']")),
+        transmission = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Transmission']")),
+        engine = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Engine']"))
     ) |>
-    mutate(
-        o_len = map_int(odometer, ~length(.x)),
-        t_len = map_int(title, ~length(.x))
-    ) |>
-    filter(o_len == t_len) |>
-    select(-source, offset, o_len, t_len) |>
+    select(-c(source, cards)) |>
     unnest(everything())
 ```
 
@@ -90,32 +95,39 @@ kluger_data |>
 print(kluger_data)
 ```
 
-```{r}
+```{r echo = FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer, price, colour = model))
+    geom_point(aes(odometer, price))
 ```
 ```{r}
-kluger_data <-
-    kluger_data |>
-    mutate(
-        log_price = log10(price),
-    )
+kluger_data <- kluger_data |> mutate( log_price = log10(price) )
 ```
 
-```{r}
+```{r echo = FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer, log_price, colour = model))
-
+    geom_point(aes(odometer, log_price))
+```
+```{r echo=FALSE}
 kluger_data |>
     ggplot() +
     geom_point(aes(odometer, log_price, colour = model)) +
-    facet_wrap(~engine)
+    facet_wrap(~model)
 ```
 
+```{r echo=FALSE}
+kluger_data_filtered <-
+    kluger_data |>
+    filter(model %in% c('GX', 'GXL'))
 
-```{sh}
+kluger_data_filtered |>
+    ggplot() +
+    geom_point(aes(odometer, log_price, colour = model))
+```
+# Modelling
+
+```{sh include = FALSE}
 docker container stop rsel
 docker container rm rsel
 ```
