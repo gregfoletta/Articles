@@ -14,6 +14,9 @@ library(tidybayes)
 library(RSelenium)
 library(rvest)
 library(glue)
+library(cmdstanr)
+library(here)
+library(tidybayes)
 ```
 
 
@@ -29,7 +32,7 @@ then
 fi
 ```
 
-```{sh include=FALSE}
+```{sh echo=TRUE, results = 'hide'}
 docker run -d -p 4444:4444 --name rsel selenium/standalone-firefox:latest
 ```
 ```{sh include=FALSE}
@@ -38,16 +41,16 @@ sleep 5
 
 
 
-```{r include=FALSE}
+```{r echo=TRUE, results = 'hide'}
 rs <- remoteDriver(remoteServerAddr = '172.17.0.2', port = 4444L)
 rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
 ```
 
-```{r cache=TRUE, include=FALSE}
+```{r}
 kluger_source <-
     tibble(
-        offset = 12 * c(0:80)
+        offset = 12 * c(0:10)
     ) |> 
     mutate(
         source = map(offset, ~{ 
@@ -81,7 +84,7 @@ kluger_data <-
     unnest(everything())
 ```
 
-```{r}
+```{r, comment=''}
 kluger_data <-
 kluger_data |>
     mutate(
@@ -100,32 +103,55 @@ kluger_data |>
     ggplot() +
     geom_point(aes(odometer, price))
 ```
-```{r}
-kluger_data <- kluger_data |> mutate( log_price = log10(price) )
-```
 
-```{r echo = FALSE}
-kluger_data |>
-    ggplot() +
-    geom_point(aes(odometer, log_price))
-```
 ```{r echo=FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer, log_price, colour = model)) +
+    geom_point(aes(odometer, log(price), colour = model)) +
     facet_wrap(~model)
 ```
 
 ```{r echo=FALSE}
 kluger_data_filtered <-
     kluger_data |>
-    filter(model %in% c('GX', 'GXL'))
-
-kluger_data_filtered |>
-    ggplot() +
-    geom_point(aes(odometer, log_price, colour = model))
+    mutate(odometer = odometer - mean(odometer)) |>
+    select(odometer, price)
 ```
 # Modelling
+
+```{r, comment=''}
+model_file <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
+kluger_model <- cmdstan_model(model_file)
+kluger_model$print()
+```
+
+```{r echo=TRUE, results = 'hide'}
+kluger_fit <- kluger_model$sample(
+    data = compose_data(kluger_data_filtered),
+    seed = 123,
+    max_treedepth = 12,
+    chains = 4,
+    parallel_chains = 4,
+    refresh = 500,
+)
+```
+    
+```{r, comment=''}
+kluger_fit <- kluger_fit |> recover_types(kluger_data_filtered)
+kluger_fit$summary()
+kluger_fit |> 
+    spread_draws(alpha, beta) |> 
+    ggplot() +
+    geom_histogram(aes(beta, fill = as.factor(.chain)), binwidth = .000001)
+```
+```{r}
+kluger_fit |>
+    spread_draws(alpha, beta) |>
+    ggplot() +
+    geom_abline(aes(intercept = alpha, slope = beta), alpha = .01) +
+    geom_point(data = kluger_data_filtered, aes(odometer, log(price)))
+```
+
 
 ```{sh include = FALSE}
 docker container stop rsel
