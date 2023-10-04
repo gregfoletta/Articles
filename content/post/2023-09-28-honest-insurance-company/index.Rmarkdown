@@ -17,6 +17,7 @@ library(glue)
 library(cmdstanr)
 library(here)
 library(tidybayes)
+library(gganimate)
 ```
 
 
@@ -47,7 +48,7 @@ rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
 ```
 
-```{r}
+```{r echo=TRUE, results = 'hide'}
 kluger_source <-
     tibble(
         offset = 12 * c(0:10)
@@ -101,31 +102,57 @@ print(kluger_data)
 ```{r echo = FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer, price))
+    geom_point(aes(odometer, price)) +
+    labs(
+        title = "Market for Toyota Klugers",
+        subtitle = "Odometer Versus Price",
+        x = "Odometer",
+        y = "Price"
+    )
+```
+
+```{r echo = FALSE}
+kluger_data |>
+    ggplot() +
+    geom_point(aes(odometer, log(price))) +
+    labs(
+        title = "Market for Toyota Klugers",
+        subtitle = "Odometer Versus Log(Price)",
+        x = "Odometer",
+        y = "Log(Price)"
+    )
 ```
 
 ```{r echo=FALSE}
 kluger_data |>
     ggplot() +
     geom_point(aes(odometer, log(price), colour = model)) +
-    facet_wrap(~model)
+    facet_wrap(~model) +
+    labs(
+        title = "Market for Toyota Klugers Split By Model",
+        subtitle = "Odometer versus Log(Price)",
+        x = "Odometer",
+        y = "Log(Price)"
+    )
 ```
 
 ```{r echo=FALSE}
 kluger_data_filtered <-
     kluger_data |>
+    # Centre the odometer variable
     mutate(odometer = odometer - mean(odometer)) |>
     select(odometer, price)
 ```
 # Modelling
-
-```{r, comment=''}
-model_file <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
-kluger_model <- cmdstan_model(model_file)
-kluger_model$print()
+```{r include=FALSE}
+model_file_path <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
 ```
 
-```{r echo=TRUE, results = 'hide'}
+```{r message=FALSE, warning=FALSE, comment=''}
+kluger_model <- cmdstan_model(model_file_path)
+kluger_model$print()
+```
+```{r message=FALSE, warning=FALSE}
 kluger_fit <- kluger_model$sample(
     data = compose_data(kluger_data_filtered),
     seed = 123,
@@ -139,17 +166,33 @@ kluger_fit <- kluger_model$sample(
 ```{r, comment=''}
 kluger_fit <- kluger_fit |> recover_types(kluger_data_filtered)
 kluger_fit$summary()
+```
+```{r}
 kluger_fit |> 
-    spread_draws(alpha, beta) |> 
+    gather_draws(a, b) |> 
     ggplot() +
-    geom_histogram(aes(beta, fill = as.factor(.chain)), binwidth = .000001)
+    geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
+    facet_wrap(vars(.variable), scales = 'free') +
+    labs(
+        title = "Toyota Kluger Market Linear Model",
+        subtitle = "Histogram of Posterior Draws of Alpha & Beta Coefficients",
+        x = "Coefficient Value",
+        y = "Frequency"
+    )
 ```
 ```{r}
 kluger_fit |>
-    spread_draws(alpha, beta) |>
+    spread_draws(a, b) |>
     ggplot() +
-    geom_abline(aes(intercept = alpha, slope = beta), alpha = .01) +
-    geom_point(data = kluger_data_filtered, aes(odometer, log(price)))
+    geom_abline(aes(intercept = a, slope = b, group = .draw), alpha = 0.1) +
+    transition_reveal(.draw) +
+    geom_point(data = kluger_data_filtered, aes(odometer, log(price))) +
+    #geom_point(data = kluger_data_filtered, mapping = aes(odometer, log(price))) +
+    labs(
+        title = "MCMC Draw {frame_along}"
+    ) -> kluger_fit_animation
+
+animate(kluger_fit_animation, renderer = gifski_renderer())
 ```
 
 

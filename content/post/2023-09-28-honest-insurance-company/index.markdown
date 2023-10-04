@@ -46,20 +46,6 @@ kluger_source <-
     )
 ```
 
-```
-## Reqesting 0
-## Reqesting 12
-## Reqesting 24
-## Reqesting 36
-## Reqesting 48
-## Reqesting 60
-## Reqesting 72
-## Reqesting 84
-## Reqesting 96
-## Reqesting 108
-## Reqesting 120
-```
-
 
 
 ```r
@@ -104,16 +90,16 @@ print(kluger_data)
 # A tibble: 138 × 10
    offset price title  odometer body  transmission engine  year drivetrain model
     <dbl> <dbl> <chr>     <dbl> <chr> <chr>        <chr>  <int> <chr>      <chr>
- 1      0 78888 2021 …    11400 SUV   Automatic    2.5i/…  2021 eFour      Gran…
- 2      0 39990 2019 …    37463 SUV   Automatic    6cyl …  2019 2WD        GX   
- 3      0 63777 2022 …    15344 SUV   Automatic    6cyl …  2022 2WD        GXL  
- 4      0 17000 2010 …   191500 SUV   Automatic    6cyl …  2010 2WD        KX-R 
- 5      0 33900 2018 …   138700 SUV   Automatic    6cyl …  2018 AWD        GXL  
- 6      0 29480 2017 …   111792 SUV   Automatic    6cyl …  2017 2WD        GX   
- 7      0 22500 2013 …   110000 SUV   Automatic    6cyl …  2013 AWD        KX-R 
- 8      0 81477 2022 …    13936 SUV   Automatic    2.5i/…  2022 eFour      Gran…
- 9      0 67990 2021 …    20034 SUV   Automatic    2.5i/…  2021 eFour      GXL  
-10      0 37999 2017 …    62050 SUV   Automatic    6cyl …  2017 2WD        GX   
+ 1      0 42990 2018 …    83336 SUV   Automatic    6cyl …  2018 2WD        Gran…
+ 2      0 52350 2022 …    30709 SUV   Automatic    6cyl …  2022 2WD        GX   
+ 3      0 55990 2022 …     6602 SUV   Automatic    4cyl …  2022 2WD        GX   
+ 4      0 62400 2021 …    19134 SUV   Automatic    2.5i/…  2021 eFour      GX   
+ 5      0 29480 2017 …   111792 SUV   Automatic    6cyl …  2017 2WD        GX   
+ 6      0 67961 2021 …    49762 SUV   Automatic    6cyl …  2021 2WD        Gran…
+ 7      0 57490 2021 …    32500 SUV   Automatic    2.5i/…  2021 eFour      GX   
+ 8      0 73250 2023 …     2608 SUV   Automatic    2.5i/…  2023 eFour      GXL  
+ 9      0 47990 2021 …    26948 SUV   Automatic    6cyl …  2021 2WD        GX   
+10      0 81477 2022 …    13936 SUV   Automatic    2.5i/…  2022 eFour      Gran…
 # ℹ 128 more rows
 ```
 
@@ -121,13 +107,15 @@ print(kluger_data)
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
+
 
 # Modelling
 
 
+
 ```r
-model_file <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
-kluger_model <- cmdstan_model(model_file)
+kluger_model <- cmdstan_model(model_file_path)
 kluger_model$print()
 ```
 
@@ -138,15 +126,14 @@ data {
     vector[n] price;
 }
 parameters {
-    real alpha;
-    real beta;
+    real a;
+    real b;
     real<lower=0> sigma;
 }
 model {
-    log(price) ~ normal(alpha + beta * odometer, sigma);
+    log(price) ~ normal(a + b * odometer, sigma);
 }
 ```
-
 
 ```r
 kluger_fit <- kluger_model$sample(
@@ -160,8 +147,40 @@ kluger_fit <- kluger_model$sample(
 ```
 
 ```
-## Warning: 783 of 4000 (20.0%) transitions hit the maximum treedepth limit of 12.
-## See https://mc-stan.org/misc/warnings for details.
+## Running MCMC with 4 parallel chains...
+## 
+## Chain 1 Iteration:    1 / 2000 [  0%]  (Warmup) 
+## Chain 2 Iteration:    1 / 2000 [  0%]  (Warmup) 
+## Chain 3 Iteration:    1 / 2000 [  0%]  (Warmup) 
+## Chain 4 Iteration:    1 / 2000 [  0%]  (Warmup) 
+## Chain 3 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+## Chain 4 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+## Chain 2 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+## Chain 1 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+## Chain 3 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+## Chain 3 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+## Chain 3 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+## Chain 3 Iteration: 2000 / 2000 [100%]  (Sampling) 
+## Chain 3 finished in 3.1 seconds.
+## Chain 2 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+## Chain 2 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+## Chain 4 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+## Chain 4 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+## Chain 1 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+## Chain 1 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+## Chain 4 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+## Chain 1 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+## Chain 4 Iteration: 2000 / 2000 [100%]  (Sampling) 
+## Chain 4 finished in 6.1 seconds.
+## Chain 1 Iteration: 2000 / 2000 [100%]  (Sampling) 
+## Chain 1 finished in 7.1 seconds.
+## Chain 2 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+## Chain 2 Iteration: 2000 / 2000 [100%]  (Sampling) 
+## Chain 2 finished in 13.6 seconds.
+## 
+## All 4 chains finished successfully.
+## Mean chain execution time: 7.5 seconds.
+## Total execution time: 13.7 seconds.
 ```
     
 
@@ -174,31 +193,45 @@ kluger_fit$summary()
 # A tibble: 4 × 10
   variable        mean   median      sd     mad       q5      q95  rhat ess_bulk
   <chr>          <num>    <num>   <num>   <num>    <num>    <num> <num>    <num>
-1 lp__         1.29e+2  1.29e+2 1.24e+0 1.02e+0  1.26e+2  1.30e+2  1.02     252.
-2 alpha        1.05e+1  1.05e+1 1.95e-2 1.94e-2  1.05e+1  1.05e+1  1.01     355.
-3 beta        -6.76e-6 -6.76e-6 2.97e-7 2.95e-7 -7.24e-6 -6.27e-6  1.00    4135.
-4 sigma        2.39e-1  2.38e-1 1.51e-2 1.45e-2  2.14e-1  2.65e-1  1.03     122.
+1 lp__     86.2         1.32e+2 7.92e+1 1.76e+0 -5.13e+1  1.33e+2  1.54     7.20
+2 a        10.5         1.06e+1 6.79e-2 3.08e-2  1.04e+1  1.06e+1  1.61     6.73
+3 b        -0.00000666 -6.66e-6 8.76e-7 3.88e-7 -8.07e-6 -5.20e-6  1.28  1844.  
+4 sigma     0.529       2.38e-1 5.14e-1 2.34e-2  2.12e-1  1.42e+0  1.56     7.03
 # ℹ 1 more variable: ess_tail <num>
 ```
 
 ```r
 kluger_fit |> 
-    spread_draws(alpha, beta) |> 
+    gather_draws(a, b) |> 
     ggplot() +
-    geom_histogram(aes(beta, fill = as.factor(.chain)), binwidth = .000001)
+    geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
+    facet_wrap(vars(.variable), scales = 'free') +
+    labs(
+        title = "Toyota Kluger Market Linear Model",
+        subtitle = "Histogram of Posterior Draws of Alpha & Beta Coefficients",
+        x = "Coefficient Value",
+        y = "Frequency"
+    )
 ```
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" />
 
 ```r
 kluger_fit |>
-    spread_draws(alpha, beta) |>
+    spread_draws(a, b) |>
     ggplot() +
-    geom_abline(aes(intercept = alpha, slope = beta), alpha = .01) +
-    geom_point(data = kluger_data_filtered, aes(odometer, log(price)))
+    geom_abline(aes(intercept = a, slope = b, group = .draw), alpha = 0.1) +
+    transition_reveal(.draw) +
+    geom_point(data = kluger_data_filtered, aes(odometer, log(price))) +
+    #geom_point(data = kluger_data_filtered, mapping = aes(odometer, log(price))) +
+    labs(
+        title = "MCMC Draw {frame_along}"
+    ) -> kluger_fit_animation
+
+animate(kluger_fit_animation, renderer = gifski_renderer())
 ```
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-16-1.png" width="672" />
+![](index_files/figure-html/unnamed-chunk-19-1.gif)<!-- -->
 
 
 

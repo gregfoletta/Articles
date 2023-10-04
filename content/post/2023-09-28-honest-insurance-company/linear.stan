@@ -4,10 +4,10 @@ data {
     vector[n] price;
 }
 parameters {
-    real alpha;
-    real beta;
+    real a;
+    real b;
     real<lower=0> sigma;
 }
 model {
-    log(price) ~ normal(alpha + beta * odometer, sigma);
+    log(price) ~ normal(a + b * odometer, sigma);
 }
