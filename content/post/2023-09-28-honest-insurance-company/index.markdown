@@ -35,7 +35,7 @@ rs$open()
 ```r
 kluger_source <-
     tibble(
-        offset = 12 * c(0:10)
+        offset = 12 * c(0:100)
     ) |> 
     mutate(
         source = map(offset, ~{ 
@@ -72,6 +72,9 @@ kluger_data <-
 ```
 
 
+
+
+
 ```r
 kluger_data <-
 kluger_data |>
@@ -83,32 +86,54 @@ kluger_data |>
         model = str_extract(title, "Toyota Kluger ([-\\w]+)", group = TRUE)
     )
 
-print(kluger_data)
+str(kluger_data)
 ```
 
 ```
-# A tibble: 138 × 10
-   offset price title  odometer body  transmission engine  year drivetrain model
-    <dbl> <dbl> <chr>     <dbl> <chr> <chr>        <chr>  <int> <chr>      <chr>
- 1      0 42990 2018 …    83336 SUV   Automatic    6cyl …  2018 2WD        Gran…
- 2      0 52350 2022 …    30709 SUV   Automatic    6cyl …  2022 2WD        GX   
- 3      0 55990 2022 …     6602 SUV   Automatic    4cyl …  2022 2WD        GX   
- 4      0 62400 2021 …    19134 SUV   Automatic    2.5i/…  2021 eFour      GX   
- 5      0 29480 2017 …   111792 SUV   Automatic    6cyl …  2017 2WD        GX   
- 6      0 67961 2021 …    49762 SUV   Automatic    6cyl …  2021 2WD        Gran…
- 7      0 57490 2021 …    32500 SUV   Automatic    2.5i/…  2021 eFour      GX   
- 8      0 73250 2023 …     2608 SUV   Automatic    2.5i/…  2023 eFour      GXL  
- 9      0 47990 2021 …    26948 SUV   Automatic    6cyl …  2021 2WD        GX   
-10      0 81477 2022 …    13936 SUV   Automatic    2.5i/…  2022 eFour      Gran…
-# ℹ 128 more rows
+tibble [1,013 × 10] (S3: tbl_df/tbl/data.frame)
+ $ offset      : num [1:1013] 0 0 0 0 0 0 0 0 0 0 ...
+ $ price       : num [1:1013] 59980 53990 37990 18500 66990 ...
+ $ title       : chr [1:1013] "2021 Toyota Kluger GX Auto eFour" "2021 Toyota Kluger GX Auto eFour" "2019 Toyota Kluger GX Auto 2WD" "2011 Toyota Kluger Grande Auto 2WD MY11" ...
+ $ odometer    : num [1:1013] 28071 72631 82713 203500 196 ...
+ $ body        : chr [1:1013] "SUV" "SUV" "SUV" "SUV" ...
+ $ transmission: chr [1:1013] "Automatic" "Automatic" "Automatic" "Automatic" ...
+ $ engine      : chr [1:1013] "2.5i/184kW Hybrid" "2.5i/184kW Hybrid" "6cyl 3.5L Petrol" "6cyl 3.5L Petrol" ...
+ $ year        : int [1:1013] 2021 2021 2019 2011 2021 2022 2015 2021 2022 2023 ...
+ $ drivetrain  : chr [1:1013] "eFour" "eFour" "2WD" "MY11" ...
+ $ model       : chr [1:1013] "GX" "GX" "GX" "Grande" ...
 ```
-
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-10-1.png" width="672" />
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
+
+
+```r
+kluger_data_filtered <-
+    kluger_data |>
+    # Centre the odometer variable
+    mutate(
+        odometer = (odometer - mean(odometer)) / sd(odometer)
+    ) |>
+    select(odometer, price)
+```
+
+
+```r
+kluger_data_filtered |>
+    ggplot() +
+    geom_point(aes(odometer, log(price))) +
+    labs(
+        title = 'Toyota Kluger Market',
+        subtitle = 'Standardised and Cenetered Odometer Values',
+        x = 'Odometer (centered/standardised)',
+        y = 'Log(price) ($)'
+    )
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-15-1.png" width="672" />
 
 # Modelling
 
@@ -139,7 +164,6 @@ model {
 kluger_fit <- kluger_model$sample(
     data = compose_data(kluger_data_filtered),
     seed = 123,
-    max_treedepth = 12,
     chains = 4,
     parallel_chains = 4,
     refresh = 500,
@@ -147,92 +171,63 @@ kluger_fit <- kluger_model$sample(
 ```
 
 ```
-## Running MCMC with 4 parallel chains...
-## 
-## Chain 1 Iteration:    1 / 2000 [  0%]  (Warmup) 
-## Chain 2 Iteration:    1 / 2000 [  0%]  (Warmup) 
-## Chain 3 Iteration:    1 / 2000 [  0%]  (Warmup) 
-## Chain 4 Iteration:    1 / 2000 [  0%]  (Warmup) 
-## Chain 3 Iteration:  500 / 2000 [ 25%]  (Warmup) 
-## Chain 4 Iteration:  500 / 2000 [ 25%]  (Warmup) 
-## Chain 2 Iteration:  500 / 2000 [ 25%]  (Warmup) 
-## Chain 1 Iteration:  500 / 2000 [ 25%]  (Warmup) 
-## Chain 3 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
-## Chain 3 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
-## Chain 3 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
-## Chain 3 Iteration: 2000 / 2000 [100%]  (Sampling) 
-## Chain 3 finished in 3.1 seconds.
-## Chain 2 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
-## Chain 2 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
-## Chain 4 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
-## Chain 4 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
-## Chain 1 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
-## Chain 1 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
-## Chain 4 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
-## Chain 1 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
-## Chain 4 Iteration: 2000 / 2000 [100%]  (Sampling) 
-## Chain 4 finished in 6.1 seconds.
-## Chain 1 Iteration: 2000 / 2000 [100%]  (Sampling) 
-## Chain 1 finished in 7.1 seconds.
-## Chain 2 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
-## Chain 2 Iteration: 2000 / 2000 [100%]  (Sampling) 
-## Chain 2 finished in 13.6 seconds.
-## 
-## All 4 chains finished successfully.
-## Mean chain execution time: 7.5 seconds.
-## Total execution time: 13.7 seconds.
+Running MCMC with 4 parallel chains...
+
+Chain 1 Iteration:    1 / 2000 [  0%]  (Warmup) 
+Chain 1 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+Chain 1 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+Chain 1 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+Chain 2 Iteration:    1 / 2000 [  0%]  (Warmup) 
+Chain 2 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+Chain 2 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+Chain 2 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+Chain 3 Iteration:    1 / 2000 [  0%]  (Warmup) 
+Chain 3 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+Chain 3 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+Chain 3 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+Chain 4 Iteration:    1 / 2000 [  0%]  (Warmup) 
+Chain 4 Iteration:  500 / 2000 [ 25%]  (Warmup) 
+Chain 4 Iteration: 1000 / 2000 [ 50%]  (Warmup) 
+Chain 4 Iteration: 1001 / 2000 [ 50%]  (Sampling) 
+Chain 1 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+Chain 1 Iteration: 2000 / 2000 [100%]  (Sampling) 
+Chain 2 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+Chain 2 Iteration: 2000 / 2000 [100%]  (Sampling) 
+Chain 3 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+Chain 3 Iteration: 2000 / 2000 [100%]  (Sampling) 
+Chain 4 Iteration: 1500 / 2000 [ 75%]  (Sampling) 
+Chain 4 Iteration: 2000 / 2000 [100%]  (Sampling) 
+Chain 1 finished in 0.2 seconds.
+Chain 2 finished in 0.3 seconds.
+Chain 3 finished in 0.3 seconds.
+Chain 4 finished in 0.3 seconds.
+
+All 4 chains finished successfully.
+Mean chain execution time: 0.3 seconds.
+Total execution time: 0.3 seconds.
 ```
     
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-20-1.png" width="672" />
+
+
+![](index_files/figure-html/unnamed-chunk-21-1.gif)<!-- -->
+
 
 ```r
-kluger_fit <- kluger_fit |> recover_types(kluger_data_filtered)
 kluger_fit$summary()
 ```
 
 ```
 # A tibble: 4 × 10
-  variable        mean   median      sd     mad       q5      q95  rhat ess_bulk
-  <chr>          <num>    <num>   <num>   <num>    <num>    <num> <num>    <num>
-1 lp__     86.2         1.32e+2 7.92e+1 1.76e+0 -5.13e+1  1.33e+2  1.54     7.20
-2 a        10.5         1.06e+1 6.79e-2 3.08e-2  1.04e+1  1.06e+1  1.61     6.73
-3 b        -0.00000666 -6.66e-6 8.76e-7 3.88e-7 -8.07e-6 -5.20e-6  1.28  1844.  
-4 sigma     0.529       2.38e-1 5.14e-1 2.34e-2  2.12e-1  1.42e+0  1.56     7.03
+  variable     mean   median      sd     mad       q5      q95  rhat ess_bulk
+  <chr>       <num>    <num>   <num>   <num>    <num>    <num> <num>    <num>
+1 lp__     1097.    1097.    1.21    0.993   1094.    1098.     1.00    1921.
+2 a          10.5     10.5   0.00649 0.00630   10.5     10.5    1.00    4512.
+3 b          -0.450   -0.450 0.00635 0.00628   -0.461   -0.440  1.00    5408.
+4 sigma       0.205    0.205 0.00454 0.00458    0.198    0.213  1.00    3489.
 # ℹ 1 more variable: ess_tail <num>
 ```
-
-```r
-kluger_fit |> 
-    gather_draws(a, b) |> 
-    ggplot() +
-    geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
-    facet_wrap(vars(.variable), scales = 'free') +
-    labs(
-        title = "Toyota Kluger Market Linear Model",
-        subtitle = "Histogram of Posterior Draws of Alpha & Beta Coefficients",
-        x = "Coefficient Value",
-        y = "Frequency"
-    )
-```
-
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" />
-
-```r
-kluger_fit |>
-    spread_draws(a, b) |>
-    ggplot() +
-    geom_abline(aes(intercept = a, slope = b, group = .draw), alpha = 0.1) +
-    transition_reveal(.draw) +
-    geom_point(data = kluger_data_filtered, aes(odometer, log(price))) +
-    #geom_point(data = kluger_data_filtered, mapping = aes(odometer, log(price))) +
-    labs(
-        title = "MCMC Draw {frame_along}"
-    ) -> kluger_fit_animation
-
-animate(kluger_fit_animation, renderer = gifski_renderer())
-```
-
-![](index_files/figure-html/unnamed-chunk-19-1.gif)<!-- -->
-
 
 
 
