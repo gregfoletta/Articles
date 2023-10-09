@@ -26,7 +26,7 @@ library(scales)
 
 # Data Aquisition
 
-```{sh include = FALSE}
+```{sh eval=FALSE, include=FALSE}
 # Stop running containers
 if [ $(docker container ls -q --filter name=rsel --all) ]
 then
@@ -35,16 +35,11 @@ then
 fi
 ```
 
-```{sh echo=TRUE, results = 'hide'}
+```{sh eval=FALSE, echo=TRUE, results = 'hide'}
 docker run -d -p 4444:4444 --name rsel selenium/standalone-firefox:latest
 ```
-```{sh include=FALSE}
-sleep 5
-```
 
-
-
-```{r echo=TRUE, results = 'hide'}
+```{r eval = FALSE, echo=TRUE, results = 'hide'}
 rs <- remoteDriver(remoteServerAddr = '172.17.0.2', port = 4444L)
 rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
@@ -97,6 +92,7 @@ kluger_data <-
 kluger_data |>
     mutate(
         odometer = parse_number(odometer),
+        odometer_Mm = odometer / 1000,
         price = parse_number(price),
         year = as.integer( str_extract(title, "^(\\d{4})", group = TRUE) ),
         drivetrain = str_extract(title, "\\w+$"),
@@ -109,11 +105,11 @@ str(kluger_data)
 ```{r echo = FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer, price)) +
+    geom_point(aes(odometer_Mm, price)) +
     labs(
         title = "Market for Toyota Klugers",
         subtitle = "Odometer Versus Price",
-        x = "Odometer (km)",
+        x = "Odometer (megametres)",
         y = "Price ($)"
     ) + 
     scale_x_continuous(labels = scales::comma) +
@@ -124,11 +120,11 @@ kluger_data |>
 ```{r echo = FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer, log(price))) +
+    geom_point(aes(odometer_Mm, log(price))) +
     labs(
         title = "Toyota Kluger Market",
         subtitle = "Odometer Versus Log(Price)",
-        x = "Odometer (km)",
+        x = "Odometer (megametres)",
         y = "Log(Price) ($)"
     ) +
     scale_x_continuous(labels = scales::comma) +
@@ -139,12 +135,12 @@ kluger_data |>
 ```{r echo=FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer, log(price), colour = model), alpha = .3) +
+    geom_point(aes(odometer_Mm, log(price), colour = model), alpha = .3) +
     facet_wrap(~model) +
     labs(
         title = "Toyota Kluger Market",
         subtitle = "Odometer versus Log(Price) by Model",
-        x = "Odometer (km)",
+        x = "Odometer (megametres)",
         y = "Log(Price) ($)"
     ) +
     scale_x_continuous(labels = scales::comma) +
@@ -152,40 +148,18 @@ kluger_data |>
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
-```{r}
-kluger_data_filtered <-
-    kluger_data |>
-    # Centre the odometer variable
-    mutate(
-        odometer = (odometer - mean(odometer)) / sd(odometer)
-    ) |>
-    select(odometer, price)
-```
-
-```{r}
-kluger_data_filtered |>
-    ggplot() +
-    geom_point(aes(odometer, log(price))) +
-    labs(
-        title = 'Toyota Kluger Market',
-        subtitle = 'Standardised and Cenetered Odometer Values',
-        x = 'Odometer (centered/standardised)',
-        y = 'Log(price) ($)'
-    )
-```
-
 # Modelling
 ```{r include=FALSE}
 model_file_path <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
 ```
 
-```{r message=FALSE, warning=FALSE, comment=''}
+```{r comment=''}
 kluger_model <- cmdstan_model(model_file_path)
 kluger_model$print()
 ```
 ```{r echo=TRUE, comment=''}
 kluger_fit <- kluger_model$sample(
-    data = compose_data(kluger_data_filtered),
+    data = compose_data(kluger_data),
     seed = 123,
     chains = 4,
     parallel_chains = 4,
@@ -195,7 +169,8 @@ kluger_fit <- kluger_model$sample(
     
 ```{r echo = FALSE}
 kluger_fit |> 
-    gather_draws(a, b) |> 
+    gather_draws(a, b) |>
+    recover_types() |> 
     ggplot() +
     geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
     facet_wrap(vars(.variable), scales = 'free') +
@@ -211,7 +186,7 @@ kluger_fit |>
 kluger_fit |> 
     gather_draws(a,b, sigma) |>
     ggplot() +
-    geom_line(aes(.iteration, .value, colour = as_factor(.chain)), alpha = .5) +
+    geom_line(aes(.iteration, .value, colour = as_factor(.chain)), alpha = .8) +
     facet_grid(vars(.variable), scales = 'free_y') + 
     labs(
         title = "Toyota Kluger Market Model",
@@ -224,33 +199,68 @@ kluger_fit |>
 
 
 ```{r echo = FALSE}
-fit_mean_a <- kluger_fit$summary()$mean[2]
-fit_mean_b <- kluger_fit$summary()$mean[3]
+#fit_mean_a <- kluger_fit$summary()$mean[2]
+#fit_mean_b <- kluger_fit$summary()$mean[3]
 
 kluger_fit_animation <-
     kluger_fit |>
     spread_draws(a, b) |>
+    recover_types() |> 
     ggplot() +
-    geom_abline(aes(intercept = a, slope = b, group = .draw)) +
+    geom_point(data = kluger_data, aes(odometer_Mm, log(price))) +
+    geom_abline(aes(intercept = a, slope = b, group = .draw), colour = 'lightblue') +
     transition_reveal(.draw) +
-    geom_point(data = kluger_data_filtered, aes(odometer, log(price)), colour = 'gray') +
-    geom_abline(intercept = fit_mean_a, slope = fit_mean_b, colour = 'blue') +
     guides(colour = guide_legend(override.aes = list(alpha = 1))) +
     labs(
         title = "Toyota Kluger Market Model",
         subtitle = "Odometer vs Log(Price) with MCMC Coefficients (Draw {frame_along})",
-        x = "Odometer (km)",
+        x = "Odometer (Megametres)",
         y = "Log(Price) ($)"
     )
  
 animate(kluger_fit_animation, renderer = gifski_renderer())
 ```
+```{r echo=FALSE}
+kluger_fit |>
+    recover_types() |>
+    spread_draws(y_s[i]) |>
+    sample_frac(size = .1) |>
+    select(-c(.chain, .iteration, .draw)) |>
+    nest(y_s = y_s) |>
+    bind_cols(kluger_data) |>
+    unnest(y_s) |>
+    ggplot() +
+    geom_point(aes(odometer_Mm, y_s), colour = 'lightblue', alpha = .05) +
+    geom_point(data = kluger_data, aes(odometer_Mm, log(price)), alpha = .5) +
+    labs(
+        title = "Toyota Kluger Market Model",
+        subtitle = "Odometer vs Log(Price) with Postierior Predictions", 
+        x = "Odometer (Megametres)",
+        y = "Log(Price) ($)"
+    )
+```
+
+
+```{r}
+kluger_fit |>
+    spread_draws(a,b) |>
+    ggplot() +
+    geom_point(data = kluger_data, aes(odometer_Mm, price)) +
+    geom_function(fun = ~exp(11.14 - 0.00626 * .x), linewidth = 2, colour = 'lightblue') +
+    labs(
+        title = "Toyota Kluger Market Model",
+        subtitle = "Odometer vs Price",
+        x = "Odometer (Megametres)",
+        y = "Log(Price) ($)"
+    )
+```
+
 
 ```{r, comment=''}
 kluger_fit$summary()
 ```
 
-```{sh include = FALSE}
+```{sh eval=FALSE, include=FALSE}
 docker container stop rsel
 docker container rm rsel
 ```

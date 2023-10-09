@@ -1,6 +1,6 @@
 data {
     int<lower=0> n;
-    vector[n] odometer;
+    vector[n] odometer_Mm;
     vector[n] price;
 }
 parameters {
@@ -9,5 +9,8 @@ parameters {
     real<lower=0> sigma;
 }
 model {
-    log(price) ~ normal(a + b * odometer, sigma);
+    log(price) ~ normal(a + b * odometer_Mm, sigma);
+}    
+generated quantities {
+    array[n] real y_s = normal_rng(a + b * odometer_Mm, sigma);
 }
