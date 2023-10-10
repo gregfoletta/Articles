@@ -3,9 +3,8 @@ title: Honest Insurance Company
 author: Greg Foletta
 date: '2023-09-28'
 slug: []
-categories: []
+categories: [R Bayesian]
 tags: []
-images: []
 ---
 
 ```{r include=FALSE}
@@ -22,9 +21,15 @@ library(gganimate)
 library(scales)
 ```
 
+Last month my car - a Toyota Kluger - was run into while parked in front of my house. Luckily no one was injured and while annoying, the person had insurance (coincidently with the same company as my). The insurance company came back and determined that the car had been written off and I would be paid out the market value of the car. But what is the market value? How could I keep the insurance company honest and make sure I wasn't getting stiffed?
 
+In this post I'll go through the process I used to keep the insurance company honest. There's data acquisition and visiualisation of the current market, then modelling of the market price. 
 
 # Data Aquisition
+
+The first step was to acquire some data on the current market for Toyota Klugers. I used [carsales.com.au](https://www.carsales.com.au/cars/used/toyota/kluger/) as my source. The Carsales site requires Javascript to render, so simply requesting the pages wasn't going to work. Instead we need to render the page in a browser. To do this I used a docker instance of the webdriver [Selenium](https://www.selenium.dev/), interfacing into this with the R package [RSelenium](https://github.com/ropensci/RSelenium). This allows us to browse to the site from a 'remotely controller' browser, Javascript and all, and retrieve the information we need.
+
+First up, we connect to the docker instance, setting the page load strategy to eager so that it will return when the initial HTML is loaded and not wait for stylesheets, images, etc.
 
 ```{sh eval=FALSE, include=FALSE}
 # Stop running containers
@@ -35,7 +40,7 @@ then
 fi
 ```
 
-```{sh eval=FALSE, echo=TRUE, results = 'hide'}
+```{sh eval=FALSE, include=FALSE }
 docker run -d -p 4444:4444 --name rsel selenium/standalone-firefox:latest
 ```
 
@@ -45,24 +50,40 @@ rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
 ```
 
+Each page of Klugers for sale is determined by an offset of 12. We generate the offsets (12, 24, 36 etc) and the URIs based on these offsets. We then navigate to each page, reading the source, and parsing into a structuered XML document     .
+
 ```{r eval = FALSE}
 kluger_source <-
     tibble(
-        offset = 12 * c(0:100)
+        # Generate offsets
+        offset = 12 * c(0:100),
+        # Create URIs based on offsets
+        uri = glue("https://www.carsales.com.au/cars/used/toyota/kluger/?offset={offset}")
     ) |> 
     mutate(
-        source = map(offset, ~{ 
-                print(glue("Reqesting {.x}"))
-                rs$navigate(glue("https://www.carsales.com.au/cars/used/toyota/kluger/?offset={.x}"))
-                rs$getPageSource() |> pluck(1) |> read_html()
+        # Naviate to each URI, read and parse the source
+        source = map(uri, ~{ 
+            rs$navigate(uri)
+            rs$getPageSource() |> pluck(1) |> read_html()
         } )
     )
 ```
 
+# Data Extractiion
+
+We've got our raw source, we now need to pull out the data we need from it. First a little helper function which finds an element based on its XPath, and pulls out the text of that element.
 
 ```{r}
-xpath_text <- function(html, xpath) { html_elements(html, xpath = xpath) |> html_text() }
+# XPath helper function, xpt short for xpath_text
+xpt <- function(html, xpath) {
+    html_elements(html, xpath = xpath) |> 
+    html_text()
+}
 ```
+
+Each 'card' has the details of a car for sale. The issue we ran into is that not all of them have the odometer reading, which is the critical variable we're going to use in our modelling later. To get around this, we use a some convoluted XPath. We find all the <li> tags that have the odometer reading, then go back up the tree to find the ancestor <div> tags that define the entire card. This ensures that all the cards we've pulled out have odometer readings. 
+
+From there, it's trivial to extract specific properties from the car sale.
 
 ```{r eval = FALSE}
 kluger_data <-
@@ -70,13 +91,13 @@ kluger_data <-
     mutate(
         # Get entires that have odometer
         cards = map(source, ~html_elements(.x, xpath = "//li[@data-type = 'Odometer']/ancestor::div[@class = 'card-body']")),
-        # Extract specific properties 
-        price = map(cards, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-price']")),
-        title = map(cards, ~xpath_text(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-title']")),
-        odometer = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Odometer']")),
-        body = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Body Style']")),
-        transmission = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Transmission']")),
-        engine = map(cards, ~xpath_text(.x, xpath = ".//li[@data-type = 'Engine']"))
+        # Extract specific values of each car sale
+        price = map(cards, ~xpt(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-price']")),
+        title = map(cards, ~xpt(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-title']")),
+        odometer = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Odometer']")),
+        body = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Body Style']")),
+        transmission = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Transmission']")),
+        engine = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Engine']"))
     ) |>
     select(-c(source, cards)) |>
     unnest(everything())
@@ -86,6 +107,13 @@ kluger_data <-
 kluger_data <- read_csv('data/carsales_kluger.csv')
 ```
 
+At this stage, the data is a bit raw: the odometer and price are character strings with dollar signs and commas, and other important pieces of info are in the title:
+
+```{r echo=FALSE, comment=""}
+str(kluger_data)
+```
+
+After a bit of cleaning, we've got the data we need:
 
 ```{r, comment=''}
 kluger_data <-
@@ -102,25 +130,31 @@ kluger_data |>
 str(kluger_data)
 ```
 
+# Taking a Quick Look
+
+Let's take a look at some of the key features of the data. First up, how does the market price for a Kluger change as the odometers (in Megametres) rack up. 
+
 ```{r echo = FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer_Mm, price)) +
+    geom_point(aes(odometer_Mm, price, colour = model), alpha = .5) +
     labs(
         title = "Market for Toyota Klugers",
         subtitle = "Odometer Versus Price",
         x = "Odometer (megametres)",
-        y = "Price ($)"
+        y = "Price ($)",
+        colour = "Model"
     ) + 
     scale_x_continuous(labels = scales::comma) +
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+The thing I notice is that looks suspiciously like there's some sort of negative exponential relationship between the the odometer and price. What if we take a look at the odometer versus the log of the price?
 
 ```{r echo = FALSE}
 kluger_data |>
     ggplot() +
-    geom_point(aes(odometer_Mm, log(price))) +
+    geom_point(aes(odometer_Mm, log(price), colour = model)) +
     labs(
         title = "Toyota Kluger Market",
         subtitle = "Odometer Versus Log(Price)",
@@ -131,6 +165,7 @@ kluger_data |>
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+This is great, we've now got a linear relationship. There's also still a 
 
 ```{r echo=FALSE}
 kluger_data |>
@@ -220,6 +255,32 @@ kluger_fit_animation <-
  
 animate(kluger_fit_animation, renderer = gifski_renderer())
 ```
+```{r echo=FALSE, commentl=""}
+kluger_summary <-
+    kluger_fit |> 
+    spread_draws(a,b,sigma) |> 
+    summarise_draws(mean, median, sd) 
+
+print(kluger_summary)
+
+line_intercept <- kluger_summary[[2]][1]
+line_slope <- kluger_summary[[2]][2]
+```
+
+```{r echo=FALSE}
+kluger_fit |>
+    spread_draws(a,b) |>
+    ggplot() +
+    geom_point(data = kluger_data, aes(odometer_Mm, price), alpha = .4) +
+    geom_function(fun = ~exp(line_intercept + line_slope * .x), linewidth = 1, colour = 'lightblue') +
+    labs(
+        title = "Toyota Kluger Market Model",
+        subtitle = "Odometer vs Price",
+        x = "Odometer (Megametres)",
+        y = "Log(Price) ($)",
+    )
+```
+
 ```{r echo=FALSE}
 kluger_fit |>
     recover_types() |>
@@ -235,21 +296,6 @@ kluger_fit |>
     labs(
         title = "Toyota Kluger Market Model",
         subtitle = "Odometer vs Log(Price) with Postierior Predictions", 
-        x = "Odometer (Megametres)",
-        y = "Log(Price) ($)"
-    )
-```
-
-
-```{r}
-kluger_fit |>
-    spread_draws(a,b) |>
-    ggplot() +
-    geom_point(data = kluger_data, aes(odometer_Mm, price)) +
-    geom_function(fun = ~exp(11.14 - 0.00626 * .x), linewidth = 2, colour = 'lightblue') +
-    labs(
-        title = "Toyota Kluger Market Model",
-        subtitle = "Odometer vs Price",
         x = "Odometer (Megametres)",
         y = "Log(Price) ($)"
     )
