@@ -19,6 +19,7 @@ library(tidybayes)
 library(bayesplot)
 library(gganimate)
 library(scales)
+library(ggdag)
 ```
 
 Last month my car - a Toyota Kluger - was run into while parked in front of my house. Luckily no one was injured and while annoying, the person had insurance (coincidently with the same company as my). The insurance company came back and determined that the car had been written off and I would be paid out the market value of the car. But what is the market value? How could I keep the insurance company honest and make sure I wasn't getting stiffed?
@@ -50,7 +51,7 @@ rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
 ```
 
-Each page of Klugers for sale is determined by an offset of 12. We generate the offsets (12, 24, 36 etc) and the URIs based on these offsets. We then navigate to each page, reading the source, and parsing into a structuered XML document     .
+Each page of Klugers for sale is determined by an offset of 12. We generate the offsets (12, 24, 36 etc) and the URIs based on these offsets. We then navigate to each page, reading the source, and parsing into a structuered XML document.
 
 ```{r eval = FALSE}
 kluger_source <-
@@ -69,9 +70,11 @@ kluger_source <-
     )
 ```
 
+With the raw source in our hands, we can move on to extracting the pieces of data we need from each of them.
+
 # Data Extractiion
 
-We've got our raw source, we now need to pull out the data we need from it. First a little helper function which finds an element based on its XPath, and pulls out the text of that element.
+First up, we define a small helper function which finds an element based on its XPath, and pulls out the text of that element.
 
 ```{r}
 # XPath helper function, xpt short for xpath_text
@@ -99,21 +102,21 @@ kluger_data <-
         transmission = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Transmission']")),
         engine = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Engine']"))
     ) |>
-    select(-c(source, cards)) |>
+    select(-c(source, cards, offset)) |>
     unnest(everything())
 ```
 
 ```{r include=FALSE}
-kluger_data <- read_csv('data/carsales_kluger.csv')
+kluger_data <- read_csv('data/carsales_kluger.csv') |> select(-offset)
 ```
 
 At this stage, the data is a bit raw: the odometer and price are character strings with dollar signs and commas, and other important pieces of info are in the title:
 
 ```{r echo=FALSE, comment=""}
-str(kluger_data)
+print(kluger_data)
 ```
 
-After a bit of cleaning, we've got the data we need:
+There's a small amount of housekeeping to be done. The price and odometer are in a textual format, so these are converted to integers. we also create a new *megametre* variable (i.e. thousands of kilometers). The year, model, and drivetrain are pulled out of the title of the advert using regex.
 
 ```{r, comment=''}
 kluger_data <-
@@ -127,12 +130,12 @@ kluger_data |>
         model = str_extract(title, "Toyota Kluger ([-\\w]+)", group = TRUE)
     )
 
-str(kluger_data)
+print(kluger_data)
 ```
 
 # Taking a Quick Look
 
-Let's take a look at some of the key features of the data. First up, how does the market price for a Kluger change as the odometers (in Megametres) rack up. 
+Let's visualise key features of the data. First up we'll, how does the market price for a Kluger change as the odometers (in megametres):
 
 ```{r echo = FALSE}
 kluger_data |>
@@ -165,7 +168,9 @@ kluger_data |>
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-This is great, we've now got a linear relationship. There's also still a 
+This is great; with the log transform we've now got a linear relationship between the number odometer of the car and the price. We're going to end up trying to fit a line to this data, and the log transform provides a nice interpretation for the slope of this line. You might recall that in general when you fit a line to x and y, the slope (\\(beta\\)) of that line is "the change in the y variable given a change of one unit of the x variable". When you fit a line to to x and log(y) (called log-linear), for small \\(\beta\\), \\(e^\beta\\) is the percentage change in y for a one unit change of x. 
+
+Here's the same view, but we split it out by model:
 
 ```{r echo=FALSE}
 kluger_data |>
@@ -184,6 +189,47 @@ kluger_data |>
 ```
 
 # Modelling
+
+```{r echo=FALSE}
+dag_coords <- tribble(
+    ~name,    ~x,    ~y, 
+    "price",   0,     0,
+    "odom.",   1,    -1,
+    "year",    1,     0,
+    "model",   1,     1,
+    "drvtrn",  1,     2,
+    "cond.",   0,     2,
+)
+    
+generative_dag<- 
+    dagify(
+        price ~ odom. + year + model + cond. + drvtrn,
+        drvtrn ~ model,
+        odom. ~ year,
+        coords = dag_coords
+    ) |> 
+    tidy_dagitty() |>
+    mutate(
+        type = case_when(
+            name == 'price' ~ "Outcome",
+            name == 'cond.' ~ "Unobserved",
+            .default = "Predictor"
+        )
+    )
+
+generative_dag |> 
+    ggdag() +
+    geom_dag_point(aes(colour = type)) +
+    geom_dag_text() +
+    theme_dag_blank() +
+    labs(
+        title = "Toyota Kluger Pricing Generative Model",
+        subtitle = "Directed Acyclic Graph",
+        colour = "Variable Type"
+    )
+```
+With our data in hand, what we want to do is create a model that helps us predict the sell price of a Toyota Kluger. In the interests of starting with a very simple model, we're only going use the odometer reading as a single predictor variable. This means there's likely a log of 
+
 ```{r include=FALSE}
 model_file_path <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
 ```
@@ -201,7 +247,9 @@ kluger_fit <- kluger_model$sample(
     refresh = 500,
 )
 ```
-    
+
+# Assessing the Model
+
 ```{r echo = FALSE}
 kluger_fit |> 
     gather_draws(a, b) |>
@@ -251,35 +299,14 @@ kluger_fit_animation <-
         subtitle = "Odometer vs Log(Price) with MCMC Coefficients (Draw {frame_along})",
         x = "Odometer (Megametres)",
         y = "Log(Price) ($)"
-    )
+    ) +
+    scale_x_continuous(labels = scales::comma) +
+    scale_y_continuous(labels = scales::comma) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
  
 animate(kluger_fit_animation, renderer = gifski_renderer())
 ```
-```{r echo=FALSE, commentl=""}
-kluger_summary <-
-    kluger_fit |> 
-    spread_draws(a,b,sigma) |> 
-    summarise_draws(mean, median, sd) 
 
-print(kluger_summary)
-
-line_intercept <- kluger_summary[[2]][1]
-line_slope <- kluger_summary[[2]][2]
-```
-
-```{r echo=FALSE}
-kluger_fit |>
-    spread_draws(a,b) |>
-    ggplot() +
-    geom_point(data = kluger_data, aes(odometer_Mm, price), alpha = .4) +
-    geom_function(fun = ~exp(line_intercept + line_slope * .x), linewidth = 1, colour = 'lightblue') +
-    labs(
-        title = "Toyota Kluger Market Model",
-        subtitle = "Odometer vs Price",
-        x = "Odometer (Megametres)",
-        y = "Log(Price) ($)",
-    )
-```
 
 ```{r echo=FALSE}
 kluger_fit |>
@@ -300,6 +327,60 @@ kluger_fit |>
         y = "Log(Price) ($)"
     )
 ```
+
+# Model Outcomes
+
+```{r echo=FALSE, commentl=""}
+kluger_summary <-
+    kluger_fit |> 
+    spread_draws(a,b,sigma) |> 
+    summarise_draws(mean, median, sd) 
+
+print(kluger_summary)
+
+line_intercept <- kluger_summary[[2]][1]
+line_slope <- kluger_summary[[2]][2]
+
+```
+
+```{r}
+kluger_quantile <-
+    kluger_fit |>
+    spread_draws(price_pred) |>
+    reframe(
+        interval = c(.11, .89),
+        value = quantile(price_pred, interval)
+    ) |>
+    spread(interval, value)
+
+kluger_fit |>
+    recover_types() |>
+    spread_draws(price_pred) |>
+    ggplot() +
+    geom_histogram(aes(price_pred), bins = 200) +
+    geom_vline(xintercept = kluger_quantile[['0.11']], color = 'blue', linewidth = 1, linetype = 'dotted') +
+    geom_vline(xintercept = kluger_quantile[['0.89']], color = 'blue', linewidth = 1, linetype = 'dotted') +
+    scale_x_continuous(labels = scales::comma) +
+    scale_y_continuous(labels = scales::comma) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+
+
+```{r echo=FALSE}
+kluger_fit |>
+    spread_draws(a,b) |>
+    ggplot() +
+    geom_point(data = kluger_data, aes(odometer_Mm, price), alpha = .4) +
+    geom_function(fun = ~exp(line_intercept + line_slope * .x), linewidth = 1, colour = 'lightblue') +
+    labs(
+        title = "Toyota Kluger Market Model",
+        subtitle = "Odometer vs Price",
+        x = "Odometer (Megametres)",
+        y = "Price ($)",
+    )
+```
+
 
 
 ```{r, comment=''}

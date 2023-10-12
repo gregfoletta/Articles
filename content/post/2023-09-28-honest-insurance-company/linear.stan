@@ -13,4 +13,6 @@ model {
 }    
 generated quantities {
     array[n] real y_s = normal_rng(a + b * odometer_Mm, sigma);
+    
+    real price_pred = exp( normal_rng(a + b * 60, sigma) );
 }

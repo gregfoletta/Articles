@@ -30,7 +30,7 @@ rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
 ```
 
-Each page of Klugers for sale is determined by an offset of 12. We generate the offsets (12, 24, 36 etc) and the URIs based on these offsets. We then navigate to each page, reading the source, and parsing into a structuered XML document     .
+Each page of Klugers for sale is determined by an offset of 12. We generate the offsets (12, 24, 36 etc) and the URIs based on these offsets. We then navigate to each page, reading the source, and parsing into a structuered XML document.
 
 
 ```r
@@ -50,9 +50,11 @@ kluger_source <-
     )
 ```
 
+With the raw source in our hands, we can move on to extracting the pieces of data we need from each of them.
+
 # Data Extractiion
 
-We've got our raw source, we now need to pull out the data we need from it. First a little helper function which finds an element based on its XPath, and pulls out the text of that element.
+First up, we define a small helper function which finds an element based on its XPath, and pulls out the text of that element.
 
 
 ```r
@@ -82,7 +84,7 @@ kluger_data <-
         transmission = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Transmission']")),
         engine = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Engine']"))
     ) |>
-    select(-c(source, cards)) |>
+    select(-c(source, cards, offset)) |>
     unnest(everything())
 ```
 
@@ -92,28 +94,23 @@ At this stage, the data is a bit raw: the odometer and price are character strin
 
 
 ```
-spc_tbl_ [1,013 × 7] (S3: spec_tbl_df/tbl_df/tbl/data.frame)
- $ offset      : num [1:1013] 0 0 0 0 0 0 0 0 0 0 ...
- $ price       : chr [1:1013] "$59,980*" "$53,990*" "$37,990" "$18,500*" ...
- $ title       : chr [1:1013] "2021 Toyota Kluger GX Auto eFour" "2021 Toyota Kluger GX Auto eFour" "2019 Toyota Kluger GX Auto 2WD" "2011 Toyota Kluger Grande Auto 2WD MY11" ...
- $ odometer    : chr [1:1013] "28,071 km" "72,631 km" "82,713 km" "203,500 km" ...
- $ body        : chr [1:1013] "SUV" "SUV" "SUV" "SUV" ...
- $ transmission: chr [1:1013] "Automatic" "Automatic" "Automatic" "Automatic" ...
- $ engine      : chr [1:1013] "2.5i/184kW Hybrid" "2.5i/184kW Hybrid" "6cyl 3.5L Petrol" "6cyl 3.5L Petrol" ...
- - attr(*, "spec")=
-  .. cols(
-  ..   offset = col_double(),
-  ..   price = col_character(),
-  ..   title = col_character(),
-  ..   odometer = col_character(),
-  ..   body = col_character(),
-  ..   transmission = col_character(),
-  ..   engine = col_character()
-  .. )
- - attr(*, "problems")=<externalptr> 
+# A tibble: 1,013 × 6
+   price    title                             odometer body  transmission engine
+   <chr>    <chr>                             <chr>    <chr> <chr>        <chr> 
+ 1 $59,980* 2021 Toyota Kluger GX Auto eFour  28,071 … SUV   Automatic    2.5i/…
+ 2 $53,990* 2021 Toyota Kluger GX Auto eFour  72,631 … SUV   Automatic    2.5i/…
+ 3 $37,990  2019 Toyota Kluger GX Auto 2WD    82,713 … SUV   Automatic    6cyl …
+ 4 $18,500* 2011 Toyota Kluger Grande Auto 2… 203,500… SUV   Automatic    6cyl …
+ 5 $66,990* 2021 Toyota Kluger GXL Auto 2WD   196 km   SUV   Automatic    6cyl …
+ 6 $55,990* 2022 Toyota Kluger GX Auto 2WD    6,602 km SUV   Automatic    4cyl …
+ 7 $27,000* 2015 Toyota Kluger GX Auto 2WD    134,000… SUV   Automatic    6cyl …
+ 8 $67,961  2021 Toyota Kluger Grande Auto 2… 49,762 … SUV   Automatic    6cyl …
+ 9 $52,350* 2022 Toyota Kluger GX Auto 2WD    30,709 … SUV   Automatic    6cyl …
+10 $73,250* 2023 Toyota Kluger GXL Auto eFour 2,608 km SUV   Automatic    2.5i/…
+# ℹ 1,003 more rows
 ```
 
-After a bit of cleaning, we've got the data we need:
+There's a small amount of housekeeping to be done. The price and odometer are in a textual format, so these are converted to integers. we also create a new *megametre* variable (i.e. thousands of kilometers). The year, model, and drivetrain are pulled out of the title of the advert using regex.
 
 
 ```r
@@ -128,37 +125,46 @@ kluger_data |>
         model = str_extract(title, "Toyota Kluger ([-\\w]+)", group = TRUE)
     )
 
-str(kluger_data)
+print(kluger_data)
 ```
 
 ```
-tibble [1,013 × 11] (S3: tbl_df/tbl/data.frame)
- $ offset      : num [1:1013] 0 0 0 0 0 0 0 0 0 0 ...
- $ price       : num [1:1013] 59980 53990 37990 18500 66990 ...
- $ title       : chr [1:1013] "2021 Toyota Kluger GX Auto eFour" "2021 Toyota Kluger GX Auto eFour" "2019 Toyota Kluger GX Auto 2WD" "2011 Toyota Kluger Grande Auto 2WD MY11" ...
- $ odometer    : num [1:1013] 28071 72631 82713 203500 196 ...
- $ body        : chr [1:1013] "SUV" "SUV" "SUV" "SUV" ...
- $ transmission: chr [1:1013] "Automatic" "Automatic" "Automatic" "Automatic" ...
- $ engine      : chr [1:1013] "2.5i/184kW Hybrid" "2.5i/184kW Hybrid" "6cyl 3.5L Petrol" "6cyl 3.5L Petrol" ...
- $ odometer_Mm : num [1:1013] 28.071 72.631 82.713 203.5 0.196 ...
- $ year        : int [1:1013] 2021 2021 2019 2011 2021 2022 2015 2021 2022 2023 ...
- $ drivetrain  : chr [1:1013] "eFour" "eFour" "2WD" "MY11" ...
- $ model       : chr [1:1013] "GX" "GX" "GX" "Grande" ...
+# A tibble: 1,013 × 10
+   price title   odometer body  transmission engine odometer_Mm  year drivetrain
+   <dbl> <chr>      <dbl> <chr> <chr>        <chr>        <dbl> <int> <chr>     
+ 1 59980 2021 T…    28071 SUV   Automatic    2.5i/…      28.1    2021 eFour     
+ 2 53990 2021 T…    72631 SUV   Automatic    2.5i/…      72.6    2021 eFour     
+ 3 37990 2019 T…    82713 SUV   Automatic    6cyl …      82.7    2019 2WD       
+ 4 18500 2011 T…   203500 SUV   Automatic    6cyl …     204.     2011 MY11      
+ 5 66990 2021 T…      196 SUV   Automatic    6cyl …       0.196  2021 2WD       
+ 6 55990 2022 T…     6602 SUV   Automatic    4cyl …       6.60   2022 2WD       
+ 7 27000 2015 T…   134000 SUV   Automatic    6cyl …     134      2015 2WD       
+ 8 67961 2021 T…    49762 SUV   Automatic    6cyl …      49.8    2021 2WD       
+ 9 52350 2022 T…    30709 SUV   Automatic    6cyl …      30.7    2022 2WD       
+10 73250 2023 T…     2608 SUV   Automatic    2.5i/…       2.61   2023 eFour     
+# ℹ 1,003 more rows
+# ℹ 1 more variable: model <chr>
 ```
 
 # Taking a Quick Look
 
-Let's take a look at some of the key features of the data. First up, how does the market price for a Kluger change as the odometers (in Megametres) rack up. 
+Let's visualise key features of the data. First up we'll, how does the market price for a Kluger change as the odometers (in megametres):
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-11-1.png" width="672" />
 The thing I notice is that looks suspiciously like there's some sort of negative exponential relationship between the the odometer and price. What if we take a look at the odometer versus the log of the price?
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-12-1.png" width="672" />
-This is great, we've now got a linear relationship. There's also still a 
+This is great; with the log transform we've now got a linear relationship between the number odometer of the car and the price. We're going to end up trying to fit a line to this data, and the log transform provides a nice interpretation for the slope of this line. You might recall that in general when you fit a line to x and y, the slope (\\(beta\\)) of that line is "the change in the y variable given a change of one unit of the x variable". When you fit a line to to x and log(y) (called log-linear), for small \\(\beta\\), \\(e^\beta\\) is the percentage change in y for a one unit change of x. 
+
+Here's the same view, but we split it out by model:
 
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-13-1.png" width="672" />
 
 # Modelling
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-14-1.png" width="672" />
+With our data in hand, what we want to do is create a model that helps us predict the sell price of a Toyota Kluger. In the interests of starting with a very simple model, we're only going use the odometer reading as a single predictor variable. This means there's likely a log of 
+
 
 
 
@@ -183,6 +189,8 @@ model {
 }    
 generated quantities {
     array[n] real y_s = normal_rng(a + b * odometer_Mm, sigma);
+    
+    real price_pred = exp( normal_rng(a + b * 60, sigma) );
 }
 ```
 
@@ -222,35 +230,69 @@ Chain 1 Iteration: 1500 / 2000 [ 75%]  (Sampling)
 Chain 2 Iteration: 2000 / 2000 [100%]  (Sampling) 
 Chain 2 finished in 3.7 seconds.
 Chain 3 Iteration: 2000 / 2000 [100%]  (Sampling) 
-Chain 3 finished in 3.8 seconds.
+Chain 3 finished in 4.1 seconds.
 Chain 4 Iteration: 2000 / 2000 [100%]  (Sampling) 
-Chain 4 finished in 4.4 seconds.
+Chain 4 finished in 4.6 seconds.
 Chain 1 Iteration: 2000 / 2000 [100%]  (Sampling) 
-Chain 1 finished in 4.9 seconds.
+Chain 1 finished in 5.1 seconds.
 
 All 4 chains finished successfully.
-Mean chain execution time: 4.2 seconds.
-Total execution time: 5.0 seconds.
+Mean chain execution time: 4.4 seconds.
+Total execution time: 5.3 seconds.
 ```
-    
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" />
+
+# Assessing the Model
+
 <img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-18-1.png" width="672" />
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-19-1.png" width="672" />
 
 
-![](index_files/figure-html/unnamed-chunk-19-1.gif)<!-- -->
+![](index_files/figure-html/unnamed-chunk-20-1.gif)<!-- -->
+
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-21-1.png" width="672" />
+
+# Model Outcomes
+
 
 ```
 ## # A tibble: 3 × 4
 ##   variable     mean   median        sd
 ##   <chr>       <num>    <num>     <num>
-## 1 a        11.1     11.1     0.0108   
-## 2 b        -0.00626 -0.00626 0.0000892
-## 3 sigma     0.205    0.205   0.00451
+## 1 a        11.1     11.1     0.0107   
+## 2 b        -0.00626 -0.00626 0.0000888
+## 3 sigma     0.205    0.205   0.00470
 ```
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-21-1.png" width="672" />
 
-<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-22-1.png" width="672" />
+```r
+kluger_quantile <-
+    kluger_fit |>
+    spread_draws(price_pred) |>
+    reframe(
+        interval = c(.11, .89),
+        value = quantile(price_pred, interval)
+    ) |>
+    spread(interval, value)
+
+kluger_fit |>
+    recover_types() |>
+    spread_draws(price_pred) |>
+    ggplot() +
+    geom_histogram(aes(price_pred), bins = 200) +
+    geom_vline(xintercept = kluger_quantile[['0.11']], color = 'blue', linewidth = 1, linetype = 'dotted') +
+    geom_vline(xintercept = kluger_quantile[['0.89']], color = 'blue', linewidth = 1, linetype = 'dotted') +
+    scale_x_continuous(labels = scales::comma) +
+    scale_y_continuous(labels = scales::comma) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-23-1.png" width="672" />
+
+
+
+<img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-24-1.png" width="672" />
+
 
 
 
@@ -259,20 +301,20 @@ kluger_fit$summary()
 ```
 
 ```
-# A tibble: 1,017 × 10
+# A tibble: 1,018 × 10
    variable       mean   median      sd     mad       q5      q95  rhat ess_bulk
    <chr>         <num>    <num>   <num>   <num>    <num>    <num> <num>    <num>
- 1 lp__     1097.       1.10e+3 1.15e+0 9.79e-1  1.09e+3  1.10e+3 1.00     1239.
- 2 a          11.1      1.11e+1 1.08e-2 1.08e-2  1.11e+1  1.12e+1 1.01     1570.
- 3 b          -0.00626 -6.26e-3 8.92e-5 9.12e-5 -6.40e-3 -6.11e-3 1.00     2056.
- 4 sigma       0.205    2.05e-1 4.51e-3 4.51e-3  1.98e-1  2.13e-1 1.00     1646.
- 5 y_s[1]     11.0      1.10e+1 2.09e-1 2.10e-1  1.06e+1  1.13e+1 1.00     3861.
- 6 y_s[2]     10.7      1.07e+1 2.09e-1 2.08e-1  1.03e+1  1.10e+1 1.00     3876.
- 7 y_s[3]     10.6      1.06e+1 2.07e-1 1.99e-1  1.03e+1  1.10e+1 0.999    4127.
- 8 y_s[4]      9.86     9.86e+0 2.03e-1 2.05e-1  9.53e+0  1.02e+1 0.999    3758.
- 9 y_s[5]     11.1      1.11e+1 2.06e-1 2.06e-1  1.08e+1  1.15e+1 1.00     3806.
-10 y_s[6]     11.1      1.11e+1 2.07e-1 2.09e-1  1.08e+1  1.14e+1 1.00     4024.
-# ℹ 1,007 more rows
+ 1 lp__     1097.       1.10e+3 1.20e+0 1.01e+0  1.09e+3  1.10e+3  1.00    1186.
+ 2 a          11.1      1.11e+1 1.07e-2 1.08e-2  1.11e+1  1.12e+1  1.00    1564.
+ 3 b          -0.00626 -6.26e-3 8.88e-5 8.73e-5 -6.41e-3 -6.12e-3  1.00    2056.
+ 4 sigma       0.205    2.05e-1 4.70e-3 4.84e-3  1.98e-1  2.13e-1  1.01    1548.
+ 5 y_s[1]     11.0      1.10e+1 2.03e-1 1.99e-1  1.06e+1  1.13e+1  1.00    3962.
+ 6 y_s[2]     10.7      1.07e+1 2.06e-1 2.03e-1  1.03e+1  1.10e+1  1.00    3913.
+ 7 y_s[3]     10.6      1.06e+1 2.04e-1 2.08e-1  1.03e+1  1.10e+1  1.00    4068.
+ 8 y_s[4]      9.86     9.86e+0 2.10e-1 2.15e-1  9.52e+0  1.02e+1  1.00    3967.
+ 9 y_s[5]     11.1      1.11e+1 2.06e-1 2.04e-1  1.08e+1  1.15e+1  1.00    3480.
+10 y_s[6]     11.1      1.11e+1 2.06e-1 2.05e-1  1.08e+1  1.14e+1  1.00    3747.
+# ℹ 1,008 more rows
 # ℹ 1 more variable: ess_tail <num>
 ```
 
