@@ -20,6 +20,7 @@ library(bayesplot)
 library(gganimate)
 library(scales)
 library(ggdag)
+library(gt)
 ```
 
 Last month my car - a Toyota Kluger - was run into while parked in front of my house. Luckily no one was injured and while annoying, the person had insurance (coincidently with the same company as my). The insurance company came back and determined that the car had been written off and I would be paid out the market value of the car. But what is the market value? How could I keep the insurance company honest and make sure I wasn't getting stiffed?
@@ -113,7 +114,9 @@ kluger_data <- read_csv('data/carsales_kluger.csv') |> select(-offset)
 At this stage, the data is a bit raw: the odometer and price are character strings with dollar signs and commas, and other important pieces of info are in the title:
 
 ```{r echo=FALSE, comment=""}
-print(kluger_data)
+slice_sample(kluger_data, n = 200) |>
+    gt() |> 
+    opt_interactive()
 ```
 
 There's a small amount of housekeeping to be done. The price and odometer are in a textual format, so these are converted to integers. we also create a new *megametre* variable (i.e. thousands of kilometers). The year, model, and drivetrain are pulled out of the title of the advert using regex.
@@ -129,8 +132,12 @@ kluger_data |>
         drivetrain = str_extract(title, "\\w+$"),
         model = str_extract(title, "Toyota Kluger ([-\\w]+)", group = TRUE)
     )
+```
 
-print(kluger_data)
+```{r echo=FALSE}
+slice_sample(kluger_data, n = 200) |>
+    gt() |> 
+    opt_interactive()
 ```
 
 # Taking a Quick Look
@@ -336,7 +343,7 @@ kluger_summary <-
     spread_draws(a,b,sigma) |> 
     summarise_draws(mean, median, sd) 
 
-print(kluger_summary)
+kluger_summary |> gt()
 
 line_intercept <- kluger_summary[[2]][1]
 line_slope <- kluger_summary[[2]][2]
@@ -360,9 +367,15 @@ kluger_fit |>
     geom_histogram(aes(price_pred), bins = 200) +
     geom_vline(xintercept = kluger_quantile[['0.11']], color = 'blue', linewidth = 1, linetype = 'dotted') +
     geom_vline(xintercept = kluger_quantile[['0.89']], color = 'blue', linewidth = 1, linetype = 'dotted') +
-    scale_x_continuous(labels = scales::comma) +
+    scale_x_continuous(labels = scales::dollar) +
     scale_y_continuous(labels = scales::comma) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+    labs(
+        x = "Count",
+        y = "Predicted Price ($)",
+        title = "Toyota Kluger Price Prediction",
+        subtitle = "Distribution of Price Prediction at 60,000km"
+    )
 ```
 
 
