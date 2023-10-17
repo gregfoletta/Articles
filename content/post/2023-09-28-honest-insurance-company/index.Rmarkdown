@@ -21,6 +21,7 @@ library(gganimate)
 library(scales)
 library(ggdag)
 library(gt)
+library(plotly)
 ```
 
 Last month my car - a Toyota Kluger - was run into while parked in front of my house. Luckily no one was injured and while annoying, the person had insurance (coincidently with the same company as my). The insurance company came back and determined that the car had been written off and I would be paid out the market value of the car. But what is the market value? How could I keep the insurance company honest and make sure I wasn't getting stiffed?
@@ -175,7 +176,11 @@ kluger_data |>
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-This is great; with the log transform we've now got a linear relationship between the number odometer of the car and the price. We're going to end up trying to fit a line to this data, and the log transform provides a nice interpretation for the slope of this line. You might recall that in general when you fit a line to x and y, the slope (\\(beta\\)) of that line is "the change in the y variable given a change of one unit of the x variable". When you fit a line to to x and log(y) (called log-linear), for small \\(\beta\\), \\(e^\beta\\) is the percentage change in y for a one unit change of x. 
+There's some good news, and some bad news here. With the log transform we've now got a linear relationship between the number odometer of the car and the price. This is going to allow us to fit a nice, simple linear model to the data.
+
+The bad news is that the data varies significantly (heteroskedacticity) across the odometer ranges. This won't affect our linear model, but will likely affect the prediction capability of our model. We'll persevere nonetheless.
+
+The log transform provides a nice interpretation for the slope of this line. Recall that in general when you fit a line to x and y, the slope (\\(beta\\)) of that line is "the change in the y variable given a change of one unit of the x variable". When you fit a line to to x and log(y) (called log-linear), for small \\(\beta\\), \\(e^\beta\\) is the percentage change in y for a one unit change of x. 
 
 Here's the same view, but we split it out by model:
 
@@ -197,6 +202,10 @@ kluger_data |>
 
 # Modelling
 
+Let's start by thinking about the generative model of the price. Our observed variables odometer, year, model, and drivetrain are likely going to have an affect on price. There are some unobserved variables, such as the condition of the car its popularity that would also have an affect. There's some [confounds](https://en.wikipedia.org/wiki/Confounding) that may need to be dealt with as well: year directly affects price, but also affects through the odometer (older cards are more likely to have more kilometres). Model affects price, but also affects through the drivetrain (certain models have certain drivetrains).
+
+The best way to visualise this is using the directed acyclic graph (DAG):
+
 ```{r echo=FALSE}
 dag_coords <- tribble(
     ~name,    ~x,    ~y, 
@@ -205,22 +214,23 @@ dag_coords <- tribble(
     "year",    1,     0,
     "model",   1,     1,
     "drvtrn",  1,     2,
-    "cond.",   0,     2,
+    "cond.",   -1,    1,
+    "pop.,",   -1,    -1 
 )
     
-generative_dag<- 
+generative_dag <- 
     dagify(
-        price ~ odom. + year + model + cond. + drvtrn,
+        price ~ odom. + year + model + cond. + drvtrn + pop.,
         drvtrn ~ model,
-        odom. ~ year,
-        coords = dag_coords
+        odom. ~ year
+        #coords = dag_coords
     ) |> 
     tidy_dagitty() |>
     mutate(
         type = case_when(
             name == 'price' ~ "Outcome",
-            name == 'cond.' ~ "Unobserved",
-            .default = "Predictor"
+            name %in% c('cond.', 'pop.') ~ "Unobserved",
+            .default = "Observed"
         )
     )
 
@@ -228,23 +238,47 @@ generative_dag |>
     ggdag() +
     geom_dag_point(aes(colour = type)) +
     geom_dag_text() +
-    theme_dag_blank() +
+    theme_dag_grey() +
     labs(
         title = "Toyota Kluger Pricing Generative Model",
         subtitle = "Directed Acyclic Graph",
         colour = "Variable Type"
     )
 ```
-With our data in hand, what we want to do is create a model that helps us predict the sell price of a Toyota Kluger. In the interests of starting with a very simple model, we're only going use the odometer reading as a single predictor variable. This means there's likely a log of 
+While I do have these variables available to me, I'd like to start with the most simple modelcan: log of the price predicted by the odometer (in megametres). In doing this I'm leaving a lot of variability on the table, so the model's ability to predict is likely going to be hampered. But better to start simple a build up (also leaves the door open for follow-up articles).
+
+At this point I could rip our a standard linear regression, get the coefficients and *bang* we're done. But where's the sport in that? Instead, I'll use this as an opportunity to model this in a Bayesian manner.
+
+# Bayesian Modeling
+
+I'm going to be using [Stan](https://mc-stan.org/) to perform the statistical modelling, executing it from R using the [cmdstanr](https://mc-stan.org/cmdstanr/) package. Here's the program I've written:
+
 
 ```{r include=FALSE}
 model_file_path <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
 ```
 
-```{r comment=''}
+```{r echo=FALSE, comment=''}
 kluger_model <- cmdstan_model(model_file_path)
 kluger_model$print()
 ```
+It should be relatively easy to read: the data is our observed odometer (in megametres) and price, the parameters we're looking to find are *a* (for alpha, the intercept), *b* (for beta, the slope), and *sigma* (our variance). I'm pretty sure the slope is going
+
+```{r eval=FALSE, include=FALSE}
+tibble(
+    a = rnorm( 100, log(60000), 1),
+    b = runif( 100, log(.98), log(1) ) 
+    ) |>
+    ggplot() +
+    geom_abline(aes(intercept = a, slope = b)) +
+    geom_point(data = kluger_data, aes(x = odometer_Mm, y = log(price)))
+```
+
+
+The generated values helps us with prediction. For each of our *n* ovbservations the model is run with the parameters drawn out of the posterior distribution and the results stored in *y_s*. This allows us to compare what our model thinks is are resonable outcomes and help us determine how well the model performs. The *price_pred* is the prediction at 60,000km, which was the reading on the odometer of my car that was written off. 
+
+Let's run the model with the data:
+
 ```{r echo=TRUE, comment=''}
 kluger_fit <- kluger_model$sample(
     data = compose_data(kluger_data),
@@ -257,9 +291,11 @@ kluger_fit <- kluger_model$sample(
 
 # Assessing the Model
 
+We want to take a look at the resulting parameters and make sure they're reasonable. First up is a histogram of the posterior distributions of each of the parameters. 
+
 ```{r echo = FALSE}
 kluger_fit |> 
-    gather_draws(a, b) |>
+    gather_draws(a, b, sigma) |>
     recover_types() |> 
     ggplot() +
     geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
@@ -272,6 +308,7 @@ kluger_fit |>
         fill = "Chain"
     )
 ```
+This looks good, each looks Gaussian in shape, and each of the chains has a similar view of the posterior distribution. A related check is the *trace plot*. We want these to look like "fuzzy caterpillars", shows that each chain is exploring the distribution in a similar way, and isn't wandering off on its own for too long.
 ```{r echo=FALSE}
 kluger_fit |> 
     gather_draws(a,b, sigma) |>
@@ -286,34 +323,46 @@ kluger_fit |>
         colour = "Chain"
     )
 ```
-
+So we're reasonably confident that all of the chains have converged, let's take a look at how the distribution of parameters looks over our observations. We're not dealing with point estimates as we would with a linear regression. Instead we've got a distribution of plausible intercepts and slopes. One way to visualise this is to plot each line from the distribution, colouring it with its distance from the mean.
 
 ```{r echo = FALSE}
 #fit_mean_a <- kluger_fit$summary()$mean[2]
 #fit_mean_b <- kluger_fit$summary()$mean[3]
+kluger_param_quantile <-
+kluger_fit |> 
+    spread_draws(b) |>
+    reframe(
+        interval = c(.055, .945),
+        value = quantile(b, interval)
+    ) |>
+    mutate(exp_value_pct = (1 - exp(value)) * 100)
 
 kluger_fit_animation <-
     kluger_fit |>
     spread_draws(a, b) |>
-    recover_types() |> 
+    recover_types() |>
+    mutate(abs_mean_distance = abs(b - mean(b))) |> 
     ggplot() +
     geom_point(data = kluger_data, aes(odometer_Mm, log(price))) +
-    geom_abline(aes(intercept = a, slope = b, group = .draw), colour = 'lightblue') +
+    geom_abline(aes(intercept = a, slope = b, group = .draw, colour = abs_mean_distance), linewidth = .1) +
     transition_reveal(.draw) +
     guides(colour = guide_legend(override.aes = list(alpha = 1))) +
     labs(
         title = "Toyota Kluger Market Model",
         subtitle = "Odometer vs Log(Price) with MCMC Coefficients (Draw {frame_along})",
         x = "Odometer (Megametres)",
-        y = "Log(Price) ($)"
+        y = "Log(Price) ($)",
+        colour = "Absolute Distance from Mean"
     ) +
     scale_x_continuous(labels = scales::comma) +
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
  
-animate(kluger_fit_animation, renderer = gifski_renderer())
+animate(kluger_fit_animation, width = 1344, height = 960)
 ```
+But plotting each of the draws from the posterior distribution, what we end up getting is a view of the confidence interval of the intercept and slope parameters. The good news here is that the distribution is not very wide (which we saw in the histograms above). Looking at the 89% interval of the slope parameter we see it's between `r kluger_param_quantile[['value']][[1]]` and `r kluger_param_quantile[['value']][[2]]`. Exponentiating this to get percent change gives us `r exp(kluger_param_quantile[['value']][[1]])` and `r exp(kluger_param_quantile[['value']][[1]])`.
 
+The bad news is news we really already knew - the variance around our line is very large and it changes as the odometer value changes. A check for this is posterior prediction, which uses the *generated values* section from our Stan program. That section generated log(price) values based on the linear model, using parameters pulled from the posterior distribution. What we want to see is, using random data, how close to the real observations is our generated model?
 
 ```{r echo=FALSE}
 kluger_fit |>
@@ -334,28 +383,16 @@ kluger_fit |>
         y = "Log(Price) ($)"
     )
 ```
+So while our parmaeters for the linear model look good, the linear model is not great. At odometer values close to zero it's too conservative, with the all the prices falling well inside our prediced bands in light blue. At the other end of the scale the model is too conservative, with many of the real overservations falling outside of our predictive bands.
 
-# Model Outcomes
-
-```{r echo=FALSE, commentl=""}
-kluger_summary <-
-    kluger_fit |> 
-    spread_draws(a,b,sigma) |> 
-    summarise_draws(mean, median, sd) 
-
-kluger_summary |> gt()
-
-line_intercept <- kluger_summary[[2]][1]
-line_slope <- kluger_summary[[2]][2]
-
-```
+Despite this, let's see where we ended up with the question at hand: "what is the market sell price for a Toyota Kluger with 60,000kms on the odometer?" We use the results of the *generated values* section, with parameters drawn from the posterior distribution but this time fixing the odometer reading at 60 megametres. Here's the resulting distribution of prices with an 89% confidence interval (5.5% and 94.5% quaniles):
 
 ```{r}
 kluger_quantile <-
     kluger_fit |>
     spread_draws(price_pred) |>
     reframe(
-        interval = c(.11, .89),
+        interval = c(.055, .945),
         value = quantile(price_pred, interval)
     ) |>
     spread(interval, value)
@@ -365,8 +402,8 @@ kluger_fit |>
     spread_draws(price_pred) |>
     ggplot() +
     geom_histogram(aes(price_pred), bins = 200) +
-    geom_vline(xintercept = kluger_quantile[['0.11']], color = 'blue', linewidth = 1, linetype = 'dotted') +
-    geom_vline(xintercept = kluger_quantile[['0.89']], color = 'blue', linewidth = 1, linetype = 'dotted') +
+    geom_vline(xintercept = kluger_quantile[['0.055']], color = 'blue', linewidth = 1, linetype = 'dotted') +
+    geom_vline(xintercept = kluger_quantile[['0.945']], color = 'blue', linewidth = 1, linetype = 'dotted') +
     scale_x_continuous(labels = scales::dollar) +
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
@@ -374,31 +411,10 @@ kluger_fit |>
         x = "Count",
         y = "Predicted Price ($)",
         title = "Toyota Kluger Price Prediction",
-        subtitle = "Distribution of Price Prediction at 60,000km"
+        subtitle = "Distribution of Price Prediction at 60,000km with 89% Quantiles"
     )
 ```
-
-
-
-```{r echo=FALSE}
-kluger_fit |>
-    spread_draws(a,b) |>
-    ggplot() +
-    geom_point(data = kluger_data, aes(odometer_Mm, price), alpha = .4) +
-    geom_function(fun = ~exp(line_intercept + line_slope * .x), linewidth = 1, colour = 'lightblue') +
-    labs(
-        title = "Toyota Kluger Market Model",
-        subtitle = "Odometer vs Price",
-        x = "Odometer (Megametres)",
-        y = "Price ($)",
-    )
-```
-
-
-
-```{r, comment=''}
-kluger_fit$summary()
-```
+That's a large spread, with an 89% interval between `r kluger_quantile[[1]] |> dollar()` and `r kluger_quantile[[2]] |> dollar()`. That's too large to be of any use to us in validating the market value the insurance company gave me for my car.
 
 ```{sh eval=FALSE, include=FALSE}
 docker container stop rsel
