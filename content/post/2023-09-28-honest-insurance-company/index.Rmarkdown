@@ -28,11 +28,17 @@ Last month my car - a Toyota Kluger - was run into while parked in front of my h
 
 In this post I'll go through the process I used to keep the insurance company honest. There's data acquisition and visiualisation of the current market, then modelling of the market price. 
 
+# TL;DR
+
+A word of warning: this article is slightly anticlimactic. While we do find with, using Bayesian modelling, that the sale price of a Toyota Kluger will reduce by around .6% for every 1,000 km driven, it's not the whole story. There's a lot of other factors that need to taken into account. But it's better to start off with a simple model, assess, and slowly increase the complexity. So it's not the end, it's really just the beginning.
+
 # Data Aquisition
 
-The first step was to acquire some data on the current market for Toyota Klugers. I used [carsales.com.au](https://www.carsales.com.au/cars/used/toyota/kluger/) as my source. The Carsales site requires Javascript to render, so simply requesting the pages wasn't going to work. Instead we need to render the page in a browser. To do this I used a docker instance of the webdriver [Selenium](https://www.selenium.dev/), interfacing into this with the R package [RSelenium](https://github.com/ropensci/RSelenium). This allows us to browse to the site from a 'remotely controller' browser, Javascript and all, and retrieve the information we need.
+The first step was to acquire some data on the current market for Toyota Klugers. A small distinction is that data will be the *for sale* price of the car, rather than the *sold* price, but I'm hoping it still provides a good representaton of the market.
 
-First up, we connect to the docker instance, setting the page load strategy to eager so that it will return when the initial HTML is loaded and not wait for stylesheets, images, etc.
+We'll pull the data from a site that advertises cars for sale. The site requires Javascript to render, so a simple HTTP GET of the site won't work. Instead we need to render the page in a browser. We'll use a docker instance of the webdriver [Selenium](https://www.selenium.dev/), interfacing into this with the R package [RSelenium](https://github.com/ropensci/RSelenium) to achieve this. This allows us to browse to the site from a 'remotely controller' browser, Javascript and all, and retrieve the information we need.
+
+We connect to the docker instance, setting the page load strategy to eager. This will speed up the process as we won't be waiting for stylesheets, images, etc to load.
 
 ```{sh eval=FALSE, include=FALSE}
 # Stop running containers
@@ -47,6 +53,7 @@ fi
 docker run -d -p 4444:4444 --name rsel selenium/standalone-firefox:latest
 ```
 
+
 ```{r eval = FALSE, echo=TRUE, results = 'hide'}
 rs <- remoteDriver(remoteServerAddr = '172.17.0.2', port = 4444L)
 rs$extraCapabilities$pageLoadStrategy <- "eager"
@@ -55,13 +62,17 @@ rs$open()
 
 Each page of Klugers for sale is determined by an offset of 12. We generate the offsets (12, 24, 36 etc) and the URIs based on these offsets. We then navigate to each page, reading the source, and parsing into a structuered XML document.
 
+```{r include=FALSE}
+car_site_uri <- "https://www.carsales.com.au"
+```
+
 ```{r eval = FALSE}
 kluger_source <-
     tibble(
         # Generate offsets
         offset = 12 * c(0:100),
         # Create URIs based on offsets
-        uri = glue("https://www.carsales.com.au/cars/used/toyota/kluger/?offset={offset}")
+        uri = glue("{car_site_uri}/cars/used/toyota/kluger/?offset={offset}")
     ) |> 
     mutate(
         # Naviate to each URI, read and parse the source
@@ -109,15 +120,30 @@ kluger_data <-
 ```
 
 ```{r include=FALSE}
-kluger_data <- read_csv('data/carsales_kluger.csv') |> select(-offset)
+kluger_data <- 
+    read_csv('data/carsales_kluger.csv') |> 
+    select(-offset)
 ```
 
 At this stage, the data is a bit raw: the odometer and price are character strings with dollar signs and commas, and other important pieces of info are in the title:
 
 ```{r echo=FALSE, comment=""}
-slice_sample(kluger_data, n = 200) |>
-    gt() |> 
-    opt_interactive()
+slice_sample(kluger_data, n = 50) |>
+    gt() |>
+    fmt_number(decimals = 2) |> 
+    tab_header("Kluger Market Data") |>
+    cols_width(title ~ px(300)) |> 
+    tab_style(
+        style = cell_text(size = 10),
+        locations = cells_body(everything())
+    ) |>  
+    opt_interactive(
+        use_text_wrapping = FALSE,
+        use_highlight = TRUE,
+        use_resizers = TRUE,
+        use_compact_mode = TRUE,
+        page_size_default = 5
+    )
 ```
 
 There's a small amount of housekeeping to be done. The price and odometer are in a textual format, so these are converted to integers. we also create a new *megametre* variable (i.e. thousands of kilometers). The year, model, and drivetrain are pulled out of the title of the advert using regex.
@@ -137,10 +163,24 @@ kluger_data |>
 
 ```{r echo=FALSE}
 slice_sample(kluger_data, n = 200) |>
-    gt() |> 
-    opt_interactive()
+    select(title, model, year, price, odometer, drivetrain, model) |> 
+    gt() |>
+    fmt_number(decimals = 0) |>
+    fmt_integer(year, use_seps = FALSE) |> 
+    tab_header("Kluger Market Data") |>
+    cols_width(title ~ px(300)) |> 
+    tab_style(
+        style = cell_text(size = 10),
+        locations = cells_body(everything())
+    ) |>  
+    opt_interactive(
+        use_text_wrapping = FALSE,
+        use_highlight = TRUE,
+        use_resizers = TRUE,
+        use_compact_mode = TRUE,
+        page_size_default = 5
+    )
 ```
-
 # Taking a Quick Look
 
 Let's visualise key features of the data. First up we'll, how does the market price for a Kluger change as the odometers (in megametres):
@@ -358,9 +398,9 @@ kluger_fit_animation <-
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
  
-animate(kluger_fit_animation, width = 1344, height = 960)
+animate(kluger_fit_animation, )
 ```
-But plotting each of the draws from the posterior distribution, what we end up getting is a view of the confidence interval of the intercept and slope parameters. The good news here is that the distribution is not very wide (which we saw in the histograms above). Looking at the 89% interval of the slope parameter we see it's between `r kluger_param_quantile[['value']][[1]]` and `r kluger_param_quantile[['value']][[2]]`. Exponentiating this to get percent change gives us `r exp(kluger_param_quantile[['value']][[1]])` and `r exp(kluger_param_quantile[['value']][[1]])`.
+But plotting each of the draws from the posterior distribution, what we end up getting is a view of the confidence interval of the intercept and slope parameters. The good news here is that the distribution is not very wide (which we saw in the histograms above). Looking at the 89% interval of the slope parameter we see it's between `r kluger_param_quantile[['value']][[2]]` and `r kluger_param_quantile[['value']][[1]]`. Exponentiating this and turning into percentages, we find that, on average, for every 1,000km on the odometer, the sale price of a Toyota Kluger decreases by between `r percent(1-exp(kluger_param_quantile[['value']][[2]]), accuracy = .001)` and `r percent(1-exp(kluger_param_quantile[['value']][[1]]), accuracy = .001)`.
 
 The bad news is news we really already knew - the variance around our line is very large and it changes as the odometer value changes. A check for this is posterior prediction, which uses the *generated values* section from our Stan program. That section generated log(price) values based on the linear model, using parameters pulled from the posterior distribution. What we want to see is, using random data, how close to the real observations is our generated model?
 
@@ -387,7 +427,7 @@ So while our parmaeters for the linear model look good, the linear model is not 
 
 Despite this, let's see where we ended up with the question at hand: "what is the market sell price for a Toyota Kluger with 60,000kms on the odometer?" We use the results of the *generated values* section, with parameters drawn from the posterior distribution but this time fixing the odometer reading at 60 megametres. Here's the resulting distribution of prices with an 89% confidence interval (5.5% and 94.5% quaniles):
 
-```{r}
+```{r echo=FALSE}
 kluger_quantile <-
     kluger_fit |>
     spread_draws(price_pred) |>
@@ -415,6 +455,8 @@ kluger_fit |>
     )
 ```
 That's a large spread, with an 89% interval between `r kluger_quantile[[1]] |> dollar()` and `r kluger_quantile[[2]] |> dollar()`. That's too large to be of any use to us in validating the market value the insurance company gave me for my car.
+
+# Summary
 
 ```{sh eval=FALSE, include=FALSE}
 docker container stop rsel
