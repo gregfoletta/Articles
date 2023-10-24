@@ -15,7 +15,7 @@ scanners:
 
 # Configures target url where dynamic scan should be performed.
 dast:
-  url: https://articles.foletta.xyz
+  url: https://articles.foletta.org
   full_scan: true
 
 # Language scanners run sequentially by default. Can be configured to run in parallel.
