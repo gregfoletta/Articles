@@ -1,7 +1,7 @@
 ---
-title: Honest Insurance Company
+title: Keeping an Insurance Company Honest
 author: Greg Foletta
-date: '2023-09-28'
+date: '2023-09-23'
 slug: []
 categories: [R Bayesian]
 tags: []
@@ -24,17 +24,23 @@ library(gt)
 library(plotly)
 ```
 
-Last month my car - a Toyota Kluger - was run into while parked in front of my house. Luckily no one was injured and while annoying, the person had insurance (coincidently with the same company as my). The insurance company came back and determined that the car had been written off and I would be paid out the market value of the car. But what is the market value? How could I keep the insurance company honest and make sure I wasn't getting stiffed?
+Last month my car, a Toyota Kluger, was hit while parked in front of my house. Luckily no one was injured and while annoying, the person had insurance. The insurance company came back and determined that the car had been written off and I would be paid out the market value of the car. The question in my mind was 'what is the market value?' How could I keep the insurance company honest and make sure I wasn't getting stiffed?
 
-In this post I'll go through the process I used to keep the insurance company honest. There's data acquisition and visiualisation of the current market, then modelling of the market price. 
+In this post I'll go through an attempt to find out the market price for a Toyota Kluger. We'll automate the retrieval of data and have a look at its features, create a Bayesian model, and see how this model performs in predicting the sale price of a Kluger.
+
+More than anything, this was a chance to put into practice the Bayesian theory I've been learning in books like [Statistical Rethinking](https://xcelab.net/rm/statistical-rethinking/) and [Bayes Rules!](https://www.bayesrulesbook.com/) books. With any first dip of the toe, there could be assumptions I make that are incorrect, or things that are outright wrong. I'd appreciate [feedback and corrections](mailto:greg@foletta.org).
+
+Finally, I won't be showing as much of the code as I've done in previous posts. If you'd like to dive under the hood, you can find the source for this article [here](https://github.com/gregfoletta/articles.foletta.org/blob/production/content/post/2023-09-28-honest-insurance-company/index.Rmarkdown).
 
 # TL;DR
 
-A word of warning: this article is slightly anticlimactic. While we do find with, using Bayesian modelling, that the sale price of a Toyota Kluger will reduce by around .6% for every 1,000 km driven, it's not the whole story. There's a lot of other factors that need to taken into account. But it's better to start off with a simple model, assess, and slowly increase the complexity. So it's not the end, it's really just the beginning.
+A word of warning before anyone gets too invested: this article is slightly anticlimactic. We do find that the sale price of a Kluger will reduce by around .6% for every 1,000 km driven, but there's still a lot of variability that we dont capture, making our prediction intervals too wide to be of any use. There's a other factors that go into determining a price that we need to take into account in our model. 
+
+But this isn't the end, it's just the start. Better to start off with a simple model, assess, and slowly increase the complexity, rather than throwing a whole bathtub of features at the model straight up. It also leaves me with material for another article!
 
 # Data Aquisition
 
-The first step was to acquire some data on the current market for Toyota Klugers. A small distinction is that data will be the *for sale* price of the car, rather than the *sold* price, but I'm hoping it still provides a good representaton of the market.
+The first step is to acquire some data on the current market for Toyota Klugers. A small distinction is that data will be the *for sale* price of the car, rather than the *sold* price, but it still should provide us with a good representation of the market.
 
 We'll pull the data from a site that advertises cars for sale. The site requires Javascript to render, so a simple HTTP GET of the site won't work. Instead we need to render the page in a browser. We'll use a docker instance of the webdriver [Selenium](https://www.selenium.dev/), interfacing into this with the R package [RSelenium](https://github.com/ropensci/RSelenium) to achieve this. This allows us to browse to the site from a 'remotely controller' browser, Javascript and all, and retrieve the information we need.
 
@@ -53,14 +59,13 @@ fi
 docker run -d -p 4444:4444 --name rsel selenium/standalone-firefox:latest
 ```
 
-
 ```{r eval = FALSE, echo=TRUE, results = 'hide'}
 rs <- remoteDriver(remoteServerAddr = '172.17.0.2', port = 4444L)
 rs$extraCapabilities$pageLoadStrategy <- "eager"
 rs$open()
 ```
 
-Each page of Klugers for sale is determined by an offset of 12. We generate the offsets (12, 24, 36 etc) and the URIs based on these offsets. We then navigate to each page, reading the source, and parsing into a structuered XML document.
+Each page of Klugers for sale is determined by a query string offsetting into the list of Klugers in multiples of 12. We generate the offsets (12, 24, 36, ...) and from this the full URI of each page. We then navigate to each page, read the source, and parse into a structured XML document.
 
 ```{r include=FALSE}
 car_site_uri <- "https://www.carsales.com.au"
@@ -85,9 +90,10 @@ kluger_source <-
 
 With the raw source in our hands, we can move on to extracting the pieces of data we need from each of them.
 
-# Data Extractiion
+# Data Extraction
 
-First up, we define a small helper function which finds an element based on its XPath, and pulls out the text of that element.
+Let's define a small helper function `xpt()` to make things a little more concise. 
+
 
 ```{r}
 # XPath helper function, xpt short for xpath_text
@@ -97,7 +103,7 @@ xpt <- function(html, xpath) {
 }
 ```
 
-Each 'card' has the details of a car for sale. The issue we ran into is that not all of them have the odometer reading, which is the critical variable we're going to use in our modelling later. To get around this, we use a some convoluted XPath. We find all the <li> tags that have the odometer reading, then go back up the tree to find the ancestor <div> tags that define the entire card. This ensures that all the cards we've pulled out have odometer readings. 
+Each page has 'cards' which contain the details of each car. We ran into an issue is where not all of them have an odometer reading, which is the critical variable we're going to use in our modelling later. To get around this, slightly more complicated XPath is required: we find each card by first finding all the odometer <li> tags, then using the *ancestor::* axes we find the card <div> that it sits within. The result is all cards which have odometer readings. 
 
 From there, it's trivial to extract specific properties from the car sale.
 
@@ -105,9 +111,9 @@ From there, it's trivial to extract specific properties from the car sale.
 kluger_data <-
     kluger_source |> 
     mutate(
-        # Get entires that have odometer
+        # Find the parent card <div> of all odometer <li> tags.
         cards = map(source, ~html_elements(.x, xpath = "//li[@data-type = 'Odometer']/ancestor::div[@class = 'card-body']")),
-        # Extract specific values of each car sale
+        # Extract specific values from the card found above
         price = map(cards, ~xpt(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-price']")),
         title = map(cards, ~xpt(.x, xpath = ".//a[@data-webm-clickvalue = 'sv-title']")),
         odometer = map(cards, ~xpt(.x, xpath = ".//li[@data-type = 'Odometer']")),
@@ -125,7 +131,7 @@ kluger_data <-
     select(-offset)
 ```
 
-At this stage, the data is a bit raw: the odometer and price are character strings with dollar signs and commas, and other important pieces of info are in the title:
+Here's our relatively raw data:      
 
 ```{r echo=FALSE, comment=""}
 slice_sample(kluger_data, n = 50) |>
@@ -146,7 +152,7 @@ slice_sample(kluger_data, n = 50) |>
     )
 ```
 
-There's a small amount of housekeeping to be done. The price and odometer are in a textual format, so these are converted to integers. we also create a new *megametre* variable (i.e. thousands of kilometers). The year, model, and drivetrain are pulled out of the title of the advert using regex.
+There's a small amount of housekeeping to be done. The price and odometer are strings with a dollar sign, so we need to convert these integers. we also create a new *megametre* variable (i.e. thousands of kilometers) which will the variable we use in our model. The year, model, and drivetrain are extracted out of the title of the advert using regex.
 
 ```{r, comment=''}
 kluger_data <-
@@ -163,12 +169,11 @@ kluger_data |>
 
 ```{r echo=FALSE}
 slice_sample(kluger_data, n = 200) |>
-    select(title, model, year, price, odometer, drivetrain, model) |> 
+    select(year, model, price, odometer, transmission, engine, drivetrain) |> 
     gt() |>
     fmt_number(decimals = 0) |>
     fmt_integer(year, use_seps = FALSE) |> 
     tab_header("Kluger Market Data") |>
-    cols_width(title ~ px(300)) |> 
     tab_style(
         style = cell_text(size = 10),
         locations = cells_body(everything())
@@ -181,9 +186,10 @@ slice_sample(kluger_data, n = 200) |>
         page_size_default = 5
     )
 ```
+
 # Taking a Quick Look
 
-Let's visualise key features of the data. First up we'll, how does the market price for a Kluger change as the odometers (in megametres):
+Let's visualise key features of the data. The one I think will be most relevant is how the price is affected by the odometer reading. This is what we're going to model later on:
 
 ```{r echo = FALSE}
 kluger_data |>
@@ -200,7 +206,7 @@ kluger_data |>
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-The thing I notice is that looks suspiciously like there's some sort of negative exponential relationship between the the odometer and price. What if we take a look at the odometer versus the log of the price?
+Nothing too surprising here, there more kilometers, the less the sell price. But what we notice is the shape: it looks suspiciously like there's some sort of negative exponential relationship between the the odometer and price. What if, rather than looking odometer versus price, we look and odometer versus log(price):
 
 ```{r echo = FALSE}
 kluger_data |>
@@ -216,13 +222,13 @@ kluger_data |>
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-There's some good news, and some bad news here. With the log transform we've now got a linear relationship between the number odometer of the car and the price. This is going to allow us to fit a nice, simple linear model to the data.
+There's some good news, and some bad news here. The good news is that the log transform has given us a linear relationship between the two variables, simplifying our modelling.
 
-The bad news is that the data varies significantly (heteroskedacticity) across the odometer ranges. This won't affect our linear model, but will likely affect the prediction capability of our model. We'll persevere nonetheless.
+The bad news comes is that the data looks to be heteroskedactic, meaning its variance changes across the odometer ranges. This won't affect our linear model's parameters, but will affect our ability to use the model to predict the price. We'll persevere nonetheless.
 
-The log transform provides a nice interpretation for the slope of this line. Recall that in general when you fit a line to x and y, the slope (\\(beta\\)) of that line is "the change in the y variable given a change of one unit of the x variable". When you fit a line to to x and log(y) (called log-linear), for small \\(\beta\\), \\(e^\beta\\) is the percentage change in y for a one unit change of x. 
+There's a nice interpretation of the linear model when using a log transformation. When you fit a line \(y = \alpha + \beta x \), the slope \(\beta\) "the change in y given a change of one unit of the x". When you fit a line to to \(log(y) = \alpha + \beta x\), for small \(\beta\), \(e^\beta\) is 'the percentage change in y for a one unit change of x'.
 
-Here's the same view, but we split it out by model:
+Where's the the other variance coming from? Here's the same view, but we split it out by model:
 
 ```{r echo=FALSE}
 kluger_data |>
@@ -233,16 +239,19 @@ kluger_data |>
         title = "Toyota Kluger Market",
         subtitle = "Odometer versus Log(Price) by Model",
         x = "Odometer (megametres)",
-        y = "Log(Price) ($)"
+        y = "Log(Price) ($)",
+        color = "Model"
     ) +
     scale_x_continuous(labels = scales::comma) +
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
 
+It barely needs to be stated, but the Kluger model has an impact on the sale price. 
+
 # Modelling
 
-Let's start by thinking about the generative model of the price. Our observed variables odometer, year, model, and drivetrain are likely going to have an affect on price. There are some unobserved variables, such as the condition of the car its popularity that would also have an affect. There's some [confounds](https://en.wikipedia.org/wiki/Confounding) that may need to be dealt with as well: year directly affects price, but also affects through the odometer (older cards are more likely to have more kilometres). Model affects price, but also affects through the drivetrain (certain models have certain drivetrains).
+Let's start by thinking about the generative model of the price. Our observed variables odometer, year, model, and drivetrain are likely going to have an affect on price. There are some unobserved variables, such as the condition of the car its popularity that would also have an affect. There's some [confounds](https://en.wikipedia.org/wiki/Confounding) that may need to be dealt with as well: year directly affects price, but also goes through the odometer (older cards are more likely to have more kilometres). Model affects price, but also goes through the drivetrain (certain models have certain drivetrains).
 
 The best way to visualise this is using the directed acyclic graph (DAG):
 
@@ -285,14 +294,14 @@ generative_dag |>
         colour = "Variable Type"
     )
 ```
-While I do have these variables available to me, I'd like to start with the most simple modelcan: log of the price predicted by the odometer (in megametres). In doing this I'm leaving a lot of variability on the table, so the model's ability to predict is likely going to be hampered. But better to start simple a build up (also leaves the door open for follow-up articles).
 
-At this point I could rip our a standard linear regression, get the coefficients and *bang* we're done. But where's the sport in that? Instead, I'll use this as an opportunity to model this in a Bayesian manner.
+While I do have these variables available to me, I'd like to start with the most simple model I can: log of the price predicted by the odometer (in megametres). In doing this I'm leaving a lot of variability on the table, so the model's ability to predict is likely going to be hampered. But better to start simple and build up.
+
+At this point I could rip our a standard linear regression, but where's the sport in that? Instead, I'll use this as an opportunity to model this in a Bayesian manner.
 
 # Bayesian Modeling
 
-I'm going to be using [Stan](https://mc-stan.org/) to perform the statistical modelling, executing it from R using the [cmdstanr](https://mc-stan.org/cmdstanr/) package. Here's the program I've written:
-
+I'm going to be using [Stan](https://mc-stan.org/) to perform the modelling, executing it from R using the [cmdstanr](https://mc-stan.org/cmdstanr/) package. Here's the Stan program:
 
 ```{r include=FALSE}
 model_file_path <- here('content', 'post', '2023-09-28-honest-insurance-company', 'linear.stan')
@@ -302,22 +311,14 @@ model_file_path <- here('content', 'post', '2023-09-28-honest-insurance-company'
 kluger_model <- cmdstan_model(model_file_path)
 kluger_model$print()
 ```
-It should be relatively easy to read: the data is our observed odometer (in megametres) and price, the parameters we're looking to find are *a* (for alpha, the intercept), *b* (for beta, the slope), and *sigma* (our variance). I'm pretty sure the slope is going
 
-```{r eval=FALSE, include=FALSE}
-tibble(
-    a = rnorm( 100, log(60000), 1),
-    b = runif( 100, log(.98), log(1) ) 
-    ) |>
-    ggplot() +
-    geom_abline(aes(intercept = a, slope = b)) +
-    geom_point(data = kluger_data, aes(x = odometer_Mm, y = log(price)))
-```
+It should be relatively easy to read: the data is our observed odometer (in megametres) and price, the parameters we're looking to find are *a* (for alpha, the intercept), *b* (for beta, the slope), and *sigma* (our variance). Our likelihood is a linear regression with a mean basedon on a, b and the odometer, and a standard deviation of sigma.
 
+There's a conspicuous absence of priors for our parameters. If the priors are not specified, they're improper priors, and will be considered flat \(Uniform(- \infty, +\infty)\), with the exception of sigma for which we have defined a lower bound of 0 in the *data* section. Flat priors aren't ideal, as there is some prior information I think we can build into the model (\( \beta \) is unlikely to be positive). But I'm not comfortable putting a stake in the ground at this stage.
 
-The generated values helps us with prediction. For each of our *n* ovbservations the model is run with the parameters drawn out of the posterior distribution and the results stored in *y_s*. This allows us to compare what our model thinks is are resonable outcomes and help us determine how well the model performs. The *price_pred* is the prediction at 60,000km, which was the reading on the odometer of my car that was written off. 
+We'll talk about the generated quantities a little later; these are used for validating the predictive capability of the model.
 
-Let's run the model with the data:
+Let's run the model with the data to get our posterior probability:
 
 ```{r echo=TRUE, comment=''}
 kluger_fit <- kluger_model$sample(
@@ -331,7 +332,27 @@ kluger_fit <- kluger_model$sample(
 
 # Assessing the Model
 
-We want to take a look at the resulting parameters and make sure they're reasonable. First up is a histogram of the posterior distributions of each of the parameters. 
+What's Stan done for us? It's used Hamiltonian Monte Carlo to take samples from our posterior distribution for each of our parameters *a*, *b*, and *sigma*. We need to take a cursory look at whether the sampling has converged, or whether some of the sampling has wandered off into a strange place.
+
+The *trace plot* is the first diagnositc tool to pull out. We want these to look like "fuzzy caterpillars", showing that each chain is exploring the distribution in a similar way, and isn't wandering off on its own for too long.
+
+```{r echo=FALSE}
+kluger_fit |> 
+    gather_draws(a,b, sigma) |>
+    ggplot() +
+    geom_line(aes(.iteration, .value, colour = as_factor(.chain)), alpha = .8) +
+    facet_grid(vars(.variable), scales = 'free_y') + 
+    labs(
+        title = "Toyota Kluger Market Model",
+        subtitle = "MCMC Trace Plot",
+        x = "Iteration",
+        y = "Value",
+        colour = "Chain"
+    )
+```
+These look pretty good. That's as much diagnostics as we'll do for the sake of this article; for more serious tasks you'd likely look at additional convergence tests.
+
+Taking the draws/samples from the posterior and plotting as a histogram we see the what the model has come up with:
 
 ```{r echo = FALSE}
 kluger_fit |> 
@@ -348,22 +369,9 @@ kluger_fit |>
         fill = "Chain"
     )
 ```
-This looks good, each looks Gaussian in shape, and each of the chains has a similar view of the posterior distribution. A related check is the *trace plot*. We want these to look like "fuzzy caterpillars", shows that each chain is exploring the distribution in a similar way, and isn't wandering off on its own for too long.
-```{r echo=FALSE}
-kluger_fit |> 
-    gather_draws(a,b, sigma) |>
-    ggplot() +
-    geom_line(aes(.iteration, .value, colour = as_factor(.chain)), alpha = .8) +
-    facet_grid(vars(.variable), scales = 'free_y') + 
-    labs(
-        title = "Toyota Kluger Market Model",
-        subtitle = "MCMC Trace Plot",
-        x = "Iteration",
-        y = "Value",
-        colour = "Chain"
-    )
-```
-So we're reasonably confident that all of the chains have converged, let's take a look at how the distribution of parameters looks over our observations. We're not dealing with point estimates as we would with a linear regression. Instead we've got a distribution of plausible intercepts and slopes. One way to visualise this is to plot each line from the distribution, colouring it with its distance from the mean.
+The first thing to notice it that they look nice and Gaussian. At a glance, our intercept *a* looks to have a mean of around 11.13, and the slope *b* a mean of around -0.0063, both of these on the log scale. Exponentiating these tells us that the average price at zero megametres is around $66k, and for every 1,000km the average price is 99.3% of what it was before.
+
+We're not dealing with point estimates as we would with a linear regression. Instead we've got a distribution of plausible intercepts and slopes. One way to visualise this is to plot each line from the distribution, colouring it with its distance from the mean.
 
 ```{r echo = FALSE}
 #fit_mean_a <- kluger_fit$summary()$mean[2]
@@ -398,8 +406,9 @@ kluger_fit_animation <-
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
  
-animate(kluger_fit_animation, )
+animate(kluger_fit_animation)
 ```
+
 But plotting each of the draws from the posterior distribution, what we end up getting is a view of the confidence interval of the intercept and slope parameters. The good news here is that the distribution is not very wide (which we saw in the histograms above). Looking at the 89% interval of the slope parameter we see it's between `r kluger_param_quantile[['value']][[2]]` and `r kluger_param_quantile[['value']][[1]]`. Exponentiating this and turning into percentages, we find that, on average, for every 1,000km on the odometer, the sale price of a Toyota Kluger decreases by between `r percent(1-exp(kluger_param_quantile[['value']][[2]]), accuracy = .001)` and `r percent(1-exp(kluger_param_quantile[['value']][[1]]), accuracy = .001)`.
 
 The bad news is news we really already knew - the variance around our line is very large and it changes as the odometer value changes. A check for this is posterior prediction, which uses the *generated values* section from our Stan program. That section generated log(price) values based on the linear model, using parameters pulled from the posterior distribution. What we want to see is, using random data, how close to the real observations is our generated model?
@@ -422,6 +431,35 @@ kluger_fit |>
         x = "Odometer (Megametres)",
         y = "Log(Price) ($)"
     )
+```
+
+```{r echo}
+kluger_predict_animate <-
+    kluger_fit |>
+    recover_types() |>
+    spread_draws(y_s[i]) |>
+    group_by(i) |> 
+    sample_frac(size = .1) |>
+    select(-c(.chain, .iteration, .draw)) |>  
+    nest(y_s = y_s) |> 
+    bind_cols(kluger_data) |>
+    unnest(y_s) |>
+    mutate(
+        log_price = log(price),
+        stage = floor(odometer_Mm / 10)
+    ) |>
+    arrange(stage) |>
+    select(-price) |> 
+    pivot_longer(cols = c(log_price, y_s), names_to = 'price_type', values_to = 'price') |>
+    ggplot() +
+    geom_freqpoly(aes(price, colour = price_type), alpha = 1) +
+    transition_states(stage, state_length = .1) +
+    labs(
+        title = "Toyota Kluger Market Model",
+        subtitle = "(Indicie {closest_state})",
+    )
+
+animate(kluger_predict_animate)
 ```
 So while our parmaeters for the linear model look good, the linear model is not great. At odometer values close to zero it's too conservative, with the all the prices falling well inside our prediced bands in light blue. At the other end of the scale the model is too conservative, with many of the real overservations falling outside of our predictive bands.
 
@@ -454,12 +492,9 @@ kluger_fit |>
         subtitle = "Distribution of Price Prediction at 60,000km with 89% Quantiles"
     )
 ```
+
 That's a large spread, with an 89% interval between `r kluger_quantile[[1]] |> dollar()` and `r kluger_quantile[[2]] |> dollar()`. That's too large to be of any use to us in validating the market value the insurance company gave me for my car.
 
 # Summary
 
-```{sh eval=FALSE, include=FALSE}
-docker container stop rsel
-docker container rm rsel
-```
-
+`{sh eval=FALSE, include=FALSE} docker container stop rsel docker container rm rsel`
