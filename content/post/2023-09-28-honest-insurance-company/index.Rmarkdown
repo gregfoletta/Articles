@@ -1,7 +1,7 @@
 ---
-title: Keeping an Insurance Company Honest
+title: Keeping Them Honest
 author: Greg Foletta
-date: '2023-09-23'
+date: '2023-10-25'
 slug: []
 categories: [R Bayesian]
 tags: []
@@ -350,9 +350,9 @@ kluger_fit |>
         colour = "Chain"
     )
 ```
-These look pretty good. That's as much diagnostics as we'll do for the sake of this article; for more serious tasks you'd likely look at additional convergence tests.
+These look pretty good. That's as much diagnostics as we'll do for the sake of this article; for more serious tasks you'd likely look at additional convergence tests such as effective sample size and R-hat.
 
-Taking the draws/samples from the posterior and plotting as a histogram we see the what the model has come up with:
+Taking the draws/samples from the posterior and plotting as a histogram we see the distribution of values that each of our four chains has come up with:
 
 ```{r echo = FALSE}
 kluger_fit |> 
@@ -369,9 +369,9 @@ kluger_fit |>
         fill = "Chain"
     )
 ```
-The first thing to notice it that they look nice and Gaussian. At a glance, our intercept *a* looks to have a mean of around 11.13, and the slope *b* a mean of around -0.0063, both of these on the log scale. Exponentiating these tells us that the average price at zero megametres is around $66k, and for every 1,000km the average price is 99.3% of what it was before.
+The first thing to notice it that, on the whole, each one looks Gaussian. Secondly, each of the chains has a similar shape, meaning they've all explored similar parts of the posterior. The intercept *a* has a mean approximately 11.13, and the slope *b* has a mean of approximately -0.0063. These are on a log scale, so exponentiating each of these values tells us that the average price with zero on tne odometer is ~$66k, and for every 1,000km the average price is ~99.3% of what it was before.
 
-We're not dealing with point estimates as we would with a linear regression. Instead we've got a distribution of plausible intercepts and slopes. One way to visualise this is to plot each line from the distribution, colouring it with its distance from the mean.
+We're not dealing with point estimates as we would with a linear regression, we've got an (estimate) of the posterior distribution. As such, so there's no single line to plot. Sure we can take the mean, but we could also use the median or mode as. What we'll do to visualise the regression is to take each of our draws and plot it as a line, effectively giving us the confidence intervals for the *a* and *b* parameters.
 
 ```{r echo = FALSE}
 #fit_mean_a <- kluger_fit$summary()$mean[2]
@@ -409,15 +409,19 @@ kluger_fit_animation <-
 animate(kluger_fit_animation)
 ```
 
-But plotting each of the draws from the posterior distribution, what we end up getting is a view of the confidence interval of the intercept and slope parameters. The good news here is that the distribution is not very wide (which we saw in the histograms above). Looking at the 89% interval of the slope parameter we see it's between `r kluger_param_quantile[['value']][[2]]` and `r kluger_param_quantile[['value']][[1]]`. Exponentiating this and turning into percentages, we find that, on average, for every 1,000km on the odometer, the sale price of a Toyota Kluger decreases by between `r percent(1-exp(kluger_param_quantile[['value']][[2]]), accuracy = .001)` and `r percent(1-exp(kluger_param_quantile[['value']][[1]]), accuracy = .001)`.
+The confidence intervals are not very wide (which we saw in the histograms above). Looking at the 89% interval of the slope parameter we see it's between `r kluger_param_quantile[['value']][[2]]` and `r kluger_param_quantile[['value']][[1]]`. Exponentiating this and turning into percentages, we find that, on average, for every 1,000km on the odometer, the sale price of a Toyota Kluger decreases by between `r percent(1-exp(kluger_param_quantile[['value']][[2]]), accuracy = .001)` and `r percent(1-exp(kluger_param_quantile[['value']][[1]]), accuracy = .001)`.
 
-The bad news is news we really already knew - the variance around our line is very large and it changes as the odometer value changes. A check for this is posterior prediction, which uses the *generated values* section from our Stan program. That section generated log(price) values based on the linear model, using parameters pulled from the posterior distribution. What we want to see is, using random data, how close to the real observations is our generated model?
+The bad news is news we really already knew: the variance *sigma* around our line is large and it looks to be non-constant across the odometer values. A check to see how well this performed is posterior prediction, in which we bring *sigma* into the equation.
+
+The concept is that if our model is good, we should be able to pull random values from it, using our parameters as inputs, and get values back that look like the data we're modelling. For each odometer value, we take all of our posterior draws (4 chains x 1000 draw = 4000 *a*, *b* and *sigma* vluaes) and plug them into our model. The result is a distribution of log(price) values that our model predicts is plausible given an odometer value. In the plot below, I've filtered out values below 4.5% and below 94.5% to give an 89% prediction interval.
 
 ```{r echo=FALSE}
 kluger_fit |>
     recover_types() |>
     spread_draws(y_s[i]) |>
-    sample_frac(size = .1) |>
+    # Filter for 89% interval
+    filter(y_s > quantile(y_s, .055) & y_s < quantile(y_s, 0.945)) |> 
+    sample_frac(.1) |> 
     select(-c(.chain, .iteration, .draw)) |>
     nest(y_s = y_s) |>
     bind_cols(kluger_data) |>
@@ -432,14 +436,26 @@ kluger_fit |>
         y = "Log(Price) ($)"
     )
 ```
+What we find is that the the predictive value of our simple linear model is not great. At odometer values close to zero it's too conservative, with the all the prices falling well inside our predicted bands in light blue. At the other end of the scale the model is too confident, with many of the real observationsfalling outside of our predictive bands.
+
+Another way to look at this is to look at the densities for both our model and the real values as the odometer values change. You can think of this as sitting *on* the above graph's x-y plane, moving backwards along the odometer and looking at 10,000km slices of odometer values:
 
 ```{r echo}
+kluger_staged <-
+    kluger_data |>
+    mutate(
+        log_price = log(price),
+        stage = floor(odometer_Mm / 10)
+    ) |>
+    arrange(stage)
+
 kluger_predict_animate <-
     kluger_fit |>
     recover_types() |>
     spread_draws(y_s[i]) |>
     group_by(i) |> 
     sample_frac(size = .1) |>
+    filter(y_s > quantile(y_s, .055) & y_s < quantile(y_s, 0.945)) |> 
     select(-c(.chain, .iteration, .draw)) |>  
     nest(y_s = y_s) |> 
     bind_cols(kluger_data) |>
@@ -450,20 +466,34 @@ kluger_predict_animate <-
     ) |>
     arrange(stage) |>
     select(-price) |> 
-    pivot_longer(cols = c(log_price, y_s), names_to = 'price_type', values_to = 'price') |>
+    #pivot_longer(cols = c(log_price, y_s), names_to = 'price_type', values_to = 'price') |>
     ggplot() +
-    geom_freqpoly(aes(price, colour = price_type), alpha = 1) +
-    transition_states(stage, state_length = .1) +
+    geom_density(aes(y_s, fill = 'Model Prediction (89% PI)' ), alpha = .3) +
+    geom_histogram(data = kluger_staged, aes(log_price, ..density.., fill= 'Real'), alpha = .5, binwidth = .1 ) +
+    transition_states(stage, state_length = .001) +
+    coord_cartesian(ylim = c(0, 5)) +
     labs(
         title = "Toyota Kluger Market Model",
-        subtitle = "(Indicie {closest_state})",
+        subtitle = "Model and Real Data Density (Grouped to {closest_state},000km)",
+        
+        x = 'Log(Price)',
+        y = 'Density',
+        fill = 'Data Type'
     )
 
 animate(kluger_predict_animate)
 ```
-So while our parmaeters for the linear model look good, the linear model is not great. At odometer values close to zero it's too conservative, with the all the prices falling well inside our prediced bands in light blue. At the other end of the scale the model is too conservative, with many of the real overservations falling outside of our predictive bands.
+This gives us a nice comparison of the models proablity density compared to the real data. At the start all of the data fits inside the 89% PI, and as we move along odometer values, the log(price) gets wider and falls outside outside of the modoels predicted area.
 
-Despite this, let's see where we ended up with the question at hand: "what is the market sell price for a Toyota Kluger with 60,000kms on the odometer?" We use the results of the *generated values* section, with parameters drawn from the posterior distribution but this time fixing the odometer reading at 60 megametres. Here's the resulting distribution of prices with an 89% confidence interval (5.5% and 94.5% quaniles):
+Despite these obvious flaws, let's see how the model performs answering our original question: "what is the market sell price for a Toyota Kluger with 60,000kms on the odometer?" I'm using this line from the *generated values* section of the Stan model:
+
+```
+real price_pred = exp( normal_rng(a + b * 60, sigma) );
+```
+
+This uses parameters drawn from the posterior distribution, but fixes the odometer value at 60 megametres, and exponentiates to give us the price rather than log(price).
+
+Here's the resulting distribution of prices with an 89% confidence interval (5.5% and 94.5% quaniles):
 
 ```{r echo=FALSE}
 kluger_quantile <-
@@ -486,15 +516,18 @@ kluger_fit |>
     scale_y_continuous(labels = scales::comma) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
     labs(
-        x = "Count",
-        y = "Predicted Price ($)",
+        y = "Count",
+        x = "Predicted Price ($)",
         title = "Toyota Kluger Price Prediction",
         subtitle = "Distribution of Price Prediction at 60,000km with 89% Quantiles"
     )
 ```
-
 That's a large spread, with an 89% interval between `r kluger_quantile[[1]] |> dollar()` and `r kluger_quantile[[2]] |> dollar()`. That's too large to be of any use to us in validating the market value the insurance company gave me for my car.
 
 # Summary
+
+We've been on quite a journey in this article: from gathering and visualising data, to trying and validating new Bayesian modelling approach, to finally generating prediction intervals for the Kluger prices. All this, and at the end we've got nothing to show for it?
+
+Well, not quite. Yes we've got a very simple model that doesn't perform very well, but it is a foundation. From this, we can start to bring in other predictors that influence price. The next step might be to look at a hierarchical model that brings in the model of the Kluger. Maybe we can also find some data on the condition of the car? Sounds like a good idea for another post!    
 
 `{sh eval=FALSE, include=FALSE} docker container stop rsel docker container rm rsel`
