@@ -140,7 +140,7 @@ kluger_data <-
 Here's a sample our raw data:      
 
 ```{r echo=FALSE, comment=""}
-slice_sample(kluger_data, n = 50) |>
+slice_sample(kluger_data, n = 30) |>
     gt() |>
     fmt_number(decimals = 2) |> 
     tab_header("Kluger Market Data") |>
@@ -174,7 +174,7 @@ kluger_data |>
 ```
 
 ```{r echo=FALSE}
-slice_sample(kluger_data, n = 200) |>
+slice_sample(kluger_data, n = 30) |>
     select(year, model, price, odometer, transmission, engine, drivetrain) |> 
     gt() |>
     fmt_number(decimals = 0) |>
@@ -230,7 +230,7 @@ kluger_data |>
 ```
 There's some good news, and some bad news here. The good news is that the log transform has given us a linear relationship between the two variables, simplifying our modelling.
 
-The bad news comes is that the data looks to be heteroskedactic, meaning its variance changes across the odometer ranges. This won't affect our linear model's parameters, but will affect our ability to use the model to predict the price. We'll persevere nonetheless.
+The bad news comes is that the data looks to be heteroskedastic, meaning its variance changes across the odometer ranges. This won't affect our linear model's parameters, but will affect our ability to use the model to predict the price. We'll persevere nonetheless.
 
 There's nice interpretation of the linear model when using a log transformation. When you fit a line \\\\(y = \\alpha + \\beta x\\\\), the slope \\\\(\\beta\\\\) is "the change in y given a change of one unit of the x". But when you fit a line to to \\\\(log(y) = \\alpha + \\beta x\\\\), for small \\\\(\\beta\\\\), \\\\(e^\\beta\\\\) is 'the **percentage** change in y for a one unit change of x'.
 
