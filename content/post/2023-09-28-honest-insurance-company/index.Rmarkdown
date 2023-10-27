@@ -320,7 +320,7 @@ kluger_model$print()
 
 It should be relatively easy to read: the data is our observed odometer (in megametres) and price, the parameters we're looking to find are *a* (for alpha, the intercept), *b* (for beta, the slope), and *sigma* (our variance). Our likelihood is a linear regression with a mean basedon on a, b and the odometer, and a standard deviation of sigma.
 
-There's a conspicuous absence of priors for our parameters. If the priors are not specified, they're improper priors, and will be considered flat \\(Uniform(- \infty, +\infty)\\), with the exception of sigma for which we have defined a lower bound of 0 in the *data* section. Flat priors aren't ideal, as there is some prior information I think we can build into the model (\\( \beta \\) is unlikely to be positive). But I'm going to do a bit of hand-waving and not put stake in the ground at this stage.
+There's a conspicuous absence of priors for our parameters. If the priors are not specified, they're improper priors, and will be considered flat \\\\(Uniform(- \\infty, +\\infty)\\\\), with the exception of sigma for which we have defined a lower bound of 0 in the *data* section. Flat priors aren't ideal, as there is some prior information I think we can build into the model (\\( \beta \\) is unlikely to be positive). But I'm going to do a bit of hand-waving and not put stake in the ground at this stage.
 
 We'll talk about the generated quantities a little later; these are used for validating the predictive capability of the model.
 
