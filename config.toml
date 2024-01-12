@@ -1,11 +1,11 @@
 baseurl = "https://articles.foletta.org"
 title = "Greg Foletta - Bits and Blobs"
-copyright = "Copyright 2023 - Greg Foletta"
+copyright = "Copyright 2024 - Greg Foletta"
 canonifyurls = true
 theme = "hugo-kiera"
 
 
-paginate = 3
+paginate = 20
 
 summaryLength = 30
 enableEmoji = true
@@ -33,7 +33,7 @@ pygmentsCodeFences = true
     #favicon = ""
     #utterancesRepo = "username/repository"
     #utterancesIssueTerm = "pathname"
-    #homepageLength = 10
+    homepageLength = 20
     #commentAutoload = true  #This mean reader don't need click, disqus comment autoload
 
 # uncomment to enable the Tags link on the main toolbar
