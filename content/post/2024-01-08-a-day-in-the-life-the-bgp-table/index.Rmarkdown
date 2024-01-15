@@ -14,23 +14,68 @@ library(feasts)
 library(tsibble)
 library(tictoc)
 library(glue)
+library(httr2)
+library(gt)
+```
+
+# Let the Yak SHaving Begin
+
+
+# Updates, Not Routes
+
+```json
+{
+  "recv_time": 1704483075,
+  "id": 12349,
+  "type": "UPDATE",
+  "nlri": [ "38.43.124.0/23" ],
+  "withdrawn_routes": [],
+  "path_attributes": [
+    {
+      "type": "ORIGIN", "type_code": 1,
+      "flags": [ well-known", "transitive", "complete", "standard" ],
+      "origin": "IGP"
+    },
+    {
+      "type": "AS_PATH", "type_code": 2,
+      "flags": ["well-known", "transitive", "complete", "standard"],
+      "n_as_segments": 1,
+      "path_segments": [
+        {
+          "type": "AS_SEQUENCE",
+          "n_as": 6,
+          "asns": [ 45270, 4764, 2914, 12956, 27951, 23456 ]
+        }
+      ]
+    },
+    {
+      "type": "NEXT_HOP", "type_code": 3,
+      "flags": ["well-known", "transitive", "complete", "standard"],
+      "next_hop": "61.245.147.114"
+    },
+    {
+      "type": "AS4_PATH", "type_code": 17,
+      "flags": ["optional", "non-transitive","partial","extended" ],
+      "n_as_segments": 1,
+      "path_segments": [
+        {
+          "type": "AS_SEQUENCE",
+          "n_as": 6,
+          "asns": [ 45270,4764, 2914, 12956, 27951, 273013 ]
+        }
+      ]
+    }
+  ]
+}
 ```
 
 
-```{sh}
-#gunzip -c data/full_table.zip > full_table.json
-time jq -s '. | map( select(.type == "UPDATE") | { recv_time, id, type, "nlri": .message.nlri, "withdrawn_routes": .message.withdrawn_routes, "path_attributes": .message.path_attributes } )' data/full_table_5_head.json > full_table_filtered.json
-```
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 tic("Start BGP load")
 bgp <-
 fromJSON('data/full_table_5_transform_day.zip') |>
     as_tibble() 
-    #mutate(path_attributes = map(path_attributes, ~{ pivot_wider(.x, names_from = type, values_from = -c(type, type_code, flags, flags_low_nibble), names_sep = '.') })) |> 
-    #unnest(path_attributes, names_sep = '.') |> 
-    #select(where(~!(all(is.na(.)) | all(. == 'NULL')))) |>
-    #select(!matches('type_code|flags')) s
 toc("End BGP load")
 ```
 
@@ -52,9 +97,7 @@ bgp <-
 toc()
 ```
 
-# Updates Over Time
-
-Initial block of paths.
+# Initial Send, Number of v4 and v6 Paths
 
 ```{r}
 bgp |> 
@@ -72,9 +115,18 @@ bgp |>
         y = 'Paths'
     ) 
 ```
+# Updated Over Time
+
+
 ```{r}
-# Start looking at only IPv4 routes
-bgpv4 <- bgp |> filter(ip_version == 'v4')
+bgp |> 
+    filter(!initial_send) |> 
+    group_by(ip_version) |>
+    count(recv_time) |>
+    ggplot() +
+    geom_line(aes(recv_time, n, colour = ip_version)) +
+    facet_wrap(~ip_version, nrow = 2) +
+    scale_x_datetime()
 ```
 
 ```{r}
@@ -83,21 +135,20 @@ bgp <-
     bgp |> 
     unnest(path_attributes, names_sep = '.') |>
     filter(path_attributes.type %in% c('AS_PATH', 'AS4_PATH')) |>
+    # Get AS4_PATH if it exists, otherwise get AS_PATH
     group_by(id) |>
     slice_tail(n = 1) |>
     ungroup() |> 
     select(id, path_attributes.path_segments) |>
     unnest(path_attributes.path_segments) |>
     unnest(asns) |>
+    # Concatenate the al path segments into one list 
     group_by(id) |>
     summarise(as_path = list(asns)) |> 
     ungroup() |> 
-    right_join(bgp, by = 'id') 
-toc()
-```
-```{r}
-bgp <-
-    bgp |> 
+    # Joint back with original tibble
+    right_join(bgp, by = 'id') |> 
+    # Pull out the last (originating) AS as a separate column
     mutate(
         originating_asn = map_int(as_path, ~{ 
             if (is.null(.x)) { return(NA_integer_) }
@@ -106,7 +157,9 @@ bgp <-
         }),
         as_path_len = map_int(as_path, ~length(.x))
     )
+toc()
 ```
+# Longest AS_PATHS
 
 ```{r}
 bgp |>
@@ -120,11 +173,40 @@ bgp |>
     scale_x_discrete()
 ```
 ```{r}
+# ASN Whois
+caida_asn_lookup <- function(asn) {
+    orgID <-
+    request("https://api.asrank.caida.org") |>
+    req_url_path(glue("/v2/restful/asns/{asn}")) |>
+    req_perform() |>
+    resp_body_json(simplifyVector = TRUE) |>
+    pluck('data', 'asn', 'organization', 'orgId')
+    
+    request("https://api.asrank.caida.org") |>
+    req_url_path(glue("/restful/organizations/{orgID}")) |>
+    req_perform() |>
+    resp_body_json(simplifyVector = TRUE) |>
+    pluck('data', 'organization', 'orgName') 
+}
+```
+
+
+```{r}
 bgp |>
-    filter(ip_version == 'v4') |>
+    filter(ip_version == 'v6') |>
     slice_max(as_path_len, n = 1) |>
-    mutate(as_path_string = paste(as_path)) |> 
-    pull(as_path_string) |>
+    select(as_path) |>
+    unnest(as_path) |>
+    add_count(as_path) |>
+    distinct(as_path, .keep_all = TRUE) |>
+    mutate(organisation = map_chr(as_path, ~caida_asn_lookup(.x))) |>
+    gt() |>
+    cols_label(
+        as_path = md("**AS Number**"),
+        n = md("**No. of Prepends**"),
+        organisation = md("**Organisation Name**"),
+    ) |> 
+    cols_align('center')
 ```
 
 
@@ -141,16 +223,6 @@ bgp |>
     geom_col(aes(prefix_len, n))
 ```
 
-```{r}
-bgp |> 
-    filter(!initial_send) |> 
-    group_by(ip_version) |>
-    count(recv_time) |>
-    ggplot() +
-    geom_line(aes(recv_time, n, colour = ip_version)) +
-    facet_wrap(~ip_version, nrow = 2) +
-    scale_x_datetime()
-```
 
 ```{r}
 tic("Unnest")
