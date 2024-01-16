@@ -16,6 +16,7 @@ library(tictoc)
 library(glue)
 library(httr2)
 library(gt)
+library(igraph)
 ```
 
 # Let the Yak SHaving Begin
@@ -97,6 +98,26 @@ bgp <-
 toc()
 ```
 
+# Initial Graph
+
+```{r}
+bgp_asn_paths <- bgp |> filter(as_path_len < 4 & as_path_len > 2)
+
+bgp_asn_paths |>
+    select(as_path) |>
+    mutate(as_path_string = map_chr(as_path, ~{ paste0(.x, collapse = ',') })) |> 
+    distinct(as_path_string, .keep_all = TRUE) |>
+    # Build the pairwise asns into from,to. Remove the last node so we're only looking at 
+    # transit ASes. Otherwise the graph becomes unplottable with leaf ASNs very quickly
+    mutate(edges = map(as_path, ~{ tibble(from = .x[ 1:(length(.x) - 2) ], to =  .x[ 2:(length(.x) - 1) ]) } )) |>
+    unnest(edges) |>
+    distinct(from, to) |>
+    graph_from_data_frame() |>
+    plot()
+```
+
+
+
 # Initial Send, Number of v4 and v6 Paths
 
 ```{r}
@@ -127,6 +148,14 @@ bgp |>
     geom_line(aes(recv_time, n, colour = ip_version)) +
     facet_wrap(~ip_version, nrow = 2) +
     scale_x_datetime()
+```
+```{r}
+bgp |>
+    filter(!initial_send) |>
+    add_count(originating_asn) |>
+    slice_max(n) |>  
+    group_by(recv_time) 
+    
 ```
 
 ```{r}
@@ -209,9 +238,17 @@ bgp |>
     cols_align('center')
 ```
 
+# IP Address Space
 
 ```{r}
-bgp |>
+bgpv4 <- bgp |> filter(ip_version == 'v4')
+```
+
+
+## Prefix Length Distribution
+
+```{r}
+bgpv4 |>
     filter(initial_send) |>
     unnest(nlri) |>
     # Remove default
@@ -222,18 +259,21 @@ bgp |>
     ggplot() +
     geom_col(aes(prefix_len, n))
 ```
-
-
 ```{r}
-tic("Unnest")
-bgpv4 <-
-    bgp |> 
-    filter(ip_version == 'v4') |> 
-    unnest(path_attributes, names_sep = '.') 
-toc()
+
 ```
+
+# Path Attributes
+
 ```{r}
-bgpv4 |>
+bgpv4_attr <-
+    bgpv4 |>
+    unnest(path_attributes, names_sep = '.')
+```
+
+
+```{r}
+bgpv4_attr |>
     filter(!path_attributes.type_code %in% c(1,2,3)) |>
     mutate(pa = glue('{path_attributes.type} ({path_attributes.type_code})')) |>
     count(pa) |>
@@ -243,8 +283,10 @@ bgpv4 |>
     coord_flip()
 ```
 ```{r}
- bgpv4 |>
-    filter(path_attributes.type_code == 255)
+ bgpv4_attr |>
+    filter(path_attributes.type_code == 255) |>
+    distinct(originating_asn) |>
+    mutate(organisation = map_chr(originating_asn, ~caida_asn_lookup(.x)))
 ```
 
 
