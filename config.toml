@@ -1,6 +1,6 @@
-baseurl = "https://articles.foletta.org"
+baseurl = "https://bgptable.articles.foletta.org"
 title = "Greg Foletta - Bits and Blobs"
-copyright = "Copyright 2023 - Greg Foletta"
+copyright = "Copyright 2024 - Greg Foletta"
 canonifyurls = true
 theme = "hugo-kiera"
 
