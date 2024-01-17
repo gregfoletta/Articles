@@ -20,7 +20,7 @@ library(igraph)
 ```
 
 ```{r setup, echo = F}
-knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(echo = FALSE)
 ```
 
 # Let the Yak SHaving Begin
