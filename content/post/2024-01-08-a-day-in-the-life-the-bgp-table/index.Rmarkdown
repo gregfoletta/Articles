@@ -9,20 +9,52 @@ images: []
 ---
 ```{r include=FALSE}
 library(tidyverse)
-library(jsonlite)
 library(feasts)
 library(tsibble)
-library(tictoc)
 library(glue)
 library(httr2)
 library(gt)
-library(igraph)
+library(tidygraph)
+library(ggraph)
+library(gganimate)
 ```
 
-```{r setup, echo = F}
-knitr::opts_chunk$set(echo = FALSE)
-```
 
+```{r}
+# ASN Whois
+caida_asn_lookup <- function(asn) {
+    asn_info <-
+    request("https://api.asrank.caida.org") |>
+    req_url_path(glue("/v2/restful/asns/{asn}")) |>
+    req_perform() |>
+    resp_body_json(simplifyVector = TRUE) 
+  
+    asn_tbl <- 
+    asn_info |> 
+      pluck('data', 'asn') |> 
+      discard(~is.null(.x)) |> 
+      _[c('rank', 'asn', 'asnName', 'source', 'cliqueMember', 'seen', 'longitude', 'latitude', 'organization', 'country')] |> 
+      as_tibble() |>
+      unnest(c(country, organization)) 
+    
+    if (is.null(asn_info$data$asn$organization$orgId)) {
+        return("")
+    }
+        
+    orgID <- asn_info |> pluck('data', 'asn', 'organization', 'orgId')
+   
+    org_info <-
+    request("https://api.asrank.caida.org") |>
+    req_url_path(glue("/restful/organizations/{orgID}")) |>
+    req_perform() |>
+    resp_body_json(simplifyVector = TRUE) 
+   
+    org_info |> 
+      pluck('data', 'organization', 'orgName') |> 
+      as_tibble() |>
+      bind_cols(asn_tbl)
+}
+```
 # Let the Yak SHaving Begin
 
 
@@ -75,36 +107,53 @@ knitr::opts_chunk$set(echo = FALSE)
 ```
 
 
-
-```{r eval=FALSE, include=FALSE}
-tic("Start BGP load")
-bgp <-
-fromJSON('data/full_table_5_transform_day.zip') |>
-    as_tibble() 
-toc("End BGP load")
+```{r}
+#library(tictoc)
+#tic("Start BGP load")
+library(jsonlite)
+bgp <- fromJSON('data/full_table_5_transform_day.zip')
+#toc("End BGP load")
 ```
 
 
+```{r cars}
+foo <- read_rds('~/Documents/Projects/articles.foletta.org/content/post/2024-01-08-a-day-in-the-life-the-bgp-table/data/full_table.rds')
+
+foo |>
+  mutate(
+        recv_time = as.POSIXct(recv_time),
+        ip_version = map_chr(path_attributes, ~{ if_else(any(.x$type == "MP_REACH_NLRI" | .x$type == "MP_UNREACH_NLRI"), 'v6', 'v4') })
+  )
+```
+
 ```{r}
-tic("Load and Cleaning")
+ bgp <- read_rds('data/full_table.rds')
+```
+
+```{r}
 bgp <-
-    read_rds('data/full_table.rds') |> 
+    bgp %>%  
     mutate(
         recv_time = as.POSIXct(recv_time),
         ip_version = map_chr(path_attributes, ~{ if_else(any(.x$type == "MP_REACH_NLRI" | .x$type == "MP_UNREACH_NLRI"), 'v6', 'v4') }),
         pure_withdraw = 
             ( map_lgl(withdrawn_routes, ~{ length(.x) > 0 }) & map_lgl(nlri, ~{ length(.x) == 0 }) ) | 
-            ( map_lgl(path_attributes, ~{ any(.x$type == "MP_UNREACH_NLRI") & !any(.x$type == "MP_REACH_NLRI") }) )
-    ) |>
-    group_by(ip_version) |>
-    mutate(initial_send = recv_time - first(recv_time) < 30) |>
+            ( map_lgl(path_attributes, ~{ any(.x$type == "MP_UNREACH_NLRI") & !any(.x$type == "MP_REACH_NLRI") }) ),
+        n_routes = map_int(nlri, ~length(.x)),
+        address_space = map_dbl(nlri, ~{ 
+            n <- .x |> str_extract("/(\\d+)", group = TRUE) |> as.integer()
+            2^(32 - n) |> sum() |> log2()
+        })
+    ) %>% 
+    group_by(ip_version) %>% 
+    mutate(initial_send = recv_time - first(recv_time) < 30) %>% 
     ungroup()
-toc()
+```
 
-tic("AS_PATH Variables")
-bgp <-
+```{r}
+ bgp <-
     bgp |> 
-    unnest(path_attributes, names_sep = '.') |>
+    unnest(path_attributes, names_sep = '.') |> 
     filter(path_attributes.type %in% c('AS_PATH', 'AS4_PATH')) |>
     # Get AS4_PATH if it exists, otherwise get AS_PATH
     group_by(id) |>
@@ -128,27 +177,61 @@ bgp <-
         }),
         as_path_len = map_int(as_path, ~length(.x))
     )
-toc()
 ```
 
 # Initial Graph
 
 ```{r}
-bgp_asn_paths <- bgp |> filter(as_path_len < 4 & as_path_len > 2)
+#bgp_asn_paths <- 
+#  bgp |> 
+#  filter(
+#    (as_path_len > 2 & as_path_len < median(as_path_len)) & address_space > 16
+#  )
 
-bgp_asn_paths |>
-    select(as_path) |>
-    mutate(as_path_string = map_chr(as_path, ~{ paste0(.x, collapse = ',') })) |> 
-    distinct(as_path_string, .keep_all = TRUE) |>
-    # Build the pairwise asns into from,to. Remove the last node so we're only looking at 
-    # transit ASes. Otherwise the graph becomes unplottable with leaf ASNs very quickly
-    mutate(edges = map(as_path, ~{ tibble(from = .x[ 1:(length(.x) - 2) ], to =  .x[ 2:(length(.x) - 1) ]) } )) |>
-    unnest(edges) |>
-    distinct(from, to) |>
-    graph_from_data_frame() |>
-    plot()
+#bgp_asn_paths <-
+#  bgp_asn_paths |> 
+#  group_by(originating_asn) |>
+#  summarise(originating_ip_space = log2(sum(2^address_space))) |>
+#  right_join(bgp_asn_paths)
+
+
+bgp_graph <-
+  bgp |>
+  filter(initial_send & !pure_withdraw & ip_version == 'v4' & as_path_len > 1) |> 
+  select(as_path, address_space) |>
+  mutate(as_path_string = map_chr(as_path, ~{ paste0(.x, collapse = ',') })) |> 
+  distinct(as_path_string, .keep_all = TRUE) |>
+  # Build the pairwise asns into from,to. Remove the last node so we're only looking at 
+  # transit ASes. Otherwise the graph becomes unplottable with leaf ASNs very quickly
+  mutate(edges = map(as_path, ~{ tibble(from = .x[ 1:(length(.x) - 2) ], to =  .x[ 2:(length(.x) - 1) ]) } )) |>
+  select(edges, address_space) |> 
+  unnest(edges) |>
+  distinct(from, to, .keep_all = TRUE) |>
+  as_tbl_graph()
+  #mutate(org_name = map_chr(name, ~caida_asn_lookup(.x)))
 ```
 
+```{r}
+foo <-
+bgp_graph |>
+  activate(nodes) |>
+  mutate(node_type = if_else(name == "4764", "Root", "Upstream")) |> 
+  mutate(centrality = centrality_betweenness()) |>
+  ggraph(layout = 'auto') +
+  geom_edge_fan() +
+  geom_point_interactive(aes(x = 1, y = 1)) +
+  geom_node_point(aes(size = centrality, colour = node_type)) +
+  labs(
+    title = "Local ASN Region",
+    subtitle = "Path Length < Median, Originating IP Space > log2(16)",
+    colour = "Node Type",
+    size = "Node Centrality"
+  )
+
+foo
+
+#girafe(foo, options = list(opts_sizing(rescale = FALSE)))
+```
 
 
 # Initial Send, Number of v4 and v6 Paths
@@ -172,15 +255,27 @@ bgp |>
 # Updated Over Time
 
 
-```{r}
-bgp |> 
-    filter(!initial_send) |> 
-    group_by(ip_version) |>
-    count(recv_time) |>
-    ggplot() +
-    geom_line(aes(recv_time, n, colour = ip_version)) +
-    facet_wrap(~ip_version, nrow = 2) +
-    scale_x_datetime()
+```{r message=FALSE, warning=FALSE}
+{ bgp |> 
+  filter(!initial_send & ip_version == 'v4') |> 
+  count(recv_time = floor_date(recv_time, unit = '30 minutes', )) |>
+  mutate(mean_n = mean(n)) |> 
+  ggplot(aes(recv_time, n, group = 1)) +
+  geom_line(aes(recv_time, n)) +
+  geom_hline(aes(yintercept = mean_n), linetype = 2) +
+  geom_segment(aes(xend = max(recv_time), yend = n), linetype = 2, colour = 'grey') +
+  geom_label(aes(x = max(recv_time) + hms("1:0:0"), label = n)) +
+  geom_point() +
+  transition_reveal(recv_time) +
+  scale_x_datetime() +
+  coord_cartesian(clip = 'off') +
+  labs(
+    title = "BGP Path Advertisements Over Time",
+    subtitle = "Dashed Line: Mean, Time: {floor_date(frame_along)}",
+    x = "Time",
+    y = "Number of Paths Advertised"
+  ) } |>
+  animate(duration = 49, fps = 1)
 ```
 
 # Longest AS_PATHS
@@ -194,34 +289,9 @@ bgp |>
     ggplot() +
     geom_col(aes(order, as_path_len, fill = ip_version)) +
     facet_wrap(~ip_version, scales = 'free') +
-    scale_x_discrete()
+    scale_x_discrete() 
 ```
-```{r}
-# ASN Whois
-caida_asn_lookup <- function(asn) {
-    orgID <-
-    request("https://api.asrank.caida.org") |>
-    req_url_path(glue("/v2/restful/asns/{asn}")) |>
-    req_perform() |>
-    resp_body_json(simplifyVector = TRUE) 
-   
-   
-    print(asn)
-    print(orgID$data$asn$organization$orgId)
-    
-    if (is.null(orgID$data$asn$organization$orgId)) {
-        return("")
-    }
-        
-    orgID <- orgID |> pluck('data', 'asn', 'organization', 'orgId')
-    
-    request("https://api.asrank.caida.org") |>
-    req_url_path(glue("/restful/organizations/{orgID}")) |>
-    req_perform() |>
-    resp_body_json(simplifyVector = TRUE) |>
-    pluck('data', 'organization', 'orgName') 
-}
-```
+
 
 
 ```{r}
@@ -232,7 +302,7 @@ bgp |>
     unnest(as_path) |>
     add_count(as_path) |>
     distinct(as_path, .keep_all = TRUE) |>
-    mutate(organisation = map_chr(as_path, ~caida_asn_lookup(.x))) |>
+    mutate(organisation = map_df(as_path, ~caida_asn_lookup(.x))) |>
     gt() |>
     cols_label(
         as_path = md("**AS Number**"),
@@ -291,7 +361,8 @@ bgpv4_attr |>
  bgpv4_attr |>
     filter(path_attributes.type_code == 21) |>
     distinct(originating_asn) |>
-    mutate(organisation = map_chr(originating_asn, ~caida_asn_lookup(.x)))
+    mutate(organisation = map_df(originating_asn, ~caida_asn_lookup(.x))) |>
+    unnest(organisation)
 ```
 
 
