@@ -30,15 +30,16 @@ pcap <- read_rds('20240417_pcap.Rdata')
 ```{r clean}
 tcp_segments <-
     pcap |>
-    filter(is.na(udp.stream)) |>
+    filter(is.na(udp.stream) & !is.na(tcp.stream)) |>
     unnest(tcp.flags_tree) |> 
     mutate(
         time = as.double(frame.time_epoch),
         id = as.double(frame.number)
     ) |> 
     mutate(time  = as.POSIXct(time)) |> 
-    select(c(time, id, eth.src, tcp.stream, tcp.srcport, tcp.dstport, tcp.flags.syn, tcp.flags.ack, tcp.flags.fin, tcp.flags.reset)) |>
-    mutate(across(starts_with('tcp.flags'), as.integer))
+    select(c(time, frame.time_relative, id, eth.src, tcp.stream, tcp.srcport, tcp.dstport, tcp.flags.syn, tcp.flags.ack, tcp.flags.fin, tcp.flags.reset)) |>
+    mutate(across(starts_with('tcp.'), as.integer)) |>
+    mutate(frame.time_relative = as.double(frame.time_relative))
 ```
 
 
@@ -47,87 +48,132 @@ tcp_segments |> summarise(duration = last(time) - first(time)) |> gt()
 ```
 
 # Connections Per Second
-```{r}
+```{r cps}
 tcp_connections <-
     tcp_segments |>
+    mutate(time = as.integer(time)) |> 
+    # Only look at the initial SYN, not the SYN/ACK
     filter(tcp.flags.syn == 1 & tcp.flags.ack == 0) |>
-    group_by(time = floor_date(time, 'seconds')) |>
+    group_by(time) |>
     summarise(cps = sum(tcp.flags.syn)) |> 
-    mutate(time_d = as.integer(time)) |> 
     full_join(
         tibble(
-            time_d = as.integer( first(tcp_segments$time):last(tcp_segments$time) ),
+            time = as.integer( first(tcp_segments$time):last(tcp_segments$time) ),
         ),
-        by = 'time_d'
+        by = 'time'
     ) |>
-    arrange(time_d) |>
-    mutate(
-        cps = if_else(is.na(cps), 0, cps),
-        time = as.POSIXct(time_d)
-    ) |>
-    select(-time_d) |>
+    arrange(time) |>
+    mutate(cps = if_else(is.na(cps), 0, cps)) |>
     # Filter out the first zero rows
     filter(cumsum(cps) != 0) |>
     arrange(desc(time)) |>
     # Filter out the last zero rows
     filter(cumsum(cps) != 0) |>
-    arrange(time)
-```
-
-```{r stan_model}
-tcp_model <- cmdstan_model('tcp_model.stan')
-
-tcp_fit <- tcp_model$sample(
-    data = compose_data(tcp_connections),
-    seed = 2347,
-    chains = 4,
-    parallel_chains = 4,
-    refresh = 500
-)
-```
-
-```{r assess_chains}
-tcp_fit |> 
-    gather_draws(alpha, beta) |>
-    recover_types() |> 
-    ggplot() +
-    geom_line(aes(.iteration, .value, colour = as_factor(.chain)), alpha = .8) +
-    facet_grid(vars(.variable), scales = 'free_y')
-```
-
-```{r assess_lambda}
-tcp_fit |> 
-    gather_draws(alpha, beta) |>
-    recover_types() |> 
-    ggplot(x = .value) +
-    geom_histogram(aes(y = after_stat(density), fill = as.factor(.chain)), bins = 100) +
-    facet_wrap(vars(.variable), scales = 'free')
-
-tcp_fit |> 
-    gather_draws(alpha, beta) |>
-    recover_types() |>
-    summarise(mean = mean(.value))
-   
+    arrange(time) |> 
+    mutate(time = as.integer(time))
 ```
 
 ```{r}
 tcp_connections |>
-    mutate(rcps = rnbinom(n(), 0.0752898, 0.45373726)) |>
-    pivot_longer(cols = c(cps, rcps)) |>
     ggplot() +
-    geom_histogram(aes(log(value), fill = name), position = 'dodge') 
+    geom_histogram(aes(cps), binwidth = 1)
+```
+
+# Connection Length
+
+```{r session_length}
+######
+# This needs to be more accurate
+tcp_session_length <-
+    tcp_segments |>
+    group_by(tcp.stream) |>
+    # Remove streams where we haven't seen the initial SYN
+    filter(first(tcp.flags.syn) == 1 & first(tcp.flags.ack == 0) ) |>
+    # Remove streams with no ACKs
+    filter(any(tcp.flags.ack)) |>
+    # Remove streams with no RST or FIN
+    filter(!any(tcp.flags.fin) | !any(tcp.flags.reset)) |> 
+    summarise(duration = last(frame.time_relative) - first(frame.time_relative)) 
+
+tcp_session_length |> pull(duration) |> quantile(probs = c(0, .25, .5, .75, .95, .99), names = TRUE) 
+
 ```
 
 
-# Connection Duration
+```{r session_histogram}
+tcp_session_length |>
+    filter(duration < 400) |> 
+    ggplot() +
+    geom_histogram(aes(duration), bins = 400)
+```
 
+
+
+
+# Modelling
+
+```{r test_data}
+test_cps <- tibble(cps = rnbinom(21538, .5, .5))
+test_duration <- tibble(duration = rgamma(1929, 1, 2))
+
+testing <- tibble(
+    normal = rnorm(1000, 140, 2),
+    exp = rexp(1000, .5),
+    cauchy = rcauchy(1000, 2, .1),
+    gamma = rgamma(1000, 1, 1)
+) 
+```
+
+```{r stan_cps_model}
+tcp_model <- cmdstan_model('tcp_user_model.stan')
+
+tcp_fit <- tcp_model$sample(
+    data = compose_data(
+        cps = select(tcp_connections, cps),
+        duration = select(tcp_session_length, duration)
+    ),
+    seed = 1234,
+    chains = 4,
+    parallel_chains = 4,
+    refresh = 1000,
+)
+```
+
+
+```{r assess_chains}
+tcp_fit |> 
+    gather_draws(nb_alpha, nb_beta, g_alpha, g_beta) |>
+    recover_types() |> 
+    ggplot() +
+    geom_line(aes(.iteration, .value, colour = as_factor(.chain)), alpha = .8) +
+    facet_grid(vars(.variable), scales = 'free_y')
+
+tcp_fit |> 
+    gather_draws(nb_alpha, nb_beta, g_alpha, g_beta) |>
+    recover_types() |> 
+    ggplot() +
+    geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
+    facet_wrap(vars(.variable), scales = 'free')
+
+tcp_fit
+```
 ```{r}
-tcp_segments |>
-    group_by(tcp.stream) |> 
-    slice_tail() |>
-    ungroup() |>
-    filter(tcp.flags.fin == 0 & tcp.flags.reset == 0 & tcp.flags.syn != 1)
-
+tcp_fit |>
+    recover_types() |>
+    spread_draws(cps_sim) |>
+    bind_rows(tcp_connections) |>
+    pivot_longer(c(cps, cps_sim)) |>
+    ggplot() +
+    geom_histogram(aes(value, after_stat(density), fill = name), binwidth = 1, position = position_dodge()) +
+    scale_x_binned(limits = c(0, 10))
 ```
-
-
+```{r}
+tcp_fit |>
+    recover_types() |>
+    spread_draws(duration_sim) |>
+    bind_rows(tcp_session_length) |>
+    pivot_longer(c(duration, duration_sim)) |>
+    ggplot() +
+    geom_density(aes(value, fill = name), alpha = .5) +
+    scale_x_continuous(limits = c(0, 100))
+```
