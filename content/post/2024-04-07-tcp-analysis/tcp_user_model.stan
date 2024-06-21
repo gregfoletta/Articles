@@ -32,7 +32,12 @@ model {
 }
 
 generated quantities {
-        int cps_sim = neg_binomial_rng(nb_alpha, nb_beta);
-        real duration_sim = gamma_rng(g_alpha, g_beta);
+    array[1000] int cps_sim;
+    array[1000] real duration_sim;
+    
+    for (n in 1:1000) {
+        cps_sim[n] = neg_binomial_rng(nb_alpha, nb_beta);
+        duration_sim[n] = gamma_rng(g_alpha, g_beta);
+    }
 }
 

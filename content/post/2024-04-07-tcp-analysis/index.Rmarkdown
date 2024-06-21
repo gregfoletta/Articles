@@ -53,35 +53,12 @@ tshark -Tjson -J 'frame eth ip tcp udp' -iwlan0 | jq --stream --from-file pcap_s
       "frame.protocols": "eth:ethertype:ip:tcp:tls",
       "eth.src": "e0:23:ff:65:52:61",
       "eth.dst": "6c:94:66:78:d4:e4",
-      "ip.len": "91",
-      "ip.id": "0x4ce3",
-      "ip.flags_tree": {
-        "ip.flags.rb": "0",
-        "ip.flags.df": "1",
-        "ip.flags.mf": "0"
-      },
-      "ip.dsfield_tree": {
-        "ip.dsfield.dscp": "0",
-        "ip.dsfield.ecn": "0"
-      },
-      "ip.frag_offset": "0",
-      "ip.ttl": "126",
-      "ip.proto": "6",
       "ip.src": "10.50.9.66",
       "ip.dst": "10.50.3.2",
-      "udp.srcport": null,
-      "udp.dstport": null,
-      "udp.length": null,
       "udp.stream": null,
       "tcp.srcport": "3389",
       "tcp.dstport": "56708",
       "tcp.stream": "0",
-      "tcp.completeness": "0",
-      "tcp.len": "51",
-      "tcp.seq": "1",
-      "tcp.seq_raw": "3163806040",
-      "tcp.nxtseq": "52",
-      "tcp.ack": "1",
       "tcp.flags_tree": {
         "tcp.flags.res": "0",
         "tcp.flags.ns": "0",
@@ -95,12 +72,6 @@ tshark -Tjson -J 'frame eth ip tcp udp' -iwlan0 | jq --stream --from-file pcap_s
         "tcp.flags.fin": "0",
         "tcp.flags.str": "·······AP···"
       },
-      "tcp.ack_raw": "970992131",
-      "tcp.hdr_len": "20",
-      "tcp.window_size_value": "63670",
-      "tcp.window_size": "63670",
-      "tcp.window_size_scalefactor": "-1",
-      "tcp.urgent_pointer": "0"
     },
     ...
 ]
@@ -111,7 +82,7 @@ You can take a look at the [*pcap_stream_filter.jq* here](pcap_stream_filter.jq)
 - Filter out the TCP traffic
 
 ```{r load, include=FALSE}
-pcap <- read_rds('20240417_pcap.Rdata')
+pcap <- read_rds('20240417_pcap.Rdata') |> slice_head(n = 1000000)
 ```
 
 
@@ -156,46 +127,17 @@ pcap_reduced <-
         id = as.double(frame.number)
     ) |> 
     mutate(time  = as.POSIXct(time)) |> 
-    select(c(time, frame.time_relative, id, eth.src, eth.dst, tcp.stream, udp.stream, tcp.srcport, tcp.dstport, tcp.flags.syn, tcp.flags.ack, tcp.flags.fin, tcp.flags.reset)) |>
+    select(c(time, frame.time_relative, id, eth.src, eth.dst, tcp.stream, udp.stream, tcp.srcport, tcp.dstport, tcp.flags.syn, tcp.flags.ack, tcp.flags.fin, tcp.flags.reset, flags_string = tcp.flags.str)) |>
     mutate(across(c( starts_with('tcp.'), udp.stream ), as.integer)) |>
     mutate(frame.time_relative = as.double(frame.time_relative))
-```
-```{r}
+
+
+
 # Split out TCP and UDP
 tcp_segments <- pcap_reduced |> filter(!is.na(tcp.stream)) |> arrange(time)
 udp_datagrams <- pcap_reduced |> filter(!is.na(udp.stream)) |> select(-starts_with('tcp')) |> filter(!str_detect(eth.dst, '^(33:33|01:00|ff:ff)')) |>  arrange(time)
 ```
 
-```{r real_concurrent}
-# What's our 'real' concurrent connections per second?
-pcap_reduced |>
-    arrange(time) |> 
-    group_by(tcp.stream, udp.stream) |>
-    filter(n() > 1) |> 
-    mutate(
-        start_end = case_when(
-            row_number() == 1 ~ 1,
-            row_number() == n() ~ -1,
-            .default = 0
-        )
-    ) |>
-    select(time, tcp.stream, udp.stream, start_end) |> 
-    mutate(time = as.integer(time)) |>
-    full_join(
-        tibble(
-            time = as.integer( first(pcap_reduced$time):last(pcap_reduced$time) ),
-        ),
-        by = 'time'
-    ) |>
-    arrange(time) |>
-    group_by(time) |>
-    summarise(connections_per_second = sum(start_end)) |>
-    mutate(concurrent_connections = cumsum(connections_per_second)) |>
-    ggplot() +
-    geom_point(aes(time, concurrent_connections))
-    
-    
-```
 
 
 # Connections Per Second
@@ -223,7 +165,10 @@ tcp_connections <-
     tcp_segments |>
     mutate(time = as.integer(time)) |> 
     group_by(tcp.stream) |> 
-    filter(tcp.flags.syn == 1 & tcp.flags.ack == 0) |> 
+    # Filter out any where by haven't seen the initial SYN
+    filter(any(tcp.flags.syn == 1 & tcp.flags.ack == 0)) |>
+    # Filter out any where we've ONLY seen the initial SYN
+    filter(!all(tcp.flags.syn == 1)) |>   group_by(tcp.stream) |> 
     ungroup() |> 
     group_by(time) |>
     summarise(cps = sum(tcp.flags.syn)) |> 
@@ -238,10 +183,10 @@ tcp_connections <-
 
 
 # Merge TCP and UDP back together
-connections_per_second <-
-    bind_rows(tcp_connections, udp_connections) |>
-    group_by(time) |>
-    summarise(cps = sum(cps))
+connections_per_second <- tcp_connections
+    #bind_rows(tcp_connections, udp_connections) |>
+    #group_by(time) |>
+    #summarise(cps = sum(cps))
 ```
 
 ```{r}
@@ -273,20 +218,18 @@ tcp_session_length <-
     filter(!any(tcp.flags.fin) | !any(tcp.flags.reset)) |> 
     summarise(duration = last(frame.time_relative) - first(frame.time_relative)) 
 
-session_length <-
-    bind_rows(tcp_session_length, udp_session_length) |>
-    rename(tcp = tcp.stream, udp = udp.stream) |> 
-    pivot_longer(cols = c(tcp, udp), names_to = 'protocol', values_to = 'session_id') |> select(-session_id)
-
-#tcp_session_length |> pull(duration) |> quantile(probs = c(0, .25, .5, .75, .95, .99), names = TRUE) 
-#udp_session_length |> pull(duration) |> quantile(probs = c(0, .25, .5, .75, .95, .99), names = TRUE) 
+session_length <- tcp_session_length
+    #bind_rows(tcp_session_length, udp_session_length) |>
+    #pivot_longer(cols = ends_with('stream'), names_to = 'protocol', values_to = 'stream', values_drop_na = TRUE) |>
+    #arrange(stream)
 ```
 
 
 ```{r session_histogram}
-session_length |>
+session_length |> 
     ggplot() +
-    geom_histogram(aes(duration, fill = protocol), binwidth = .5)
+    geom_histogram(aes(duration), bins = 256) +
+    scale_x_continuous(limits = c(10, 600))
 ```
 
 
@@ -324,31 +267,28 @@ tcp_fit |>
     ggplot() +
     geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
     facet_wrap(vars(.variable), scales = 'free')
-
-tcp_fit
 ```
 ```{r}
 tcp_fit |>
     recover_types() |>
     spread_draws(cps_sim[i]) |>
-    bind_rows(tcp_connections) |>
-    pivot_longer(c(cps, cps_sim)) |>
+    bind_rows(tcp_connections,) |>
+    pivot_longer(c(cps, cps_sim), values_drop_na = TRUE) |>
     ggplot() +
     geom_histogram(aes(value, after_stat(density), fill = name), binwidth = 1, position = position_dodge()) +
-    scale_x_binned(limits = c(0, 5))
+    scale_x_continuous(limits = c(-1, 10)) 
 ```
 ```{r}
 tcp_fit |>
     recover_types() |>
     spread_draws(duration_sim[i]) |>
-    bind_rows(tcp_session_length) |>
-    pivot_longer(c(duration, duration_sim)) |>
+    transmute(duration = duration_sim) |> 
+    bind_rows(session_length, .id = 'set') |> 
     ggplot() +
-    geom_density(aes(value, fill = name), alpha = .5) +
-    scale_x_continuous(limits = c(0, 5))
+    geom_histogram(aes(duration, after_stat(density), fill = set), binwidth = 1) +
+    scale_x_continuous(limits = c(-1, 25)) +
+    facet_wrap(~set)
 ```
-
-
 
 # Simulating Users
 
@@ -369,9 +309,7 @@ connections <- function(duration) {
     for (x in 1:n) {
         duration_len <- length(duration[[x]])
         # duration[x] is a list of doubles
-        if(duration_len == 0) {
-            next
-        }
+        if(duration_len == 0) { next }
         
         for (y in 1:length(duration_len)) {
             # Increase the connection at the current time
@@ -396,18 +334,47 @@ connections <- function(duration) {
 }
 ```
 
-```{r}
-# What's the real connection per second duration?
-pcap |>
-    group_by(tcp.stream, udp.stream) |>
-    mutate(first = if_else(row_ == 1, 1, 0))
+```{r real_concurrent}
+# What's our 'real' concurrent connections per second?
+real_concurrent_connections <-
+    tcp_segments |>
+    arrange(time) |> 
+    mutate(time = as.integer(time)) |> 
+    group_by(tcp.stream) |> 
+    # Filter out any where by haven't seen the initial SYN
+    filter(any(tcp.flags.syn == 1 & tcp.flags.ack == 0)) |>
+    # Filter out any where we've ONLY seen the initial SYN
+    filter(!all(tcp.flags.syn == 1)) |>
+    mutate(
+        start_end = case_when(
+            row_number() == 1 ~ 1,
+            row_number() == n() ~ -1,
+            .default = 0
+        )
+    ) |>
+    ungroup() |> 
+    select(time, tcp.stream, start_end) |> 
+    full_join(
+        tibble(
+            time = as.integer( first(pcap_reduced$time):last(pcap_reduced$time) ),
+        ),
+        by = 'time'
+    ) |>
+    arrange(time) |>
+    mutate(start_end = replace_na(start_end, 0)) |> 
+    group_by(time) |>
+    summarise(connections_per_second = sum(start_end)) |>
+    mutate(concurrent_connections = cumsum(connections_per_second)) |>
+    select(time, concurrent_connections) |>
+    mutate(time = (time - first(time) + 1))
 ```
 
 ```{r}
-expand_grid(
-   time = 1:(60 * 60 * 4),
-   user = 1:200,
-) |>
+simulated_concurrent_connections <-
+    expand_grid(
+       time = 1:last(real_concurrent_connections$time),
+       user = 1,
+    ) |>
     mutate(
         cps = sample(posterior_distros$cps_sim, size = n(), replace = TRUE),
         duration = map(cps, ~{ sample(posterior_distros$duration_sim, size = .x, replace = TRUE) })
@@ -418,8 +385,46 @@ expand_grid(
         connections = connections(duration),
         concurrent_connections = cumsum(connections)
     ) |>
+    select(time, concurrent_connections)
+
+real_distro_drawn_connections <-
+    expand_grid(
+       time = 1:last(real_concurrent_connections$time),
+       user = 1,
+    ) |>
+    mutate(
+        cps = sample(tcp_connections$cps, size = n(), replace = TRUE),
+        duration = map(cps, ~{ sample(tcp_session_length$duration, size = .x, replace = TRUE) })
+    ) |> 
+    group_by(time) |>
+    summarise(duration = list(unlist(duration)) ) |>  
+    mutate(
+        connections = connections(duration),
+        concurrent_connections = cumsum(connections)
+    ) |>
+    select(time, concurrent_connections)
+```
+
+
+```{r}
+connection_datasets <-
+    bind_rows(
+        real_concurrent_connections,
+        simulated_concurrent_connections,
+        real_distro_drawn_connections,
+        .id = 'dataset'
+    )
+
+connection_datasets |> 
+    mutate(set  = case_when(dataset == 1 ~ 'real', dataset == 2 ~ 'simulated_synthetic', dataset == 3 ~ 'simulated_real')) |>
     ggplot() +
-    geom_histogram(aes(concurrent_connections), binwidth = 1)
+    geom_point(aes(time, concurrent_connections, colour = set), size = .1, alpha = .5)
+
+connection_datasets |> 
+    mutate(set  = case_when(dataset == 1 ~ 'real', dataset == 2 ~ 'simulated_synthetic', dataset == 3 ~ 'simulated_real')) |>
+    ggplot() +
+    geom_histogram(aes(concurrent_connections, after_stat(density), group = set, fill = set), binwidth = 1, alpha = .5) +
+    facet_grid(~set)
 ```
 
 
