@@ -37,10 +37,9 @@ The second is that in real life, concurrent connections rise and fall like the t
 
 I used `tshark` to capture my wlan0 interface over the course of the day, piping this in to `jq` to filter out the fields I didn't need to reduce the size. The commandline looked like this:
 
+```sh
+tshark -Tjson -J 'frame eth ip tcp udp' -iwlan0 | jq --stream --from-file pcap_stream_filter.jq
 ```
-tshark -Tjson -J 'frame eth ip tcp udp' -iwlan0 | jq --stream --from-file pcap_stream_filter.jq > 20240417_pcap.json
-```
-
 
 ```json
 [
@@ -79,46 +78,22 @@ tshark -Tjson -J 'frame eth ip tcp udp' -iwlan0 | jq --stream --from-file pcap_s
 
 You can take a look at the [*pcap_stream_filter.jq* here](pcap_stream_filter.jq). The data is loaded into R and we do some wrangling:
 
-- Filter out the TCP traffic
 
 ```{r load, include=FALSE}
-pcap <- read_rds('20240417_pcap.Rdata') |> slice_head(n = 1000000)
+pcap <- read_rds('20240417_pcap.Rdata')
 ```
 
+After a bit of wrangling, including filtering for just TCP and UDP, unnesting the TCP flags tree, and converting the time to a POSIXct object, the data is in a form where we can actually use it:
 
-
-```{r warning=FALSE}
-pcap <-
+```{r clean, include=FALSE}
+pcap_reduced <-
     pcap |>
     separate(
         frame.protocols,
         into = paste0('frame.protocols.', c('l1', 'l2', 'l3', 'l4', 'l5', 'remain')), sep = ':',
         extra = 'merge',
         remove = FALSE 
-    )
-```
-```{r}
-pcap |>
-    ggplot() +
-    geom_bar(aes(frame.protocols.l4)) +
-    scale_y_log10() +
-    labs(
-        x = "Protocol",
-        y = "Count (Log 10 Scale)"
-    )
-```
-```{r}
-pcap |>
-    filter(frame.protocols.l4 == 'udp') |>
-    ggplot() +
-    geom_bar(aes(frame.protocols.l5)) +
-    scale_y_log10()
-```
-
-
-```{r clean}
-pcap_reduced <-
-    pcap |>
+    ) |> 
     # Filter out TCP and UDP
     filter(!is.na(udp.stream) | !is.na(tcp.stream)) |>
     unnest(tcp.flags_tree) |> 
@@ -132,15 +107,51 @@ pcap_reduced <-
     mutate(frame.time_relative = as.double(frame.time_relative))
 
 
-
 # Split out TCP and UDP
 tcp_segments <- pcap_reduced |> filter(!is.na(tcp.stream)) |> arrange(time)
 udp_datagrams <- pcap_reduced |> filter(!is.na(udp.stream)) |> select(-starts_with('tcp')) |> filter(!str_detect(eth.dst, '^(33:33|01:00|ff:ff)')) |>  arrange(time)
 ```
 
 
+```{r echo=FALSE}
+# Show table
+pcap_reduced |>
+    slice_head(n = 50) |>
+    gt()
+```
 
 # Connections Per Second
+
+Determining the connections per second is relatively easy. For TCP we group by each TCP stream, filter out any streams for which we haven't seen a SYN (began before we started the packet capture) or where only see SYNs (connection never fully established). We can then count the number of SYNs that ocurred each second, then merge in the full range of time values so it's continues across our range:
+
+```{r tcp_cps}
+# TCP connections are based on the the first SYN seen
+tcp_connections <-
+    tcp_segments |>
+    # Conver back from POSIXct to integer
+    mutate(time = as.integer(time)) |> 
+    group_by(tcp.stream) |> 
+    # Filter out any where by haven't seen the initial SYN
+    filter(any(tcp.flags.syn == 1 & tcp.flags.ack == 0)) |>
+    # Filter out any where we've ONLY seen the initial SYN
+    filter(!all(tcp.flags.syn == 1)) |> 
+    ungroup() |> 
+    # Group by each second and count the number of SYNs
+    group_by(time) |>
+    summarise(cps = sum(tcp.flags.syn)) |> 
+    # Fill in any missing gaps in our time columns
+    full_join(
+        tibble(
+            time = as.integer( first(tcp_segments$time):last(tcp_segments$time) ),
+        ),
+        by = 'time'
+    ) |>
+    arrange(time) |>
+    # The merged in rows are implicitly 0 
+    mutate(cps = replace_na(cps, 0))
+```
+
+UDP has no concept of a conneciton, so we group by UDP stream, filter for the first datagram in each stream that has more than one datagram:
 
 ```{r cps}
 # UDP connections based simply on first datagram per stream seen
@@ -148,7 +159,8 @@ udp_connections <-
     udp_datagrams |>
     mutate(time = as.integer(time)) |> 
     group_by(udp.stream) |>
-    filter(n() > 1 & row_number() == 1) |>
+    # Filter out the first datagram in streams with more than one datagram
+    filter(row_number() == 1 & n() > 1) |>
     ungroup() |>
     count(time, name = 'cps') |> 
     full_join(
@@ -158,78 +170,89 @@ udp_connections <-
         by = 'time'
     ) |> 
     arrange(time) |> 
-    mutate(cps = if_else(is.na(cps), 0, cps))
-
-# TCP connections are based on the the first SYN seen
-tcp_connections <-
-    tcp_segments |>
-    mutate(time = as.integer(time)) |> 
-    group_by(tcp.stream) |> 
-    # Filter out any where by haven't seen the initial SYN
-    filter(any(tcp.flags.syn == 1 & tcp.flags.ack == 0)) |>
-    # Filter out any where we've ONLY seen the initial SYN
-    filter(!all(tcp.flags.syn == 1)) |>   group_by(tcp.stream) |> 
-    ungroup() |> 
-    group_by(time) |>
-    summarise(cps = sum(tcp.flags.syn)) |> 
-    full_join(
-        tibble(
-            time = as.integer( first(tcp_segments$time):last(tcp_segments$time) ),
-        ),
-        by = 'time'
-    ) |>
-    arrange(time) |>
-    mutate(cps = if_else(is.na(cps), 0, cps))
-
+    mutate(cps = replace_na(cps, 0))
 
 # Merge TCP and UDP back together
-connections_per_second <- tcp_connections
-    #bind_rows(tcp_connections, udp_connections) |>
-    #group_by(time) |>
-    #summarise(cps = sum(cps))
+connections_per_second <- 
+    bind_rows(tcp = tcp_connections, udp = udp_connections, .id = 'protocol')
 ```
 
-```{r}
+We merge these two dataframes together and can 
+
+```{r echo=FALSE}
 connections_per_second |>
     ggplot() +
-    geom_histogram(aes(cps), binwidth = 1)
+    geom_histogram(aes(cps, after_stat(density), fill = protocol), binwidth = 1) +
+    scale_x_binned(limits = c(0, 10)) +
+    labs(
+        x = 'CPS',
+        y = 'Density',
+        title = 'TCP and UDP - Connections per Second Histogram',
+        subtitle = 'Limited between 0 and 10',
+        fill = 'Protocol'
+    )
 ```
 
 # Connection Length
 
-```{r session_length}
+We now need to calculate the session length for each TCP and UDP stream. While the initial start of the TCP stream is well defined, the end is a bit messier. They don't all end with a nice FIN/FIN-ACK, and even if they do often you'll see an RST come through 20 to 30 seconds later. Here's a breakdown of the TCP flags for the last segment in each of the TCP streams:
+
+```{r echo=FALSE}
+tcp_segments |>
+    group_by(tcp.stream) |>
+    slice_tail(n = 1) |> 
+    ungroup() |> 
+    count(flags_string, sort = TRUE) |>
+    gt() |>
+    cols_label(flags_string = "TCP Flags", n = 'Count')
+```
+
+We'll keep it simple an take the duration to be the time between the first and last segment seen in the packet capture:
+
+```{r tcp_session_duration}
+tcp_session_duration <-
+    tcp_segments |>
+    group_by(tcp.stream) |>
+    # Filter out any where by haven't seen the initial SYN
+    filter(any(tcp.flags.syn == 1 & tcp.flags.ack == 0)) |>
+    # Filter out any where we've ONLY seen the initial SYN
+    filter(!all(tcp.flags.syn == 1)) |>
+    # Remove streams with no RST or FIN
+    filter(!any(tcp.flags.fin) | !any(tcp.flags.reset)) |> 
+    # Calculate the duration
+    summarise(duration = last(frame.time_relative) - first(frame.time_relative)) |>
+    rename(stream = tcp.stream)
+```
+
+We'll do the same for UDP, then merge the two dataframes together:
+
+```{r udp_session_duration}
 # UDP session length
-udp_session_length <-
+udp_session_duration <-
     udp_datagrams |>
     group_by(udp.stream) |>
     filter(n() != 1) |>
-    summarise(duration = last(frame.time_relative) - first(frame.time_relative))
+    summarise(duration = last(frame.time_relative) - first(frame.time_relative)) |>
+    rename(stream = udp.stream)
 
-######
-# This needs to be more accurate
-tcp_session_length <-
-    tcp_segments |>
-    group_by(tcp.stream) |>
-    # Remove streams where we haven't seen the initial SYN
-    filter(first(tcp.flags.syn) == 1 & first(tcp.flags.ack == 0) ) |>
-    # Remove streams with no ACKs
-    filter(any(tcp.flags.ack)) |>
-    # Remove streams with no RST or FIN
-    filter(!any(tcp.flags.fin) | !any(tcp.flags.reset)) |> 
-    summarise(duration = last(frame.time_relative) - first(frame.time_relative)) 
-
-session_length <- tcp_session_length
-    #bind_rows(tcp_session_length, udp_session_length) |>
-    #pivot_longer(cols = ends_with('stream'), names_to = 'protocol', values_to = 'stream', values_drop_na = TRUE) |>
-    #arrange(stream)
+session_duration <- 
+    bind_rows(tcp = tcp_session_duration, udp = udp_session_duration, .id = 'protocol') 
 ```
 
 
+
 ```{r session_histogram}
-session_length |> 
+session_duration |> 
     ggplot() +
-    geom_histogram(aes(duration), bins = 256) +
-    scale_x_continuous(limits = c(10, 600))
+    geom_histogram(aes(duration, after_stat(density), fill = protocol), bins = 256) +
+    scale_x_continuous(limits = c(10, 130)) +
+    labs(
+        title = 'TCP and UDP - Session Duration Density',
+        subtitle = 'X-Axis Range Limited (0, 130)',
+        x = 'Duration (Seconds)',
+        y = 'Density',
+        fill = 'Protocol'
+    )
 ```
 
 
@@ -237,18 +260,57 @@ session_length |>
 
 # Modelling
 
-```{r stan_cps_model}
-tcp_model <- cmdstan_model('tcp_user_model.stan')
+```
+data {
+  int<lower = 0> n_cps, n_duration;
+  array[n_cps] int cps;
+  vector[n_duration] duration;
+}
+parameters { 
+    //cps neg_binomial() parameters
+    real<lower = 0> nb_alpha;
+    real<lower = 0> nb_beta;
+    
+    //duration gamma() parameteres 
+    real<lower = 0> g_alpha;
+    real<lower = 0> g_beta;
+}
+model {
+    // negative binomial priors
+    nb_alpha ~ exponential(.5);
+    nb_beta ~ exponential(.5);
+    
+    //gamma priors
+    g_alpha ~ exponential(.5);
+    g_beta ~ exponential(.5);
+    
+    //model
+    cps ~ neg_binomial(nb_alpha, nb_beta);
+    duration ~ gamma(g_alpha, g_beta);
+}
+
+generated quantities {
+    array[1000] int cps_sim;
+    array[1000] real duration_sim;
+    
+    for (n in 1:1000) {
+        cps_sim[n] = neg_binomial_rng(nb_alpha, nb_beta);
+        duration_sim[n] = gamma_rng(g_alpha, g_beta);
+    }
+}
+```
+
+
+```{r stan_cps_model, message=FALSE, warning=FALSE, include=FALSE}
+tcp_model <- cmdstan_model('cps_and_duration_model.stan')
 
 tcp_fit <- tcp_model$sample(
     data = compose_data(
         cps = select(connections_per_second, cps),
-        duration = select(session_length, duration)
+        duration = select(session_duration, duration)
     ),
-    seed = 1234,
     chains = 4,
-    parallel_chains = 4,
-    refresh = 1000,
+    parallel_chains = 4
 )
 ```
 
@@ -268,26 +330,42 @@ tcp_fit |>
     geom_histogram(aes(.value, fill = as.factor(.chain)), bins = 100) +
     facet_wrap(vars(.variable), scales = 'free')
 ```
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 tcp_fit |>
     recover_types() |>
     spread_draws(cps_sim[i]) |>
-    bind_rows(tcp_connections,) |>
-    pivot_longer(c(cps, cps_sim), values_drop_na = TRUE) |>
+    ungroup() |> 
+    select(cps = cps_sim) |> 
+    bind_rows(simulated = _, real = tcp_connections, .id = 'set') |> 
     ggplot() +
-    geom_histogram(aes(value, after_stat(density), fill = name), binwidth = 1, position = position_dodge()) +
-    scale_x_continuous(limits = c(-1, 10)) 
+    geom_histogram(aes(cps, after_stat(density), fill = set), binwidth = 1, position = position_dodge()) +
+    scale_x_binned(limits = c(0, 10)) +
+    facet_wrap(~set) +
+    labs(
+        title = 'Connections per Second - Real vs. Simulated Datasets',
+        subtitle = 'Density Histogram',
+        x = 'Connections per Second',
+        y = 'Density',
+        fill = 'Data Set'
+    )
 ```
 ```{r}
 tcp_fit |>
     recover_types() |>
     spread_draws(duration_sim[i]) |>
     transmute(duration = duration_sim) |> 
-    bind_rows(session_length, .id = 'set') |> 
+    bind_rows(real = _, simulated = session_duration, .id = 'set') |> 
     ggplot() +
     geom_histogram(aes(duration, after_stat(density), fill = set), binwidth = 1) +
     scale_x_continuous(limits = c(-1, 25)) +
-    facet_wrap(~set)
+    facet_wrap(~set) +
+    labs(
+        title = 'TCP and UDP - Session Duration - Real vs. Simulated Datasets',
+        subtitle = 'Density Histogram',
+        x = 'Duration (Seconds)',
+        y = 'Density',
+        fill = 'Data Set'
+    )
 ```
 
 # Simulating Users
@@ -394,7 +472,7 @@ real_distro_drawn_connections <-
     ) |>
     mutate(
         cps = sample(tcp_connections$cps, size = n(), replace = TRUE),
-        duration = map(cps, ~{ sample(tcp_session_length$duration, size = .x, replace = TRUE) })
+        duration = map(cps, ~{ sample(tcp_session_duration$duration, size = .x, replace = TRUE) })
     ) |> 
     group_by(time) |>
     summarise(duration = list(unlist(duration)) ) |>  

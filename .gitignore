@@ -8,3 +8,5 @@ id_rsa.pub
 Thumbs.db
 *.encryptr.bin
 .Rproj.user/
+20240417_pcap.Rdata
+cps_and_duration_model
