@@ -13,7 +13,7 @@ images: []
 # Request
 
 ```{sh}
-cut -c1-128 scep_message 
+cut -c1-64 scep_message 
 ```
 
 ```{sh}
