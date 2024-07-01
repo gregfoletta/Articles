@@ -1,0 +1,38 @@
+---
+title: Cracking Open SCEP
+author: ''
+date: '2024-07-01'
+slug: []
+categories: [Shell PKI]
+tags: []
+images: []
+---
+
+![SCEP Capture](scep_capture.png)
+
+# Request
+
+```{sh}
+cut -c1-128 scep_message 
+```
+
+```{sh}
+< scep_message perl -MURI::Escape -e 'print uri_unescape(<STDIN>)' | base64 -d > scep_raw
+
+openssl cms -in scep_raw -cmsout -inform DER -print
+```
+
+
+```{sh}
+< scep_raw openssl cms -verify -noverify -in - -inform DER |
+  openssl cms -inform DER -cmsout -print
+```
+
+```{sh}
+< scep_raw openssl cms -verify -noverify -in - -inform DER -out - |
+  openssl cms -inform DER -decrypt -recip Blog_Post_SubCA.key |
+  openssl req -inform DER -noout -text
+```
+
+# Response
+
