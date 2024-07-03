@@ -8,6 +8,11 @@ tags: []
 images: []
 ---
 
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = '')
+```
+
+
 Most of the articles on this site are long form, taking months to put together. In fact the the radio silence over the past nine months is because I've had two in draft form, and haven't quite been able to get them across the line.
 
 As an antidote to this I've put together something a little more bite-size. In this post we're going to crack open a *Simple Certificate Enrollment Protocol (SCEP)* request. We'll do this on the command line, using the openssl tool peer underneath the hood.
@@ -34,18 +39,22 @@ As you'll soon see, SCEP has an onion like quality (often including the tears), 
 < scep_message perl -MURI::Escape -e 'print uri_unescape(<STDIN>)' | base64 -d > scep_raw
 ```
 
+
+# Signing
+
 Now we start to get to the meat and bones. The first wrapper is a [Cryptographic Message Syntax](https://en.wikipedia.org/wiki/Cryptographic_Message_Syntax) that provides verification of the request. The below command prints out the structure, which I've edited for brevity and added comments to:
 
 ```{sh}
 # Print the CMS structure
 openssl cms -in scep_raw -cmsout -inform DER -print
 ```
-
+# Encryption
 
 ```{sh}
 < scep_raw openssl cms -verify -noverify -in - -inform DER |
   openssl cms -inform DER -cmsout -print
 ```
+# Certificate Signing Request
 
 ```{sh}
 < scep_raw openssl cms -verify -noverify -in - -inform DER -out - |
