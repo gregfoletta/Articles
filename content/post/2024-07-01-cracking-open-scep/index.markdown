@@ -1,11 +1,11 @@
 ---
 title: Cracking Open SCEP
-author: ''
+author: 'Greg Foletta'
 date: '2024-07-01'
-slug: []
 categories: [Shell PKI]
-tags: []
-images: []
+output:
+    html_document:
+        code_folding: hide
 ---
 
 
@@ -50,12 +50,12 @@ As you'll soon see, SCEP has an onion like quality (often including the tears), 
 Now we start to get to the meat and bones. The first wrapper is a [Cryptographic Message Syntax](https://en.wikipedia.org/wiki/Cryptographic_Message_Syntax) that provides verification of the request. The below command prints out the structure, which I've edited for brevity and added comments to:
 
 
-```sh
+```{.sh .fold-hide}
 # Print the CMS structure
 openssl cms -in scep_raw -cmsout -inform DER -print
 ```
 
-```
+```language-sh
 CMS_ContentInfo: 
   contentType: pkcs7-signedData (1.2.840.113549.1.7.2)
   d.signedData: 
@@ -297,7 +297,7 @@ CMS_ContentInfo:
 # Encryption
 
 
-```sh
+```{.sh .language-sh}
 < scep_raw openssl cms -verify -noverify -in - -inform DER |
   openssl cms -inform DER -cmsout -print
 ```
