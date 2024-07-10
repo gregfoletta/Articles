@@ -1,0 +1,112 @@
+---
+title: Cracking Open SCEP
+author: 'Greg Foletta'
+date: '2024-07-01'
+categories: [Shell PKI]
+output:
+    html_document:
+        code_folding: hide
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = '')
+```
+
+Most of the posts on this site tend to be long form, a result of me finding it hard to leave stones unturned. This leads to big gaps between posts, in fact the the radio silence over the past nine months is because I've had two in draft form, not to get them across the line.
+
+As an antidote to this I've tried to put together something a little more bite-size. In this post we're going to crack open a *Simple Certificate Enrollment Protocol (SCEP)* request. We'll do this on the command line, using the openssl tool peer underneath the hood.
+
+# The SCEP Request
+
+Here's a screenshot of a packet capture taken during a SCEP request for a new certificate.
+
+![SCEP Capture](scep_capture.png)
+The SCEP request is actually two requests: the first returns an X509 CA certificate, and the second is the certificate request. Focusing in on the second one, the bulk of the request is passed in the *message* query parameter. The value of this parameter is what we'll take a look at first, contained in the *scep_message* file: 
+
+```{sh}
+# Size in bytes
+wc -c scep_message
+# First 64 bytes
+cut -c1-64 scep_message 
+```
+
+As you'll soon see, SCEP has an onion like quality (sometimes including the tears), with layer after layer of different encodings and structures. This first *message* parameter is URI encoded, then base64 encoded, so we decode these store what I'll call the 'raw' SCEP in a file called *scep_raw*.
+
+```{sh}
+# Remove the URI and base64 encoding
+< scep_message perl -MURI::Escape -e 'print uri_unescape(<STDIN>)' | base64 -d > scep_raw
+```
+
+## Signing
+
+Now we can get into the meat and bones. The first wrapper is [Cryptographic Message Syntax (CMS)](https://en.wikipedia.org/wiki/Cryptographic_Message_Syntax) encapsulated data. Originally part of the PKCS standards defined by RSA security (PKCS7 to be exact), CMS is now an IETF standard under [RFC 5652 ](https://datatracker.ietf.org/doc/html/rfc5652). It provides a way to digitally sign, digest, authenticate, or encrypt arbitrary message content. 
+
+Using the openssl *cms* command with the *-print* argument, we look at the structure of this first CMS wrapper. I've redacted some of the less-relevant content and added some comments:
+
+```{sh class.output='language-sh', class.source = 'fold-hide'}
+# Print the CMS structure
+openssl cms -in scep_raw -cmsout -inform DER -print
+```
+The main question I had was what signs this content? The answer gleaned from the above output is that it's signed by the newly generated private key. The requestor then creates a temporary certificate self-signed certificate containing the public key, and includes it in the CMS data. This allows the SCEP server to authenticate the data that's been transferred.
+
+This self-signed certificate will come in hand later, so I'll extract it using the *-verify* and *-signer* arguments:
+
+```{sh}
+# Extract the self signed certificate
+openssl cms -verify -in scep_raw -inform DER -signer self_signed.cer -noverify -out /dev/null
+
+# View the self-signed cert
+openssl x509 -in self_signed.cer -noout -text
+```
+
+## Encryption
+
+The keen eyed will have noticed that the `eContentType` was `pkcs7-data`. I.e. inside this CMS encapsulation is another CMS encapsulation, except this one is responsible for encrypting the certificate request.
+
+Using the *-verify* command we can verify the signature and extract the content, piping openssl again to view the structure of the encrypted CMS. The seemingly contradictory *-noverify* disables verification of the signing certificate of the message (while still checking the actual signature) as we can't verify that self-signed certificate.
+
+```{sh class.source='language-sh'}
+# Verify and extract data
+openssl cms -verify -in scep_raw -inform DER -signer self_signed.cer -noverify |
+# Print second CMS structure
+  openssl cms -inform DER -cmsout -print
+```
+The two main sections are *encryptedKey* and *encryptedContent*. The content-encryption key is randomly generated and used to encrypt the data with a symmetric cipher (3DES), then the key itself is encrypted using the public key of the signing CA that was requested in the first step. I have a copy of the private key of the signing CA ("Blog Post SubCA"), so we can decrypt the content and look at the request.
+
+## The Signing Request
+
+Using the *-decrypt* option and the certificate & private key of the signing CA, we can decrypt the second CMS to take a look at the certificate signing request, again redacted for brevity:
+
+```{sh}
+# Extract verified data
+< scep_raw openssl cms -verify -noverify -in - -inform DER -out - |
+# Extract encrypted data
+  openssl cms -inform DER -decrypt -recip Blog_Post_SubCA.cer -inkey Blog_Post_SubCA.key |
+# Parse ceertificate request
+  openssl req -inform DER -noout -text
+```
+
+In the core we've got a standard certificate request ready for signing, with the addition of an attribute containing the SCEP challenge password.
+
+A quite aside: as per [RFC 4210](https://www.rfc-editor.org/rfc/rfc4210#section-5.2.1), the signer is able to change any field in this CSR except the public key.
+
+# SCEP Response
+
+The response from the SCEP server containing the certificate is similar to the request: 
+- The verification CMS, signed using the public key in the certificate request, allowing to requestor to verify it with their generated private key
+- The encrypted CMS, with a key encrypted by self-signed certificate that was sent in the request, allowing the requestor to decrypt using it's generated private key.
+
+The difference is at the core is a degenerate case of the SignedData, with no signers and content, just the certificates. In our case, it has our newly-signed certificate, as well as the certificate of the CA that signed it. The requestor now has the certificate to use as a server certficate on a web-server, or as a client certificate to authenticate themselves to a service.
+
+```{sh}
+# Extract verified response
+openssl cms -verify -in scep_response -inform der |
+# Decrypt response
+openssl cms -decrypt -inform der -recip self_signed.cer -inkey blog.key |
+# View 'degenerate' signed data certificates 
+openssl pkcs7 -inform der -noout -print_certs -text
+```
+
+# Summary
+
+Not sure if this ended up being 'bite-size' in the end, but it was an enjoyable challenge to take the request and response and peel back the layers. The openssl application has got an immense amount of functionality fronted by a pretty hard-to-use interface. I find challenges like this are the best way to get familiar with its incantations, as opposed to copy and pasting commands in from the internet. 
