@@ -15,8 +15,7 @@ Here's a screenshot of a packet capture taken during a SCEP request for a new ce
 
 ![SCEP Capture](scep_capture.png)
 
-This SCEP request is actually two requests: the first returns an X509 CA certificate, and the second is the certificate request. We'll see how the X509 certificate is used later on, but if we focus in on the second one we see the bulk of the request is passed in the *message* query parameter.
-
+This SCEP request is actually two requests: the first returns an X509 CA certificate, and the second is the certificate request. We'll see how the X509 certificate is used later on, but if we focus in on the second one we see the bulk of the request is passed in the *message* query parameter. I've copied the contents of this to a file named *scep_message*:
 
 ```sh
 # Size in bytes
