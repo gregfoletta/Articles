@@ -12,6 +12,7 @@ enableEmoji = true
 pygmentsCodeFences = true
 
 #disqusShortname = "myShortName"
+googleAnalytics = "G-995KFZ897S"
 
 # Note: to disable a social network icon delete or comment out the corresponding line
 [author]
