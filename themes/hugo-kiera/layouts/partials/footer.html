@@ -7,7 +7,15 @@
 </div>
 <script src="{{ "js/scripts.js" | relURL }}"></script>
 {{ if .Site.GoogleAnalytics }}
-  {{ template "_internal/google_analytics_async.html" . }}
+ <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-KDKENVQGM8"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-KDKENVQGM8');
+</script>
 {{ end }}
 </body>
 
