@@ -1,0 +1,44 @@
+---
+title: BOM
+author: 'Greg Foletta'
+date: '2024-08-15'
+slug: []
+categories: []
+tags: []
+images: []
+---
+
+
+
+
+
+
+
+```{r read_in_data}
+current_temps <- request("sftp://hastings/~/bom_data/current_temps.csv") |>
+    req_perform() |>
+    resp_body_raw() |>
+    read_csv() |>
+    # Change timezone from UTC
+    mutate(request_time = with_tz(request_time, "Australia/Melbourne"))
+
+forecast_temps <- request("sftp://hastings/~/bom_data/forecast_temps.csv") |>
+    req_perform() |>
+    resp_body_raw() |>
+    read_csv() |> 
+    # Change timezone from UTC
+    mutate(request_time = with_tz(request_time, "Australia/Melbourne"))
+```
+
+```{r current_temps}
+current_temps |>
+    ggplot(aes(request_time, current_temp, colour = location)) +
+    geom_line() 
+```
+
+```{r forecast_temps}
+forecast_temps |> 
+    ggplot(aes(forecast_time, forecast_temp, colour = location)) +
+    geom_line()
+```
+
