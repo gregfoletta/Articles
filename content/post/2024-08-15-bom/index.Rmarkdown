@@ -10,6 +10,10 @@ images: []
 
 
 
+```{r}
+library(tidyverse)
+library(httr2)
+```
 
 
 
@@ -20,14 +24,23 @@ current_temps <- request("sftp://hastings/~/bom_data/current_temps.csv") |>
     resp_body_raw() |>
     read_csv() |>
     # Change timezone from UTC
-    mutate(request_time = with_tz(request_time, "Australia/Melbourne"))
+    mutate(
+        request_time = with_tz(request_time, "Australia/Melbourne"),
+        floor_request_time = floor_date(request_time, '5 mins')
+    ) 
+```
 
+```{r}
 forecast_temps <- request("sftp://hastings/~/bom_data/forecast_temps.csv") |>
     req_perform() |>
     resp_body_raw() |>
     read_csv() |> 
     # Change timezone from UTC
-    mutate(request_time = with_tz(request_time, "Australia/Melbourne"))
+    mutate(
+        request_time = with_tz(request_time, "Australia/Melbourne"),
+        forecast_time = force_tz(forecast_time, "Australia/Melbourne"),
+        floor_request_time = floor_date(request_time, '5 mins')
+    )
 ```
 
 ```{r current_temps}
@@ -40,5 +53,61 @@ current_temps |>
 forecast_temps |> 
     ggplot(aes(forecast_time, forecast_temp, colour = location)) +
     geom_line()
+```
+
+```{r}
+forecast_current_joined <-
+    forecast_temps |>
+    # Join on location, and whe forecast time matches the 5 minute floored 
+    # request time of the current observation
+    left_join(
+        current_temps, by = c('forecast_time' = 'floor_request_time', 'location'),
+        relationship = 'many-to-many',
+        suffix = c('_forecast', '_current')
+    ) |>
+    # Drop rows that are in the future and for which we don't have a current temp yet
+    drop_na(current_temp) |> 
+    mutate(
+        time_difference = forecast_time - floor_request_time,
+        temp_difference = current_temp - forecast_temp
+    ) |> 
+    # Filter out "past forecasts"
+    filter(time_difference > 0) |>
+    # Clean up columns
+    select(forecast_time, location, request_time_current, time_difference, forecast_temp, current_temp, temp_difference) |>
+    arrange(desc(forecast_time))
+```
+
+
+# Looking
+
+```{r}
+forecast_current_joined |>
+    filter(time_difference == minutes(5)) |>
+    ggplot() +
+    geom_line(aes(forecast_time, current_temp, colour = location)) +
+    geom_line(aes(forecast_time, forecast_temp), alpha = .5) +
+    facet_grid(vars(location))
+```
+
+
+```{r}
+forecast_current_joined |>
+    filter(time_difference == days(5)) |>
+    ggplot() +
+    geom_line(aes(forecast_time, current_temp, colour = location)) +
+    geom_line(aes(forecast_time, forecast_temp), alpha = .5) +
+    facet_grid(vars(location))
+```
+
+
+
+
+
+```{r}
+forecast_current_joined |>
+    ggplot() +
+    geom_point(aes(time_difference, temp_difference, colour = location), size = .1) +
+    facet_grid(vars(location))
 ```
 
