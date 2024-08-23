@@ -54,6 +54,24 @@ forecast_temps |>
     ggplot(aes(forecast_time, forecast_temp, colour = location)) +
     geom_line()
 ```
+# Model Changes
+
+```{r}
+forecast_temps |>
+    arrange(location, forecast_time, request_time) |> 
+    group_by(forecast_time, location) |>
+    mutate(
+        model_change = forecast_temp != lag(forecast_temp) 
+    ) |>
+    ungroup() |>
+    mutate(time_difference = forecast_time - request_time) |>
+    filter(time_difference > 0 & model_change) |>  
+    ggplot() +
+    geom_histogram(aes(time_difference, fill = location), binwidth = 60 * 60 * 2) +
+    facet_grid(vars(location))
+```
+
+
 
 ```{r}
 forecast_current_joined <-
@@ -85,29 +103,63 @@ forecast_current_joined <-
 forecast_current_joined |>
     filter(time_difference == minutes(5)) |>
     ggplot() +
+    geom_line(aes(forecast_time, forecast_temp, color = '5 minute forecast')) +
+    geom_point(aes(forecast_time, forecast_temp, color = '5 minute forecast')) +
     geom_line(aes(forecast_time, current_temp, colour = location)) +
-    geom_line(aes(forecast_time, forecast_temp), alpha = .5) +
+    geom_point(aes(forecast_time, current_temp, colour = location)) +
     facet_grid(vars(location))
 ```
+
+```{r}
+forecast_current_joined |>
+    filter(time_difference == hours(12)) |>
+    ggplot() +
+    geom_hline(aes(yintercept = 0), size = .3) +
+    geom_line(aes(forecast_time, temp_difference, colour = location)) +
+    geom_point(aes(forecast_time, temp_difference, colour = location)) +
+    facet_grid(vars(location))
+```
+```{r}
+forecast_current_joined |>
+    filter(time_difference == minutes(5)) |>
+    ggplot() +
+    geom_histogram(aes(temp_difference, fill = location), binwidth = .1) +
+    geom_vline(aes(xintercept = 0), size = .3) +
+    facet_grid(vars(location))
+```
+
+```{r}
+forecast_current_joined |>
+    filter(time_difference == days(5)) |>
+    ggplot() +
+    geom_line(aes(forecast_time, forecast_temp, color = '7 day forecast')) +
+    geom_line(aes(forecast_time, current_temp, colour = location)) +
+    facet_grid(vars(location))
+```
+
 
 
 ```{r}
 forecast_current_joined |>
     filter(time_difference == days(5)) |>
     ggplot() +
-    geom_line(aes(forecast_time, current_temp, colour = location)) +
-    geom_line(aes(forecast_time, forecast_temp), alpha = .5) +
+    geom_line(aes(forecast_time, temp_difference, colour = location)) +
     facet_grid(vars(location))
 ```
-
-
 
 
 
 ```{r}
 forecast_current_joined |>
     ggplot() +
-    geom_point(aes(time_difference, temp_difference, colour = location), size = .1) +
-    facet_grid(vars(location))
+    geom_point(aes(time_difference, temp_difference, colour = location), size = .1, alpha = .02) +
+    facet_grid(vars(location)) +
+    scale_x_continuous() +
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1))) +
+    labs(
+        colour = "Location",
+        x = "Time To Forecast (Seconds)",
+        y = "Temperature Difference (C)"
+    )
 ```
 
