@@ -1,12 +1,16 @@
 ---
 title: 'A Day in the Life: The BGP Table'
 author: Greg Foletta
-date: '2024-01-08'
+date: '2024-11-12'
 slug: []
-categories: []
-tags: []
-images: []
+categories: [C BGP Networking]
 ---
+
+Much has been writted and a lot of analysis performed on the BGP table over the years, a significant portion by the inimitable [Geoff Huston](https://bgp.potaroo.net/). However this often focuses on is long term trends, like the growth of the routing table or the the adoption of IPv6 over the span of months or years.
+
+I was interested in what was happening in the short term: what does it look like for a router connected to the churning, foamy chaos of the interenet during a single day? In this article we'll investigate the intra-day shenanigans of the global routing table with an eye to finding some of the ridiculous things that go on out there.
+
+
 ```{r include=FALSE}
 library(tidyverse)
 library(feasts)
@@ -17,10 +21,28 @@ library(gt)
 library(tidygraph)
 library(ggraph)
 library(gganimate)
+
+knitr::opts_chunk$set(
+    comment = ''
+)
+
+scale_colour_brewer_d <- function(..., palette = "Dark2") {
+  scale_colour_brewer(..., palette = palette )
+}
+
+scale_fill_brewer_d <- function(..., palette = "Dark2") {
+  scale_fill_brewer(..., palette = palette)
+}
+
+options(
+  ggplot2.discrete.colour = scale_colour_brewer_d,
+  ggplot2.discrete.fill = scale_fill_brewer_d
+)
+    
 ```
 
 
-```{r}
+```{r include=FALSE}
 # ASN Whois
 caida_asn_lookup <- function(asn) {
     asn_info <-
@@ -57,8 +79,8 @@ caida_asn_lookup <- function(asn) {
 ```
 # Let the Yak SHaving Begin
 
+The first step, as always, is to get some data to work with. Thanks to my colleague Andrew Vinton
 
-# Updates, Not Routes
 
 ```json
 {
@@ -160,26 +182,27 @@ bgp |>
 ```{r echo=FALSE}
 # Here we take a sample of some of of the updates and show the path attributes associated with them.
 bgp |>
-    filter(!initial_send) |> 
-    slice_head(n = 1) |> 
+    # Found an ID with lots of attributes
+    filter(id == 695) |> 
     select(id, path_attributes) |>
     unnest(path_attributes) |>
     mutate(
         flags = map_chr(flags, ~paste(.x, collapse = ', '))
-    ) |>
-    select(-c(flags_low_nibble, n_as_segments, n_total_as)) |>
+    ) |> 
+    select(-c(flags_low_nibble, n_as_segments, n_total_as)) |> 
     mutate(
         path_segments = map_chr(path_segments, ~{ paste( c(.x$type, .x$asns), collapse = ' ') })
     ) |>
-    pivot_longer(c(origin, path_segments, next_hop)) |>
+    mutate(aggregator_asn = as.character(aggregator_asn)) |>
+    pivot_longer(c(origin, path_segments, next_hop, aggregator_asn, aggregator_ip)) |> 
     select(-name) |> 
-    filter(!(is.na(value) | value == "")) |>
+    filter(!(is.na(value) | value == "")) |> 
     gt() |>
     opt_interactive()
 ```
 
 
-```{r}
+```{r include=FALSE}
 # This pulls the as path up into the top level as a column, and also adds the 'originating_asn' 
 # as a column
  bgp <-
@@ -212,7 +235,7 @@ bgp |>
 
 # Initial Send, Number of v4 and v6 Paths
 
-```{r}
+```{r echo=FALSE}
 bgp |> 
     filter(initial_send) |> 
     group_by(ip_version) |> 
@@ -234,7 +257,7 @@ Number of routes is `r bgp |> filter(initial_send & ip_version == 'v4') |> selec
 
 # Updates Over Time
 
-```{r message=FALSE, warning=FALSE}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 
 { bgp |> 
     filter(!initial_send & ip_version == 'v4') |> 
@@ -253,15 +276,18 @@ Number of routes is `r bgp |> filter(initial_send & ip_version == 'v4') |> selec
       y = "Number of Paths Advertised"
     ) } |> animate(renderer = gifski_renderer()) 
 ```
-```{r}
+```{r echo=FALSE}
 bgp |> 
     filter(!initial_send & ip_version == 'v4') |> 
     count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
     ggplot() +
-    geom_histogram(aes(n), binwidth = 5, ) +
-    geom_density(aes(n), )
+    geom_histogram(aes(n, colour = 'foo'), binwidth = 5) +
+    labs(
+        title = 'Foo'
+    ) +
+    guides(colour = 'none')
 ```
-```{r}
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 bgp |> 
     filter(!initial_send & ip_version == 'v4') |>
     add_count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
@@ -279,7 +305,7 @@ bgp |>
 
 # Prepending Madness
 
-```{r}
+```{r echo=FALSE}
 bgp |>
     group_by(ip_version) |> 
     slice_max(order_by = as_path_len, n = 50, with_ties = FALSE) |>
@@ -289,7 +315,7 @@ bgp |>
     geom_col(aes(order, as_path_len, fill = ip_version)) +
     facet_grid(vars(ip_version)) 
 ```
-```{r}
+```{r echo=FALSE}
 bgp |>
     filter(ip_version == 'v4') |>
     slice_max(order_by = as_path_len, n = 1) |>
@@ -311,7 +337,7 @@ bgp |>
 ```
 
 
-```{r}
+```{r echo=FALSE}
 bgp |>
     filter(ip_version == 'v6') |>
     slice_max(order_by = as_path_len, n = 1) |>
@@ -338,9 +364,13 @@ bgpv4_attr |>
     count(pa) |>
     mutate(pa = fct_reorder(pa, n)) |> 
     ggplot() +
-    geom_col(aes(pa, log(n))) +
+    geom_col(aes(pa, log(n), fill = 'red')) +
     geom_label(aes(pa, log(n), label = n), nudge_y = -.2) +
-    coord_flip()
+    coord_flip() +
+    scale_fill_discrete(guide = 'none') + 
+    labs(
+        title = 'Foo'
+    )
 ```
 ```{r}
  bgpv4_attr |>
