@@ -70,12 +70,10 @@ caida_asn_lookup <- function(asn) {
   "path_attributes": [
     {
       "type": "ORIGIN", "type_code": 1,
-      "flags": [ well-known", "transitive", "complete", "standard" ],
       "origin": "IGP"
     },
     {
       "type": "AS_PATH", "type_code": 2,
-      "flags": ["well-known", "transitive", "complete", "standard"],
       "n_as_segments": 1,
       "path_segments": [
         {
@@ -87,12 +85,10 @@ caida_asn_lookup <- function(asn) {
     },
     {
       "type": "NEXT_HOP", "type_code": 3,
-      "flags": ["well-known", "transitive", "complete", "standard"],
       "next_hop": "61.245.147.114"
     },
     {
       "type": "AS4_PATH", "type_code": 17,
-      "flags": ["optional", "non-transitive","partial","extended" ],
       "n_as_segments": 1,
       "path_segments": [
         {
@@ -107,55 +103,90 @@ caida_asn_lookup <- function(asn) {
 ```
 
 
-```{r}
+```{r eval=FALSE, include=FALSE}
+# We read from the RDS file now
 #library(tictoc)
 #tic("Start BGP load")
-library(jsonlite)
-bgp <- fromJSON('data/full_table_5_transform_day.zip')
+#library(jsonlite)
+#bgp <- fromJSON('data/full_table_5_transform_day.zip')
 #toc("End BGP load")
 ```
 
 
-```{r cars}
-foo <- read_rds('~/Documents/Projects/articles.foletta.org/content/post/2024-01-08-a-day-in-the-life-the-bgp-table/data/full_table.rds')
-
-foo |>
-  mutate(
-        recv_time = as.POSIXct(recv_time),
-        ip_version = map_chr(path_attributes, ~{ if_else(any(.x$type == "MP_REACH_NLRI" | .x$type == "MP_UNREACH_NLRI"), 'v6', 'v4') })
-  )
+```{r include=FALSE}
+# This reads in our RDS file.
+ bgp <- read_rds('data/full_table.rds.gz')
 ```
 
-```{r}
- bgp <- read_rds('data/full_table.rds')
-```
-
-```{r}
+```{r warning=FALSE, include=FALSE}
+# This section cleans and adds some columns
 bgp <-
     bgp %>%  
     mutate(
         recv_time = as.POSIXct(recv_time),
+        # bgpsee wasn't parsing IPv6 at the time, but we could see the NLRI path attribute
         ip_version = map_chr(path_attributes, ~{ if_else(any(.x$type == "MP_REACH_NLRI" | .x$type == "MP_UNREACH_NLRI"), 'v6', 'v4') }),
+        # Is this an update with purely withdrawn routes?
         pure_withdraw = 
             ( map_lgl(withdrawn_routes, ~{ length(.x) > 0 }) & map_lgl(nlri, ~{ length(.x) == 0 }) ) | 
             ( map_lgl(path_attributes, ~{ any(.x$type == "MP_UNREACH_NLRI") & !any(.x$type == "MP_REACH_NLRI") }) ),
+        # Number of routes in the update 
         n_routes = map_int(nlri, ~length(.x)),
         address_space = map_dbl(nlri, ~{ 
             n <- .x |> str_extract("/(\\d+)", group = TRUE) |> as.integer()
             2^(32 - n) |> sum() |> log2()
         })
     ) %>% 
+    # For each IPv4/IPv6, is this in the inistal send period where we get the big chunk of updates?
     group_by(ip_version) %>% 
     mutate(initial_send = recv_time - first(recv_time) < 30) %>% 
     ungroup()
 ```
 
+```{r echo=FALSE}
+# This creates a table which shows each message and the NLRI (adv/withdrawn)
+bgp |>
+    filter(!initial_send) |> 
+    head() |> 
+    select(-c(ip_version, pure_withdraw, n_routes, address_space, initial_send)) |> 
+    mutate(
+        nlri = map_chr(nlri, ~paste0(.x, collapse = "\n")),
+        withdrawn_routes = map_chr(withdrawn_routes, ~paste0(.x, collapse = ", "))
+    ) |>
+    gt() |>
+    opt_interactive()
+```
+
+```{r echo=FALSE}
+# Here we take a sample of some of of the updates and show the path attributes associated with them.
+bgp |>
+    filter(!initial_send) |> 
+    slice_head(n = 1) |> 
+    select(id, path_attributes) |>
+    unnest(path_attributes) |>
+    mutate(
+        flags = map_chr(flags, ~paste(.x, collapse = ', '))
+    ) |>
+    select(-c(flags_low_nibble, n_as_segments, n_total_as)) |>
+    mutate(
+        path_segments = map_chr(path_segments, ~{ paste( c(.x$type, .x$asns), collapse = ' ') })
+    ) |>
+    pivot_longer(c(origin, path_segments, next_hop)) |>
+    select(-name) |> 
+    filter(!(is.na(value) | value == "")) |>
+    gt() |>
+    opt_interactive()
+```
+
+
 ```{r}
+# This pulls the as path up into the top level as a column, and also adds the 'originating_asn' 
+# as a column
  bgp <-
     bgp |> 
     unnest(path_attributes, names_sep = '.') |> 
-    filter(path_attributes.type %in% c('AS_PATH', 'AS4_PATH')) |>
     # Get AS4_PATH if it exists, otherwise get AS_PATH
+    filter(path_attributes.type %in% c('AS_PATH', 'AS4_PATH')) |>
     group_by(id) |>
     slice_tail(n = 1) |>
     ungroup() |> 
@@ -179,61 +210,6 @@ bgp <-
     )
 ```
 
-# Initial Graph
-
-```{r}
-#bgp_asn_paths <- 
-#  bgp |> 
-#  filter(
-#    (as_path_len > 2 & as_path_len < median(as_path_len)) & address_space > 16
-#  )
-
-#bgp_asn_paths <-
-#  bgp_asn_paths |> 
-#  group_by(originating_asn) |>
-#  summarise(originating_ip_space = log2(sum(2^address_space))) |>
-#  right_join(bgp_asn_paths)
-
-
-bgp_graph <-
-  bgp |>
-  filter(initial_send & !pure_withdraw & ip_version == 'v4' & as_path_len > 1) |> 
-  select(as_path, address_space) |>
-  mutate(as_path_string = map_chr(as_path, ~{ paste0(.x, collapse = ',') })) |> 
-  distinct(as_path_string, .keep_all = TRUE) |>
-  # Build the pairwise asns into from,to. Remove the last node so we're only looking at 
-  # transit ASes. Otherwise the graph becomes unplottable with leaf ASNs very quickly
-  mutate(edges = map(as_path, ~{ tibble(from = .x[ 1:(length(.x) - 2) ], to =  .x[ 2:(length(.x) - 1) ]) } )) |>
-  select(edges, address_space) |> 
-  unnest(edges) |>
-  distinct(from, to, .keep_all = TRUE) |>
-  as_tbl_graph()
-  #mutate(org_name = map_chr(name, ~caida_asn_lookup(.x)))
-```
-
-```{r}
-foo <-
-bgp_graph |>
-  activate(nodes) |>
-  mutate(node_type = if_else(name == "4764", "Root", "Upstream")) |> 
-  mutate(centrality = centrality_betweenness()) |>
-  ggraph(layout = 'auto') +
-  geom_edge_fan() +
-  geom_point_interactive(aes(x = 1, y = 1)) +
-  geom_node_point(aes(size = centrality, colour = node_type)) +
-  labs(
-    title = "Local ASN Region",
-    subtitle = "Path Length < Median, Originating IP Space > log2(16)",
-    colour = "Node Type",
-    size = "Node Centrality"
-  )
-
-foo
-
-#girafe(foo, options = list(opts_sizing(rescale = FALSE)))
-```
-
-
 # Initial Send, Number of v4 and v6 Paths
 
 ```{r}
@@ -250,105 +226,114 @@ bgp |>
         fill = 'IP Version',
         x = 'IP Version',
         y = 'Paths'
-    ) 
+    ) +
+    scale_y_continuous(labels = scales::comma)
 ```
-# Updated Over Time
 
+Number of routes is `r bgp |> filter(initial_send & ip_version == 'v4') |> select(id, n_routes) |> summarise(routes = sum(n_routes))`. [Geoff's data](https://bgp.potaroo.net/as2.0/bgp-active.txt) shows 942,594
+
+# Updates Over Time
 
 ```{r message=FALSE, warning=FALSE}
+
 { bgp |> 
-  filter(!initial_send & ip_version == 'v4') |> 
-  count(recv_time = floor_date(recv_time, unit = '30 minutes', )) |>
-  mutate(mean_n = mean(n)) |> 
-  ggplot(aes(recv_time, n, group = 1)) +
-  geom_line(aes(recv_time, n)) +
-  geom_hline(aes(yintercept = mean_n), linetype = 2) +
-  geom_segment(aes(xend = max(recv_time), yend = n), linetype = 2, colour = 'grey') +
-  geom_label(aes(x = max(recv_time) + hms("1:0:0"), label = n)) +
-  geom_point() +
-  transition_reveal(recv_time) +
-  scale_x_datetime() +
-  coord_cartesian(clip = 'off') +
-  labs(
-    title = "BGP Path Advertisements Over Time",
-    subtitle = "Dashed Line: Mean, Time: {floor_date(frame_along)}",
-    x = "Time",
-    y = "Number of Paths Advertised"
-  ) } |>
-  animate(duration = 49, fps = 1)
+    filter(!initial_send & ip_version == 'v4') |> 
+    count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
+    mutate(mean_n = mean(n)) |> 
+    ggplot(aes(recv_time, n)) +
+    geom_line(size = .3) +
+    geom_hline(aes(yintercept = mean_n), linetype = 2) +
+    transition_reveal(recv_time) +  
+    scale_x_datetime() +
+    coord_cartesian(clip = 'off') +
+    labs(
+      title = "BGP v4 Path Advertisements Over Time",
+      subtitle = "Dashed Line: Mean, Time: {floor_date(frame_along, '1 minute')}",
+      x = "Time",
+      y = "Number of Paths Advertised"
+    ) } |> animate(renderer = gifski_renderer()) 
+```
+```{r}
+bgp |> 
+    filter(!initial_send & ip_version == 'v4') |> 
+    count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
+    ggplot() +
+    geom_histogram(aes(n), binwidth = 5, ) +
+    geom_density(aes(n), )
+```
+```{r}
+bgp |> 
+    filter(!initial_send & ip_version == 'v4') |>
+    add_count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
+    slice_max(order_by = n, n = 1) |>
+    unnest(asn = as_path) |>
+    count(asn, sort = TRUE) |>
+    slice_head(n = 10) |>
+    mutate(as_info = map(asn, ~caida_asn_lookup(.x))) |>
+    select(n, as_info) |>
+    unnest(as_info) |>
+    select(n, organisation = value, asn, source, country) |>  
+    gt() |>  
+    opt_interactive()
 ```
 
-# Longest AS_PATHS
+# Prepending Madness
 
 ```{r}
 bgp |>
     group_by(ip_version) |> 
-    slice_max(order_by = as_path_len, n = 10) |>
+    slice_max(order_by = as_path_len, n = 50, with_ties = FALSE) |>
     mutate(order = row_number()) |>
     ungroup() |> 
     ggplot() +
     geom_col(aes(order, as_path_len, fill = ip_version)) +
-    facet_wrap(~ip_version, scales = 'free') +
-    scale_x_discrete() 
+    facet_grid(vars(ip_version)) 
+```
+```{r}
+bgp |>
+    filter(ip_version == 'v4') |>
+    slice_max(order_by = as_path_len, n = 1) |>
+    pluck('as_path', 1) |>
+    paste(collapse = ' ')
 ```
 
+Someone at asn 45270, 'Dinas Komunikasi dan Informatika Kabupaten Tulungagung' out of Indonesia, really wanted the NLRI '103.179.250.0/24' to be less preferable. 
+
+```{r}
+bgp |>
+    filter(ip_version == 'v4') |>
+    unnest(nlri) |>
+    filter(nlri == '103.179.250.0/24') |>
+    slice_tail() |> 
+    select(id, as_path, recv_time, type, nlri) |>
+    gt() |>
+    opt_interactive()
+```
 
 
 ```{r}
 bgp |>
     filter(ip_version == 'v6') |>
-    slice_max(as_path_len, n = 1) |>
-    select(as_path) |>
-    unnest(as_path) |>
-    add_count(as_path) |>
-    distinct(as_path, .keep_all = TRUE) |>
-    mutate(organisation = map_df(as_path, ~caida_asn_lookup(.x))) |>
-    gt() |>
-    cols_label(
-        as_path = md("**AS Number**"),
-        n = md("**No. of Prepends**"),
-        organisation = md("**Organisation Name**"),
-    ) |> 
-    cols_align('center')
+    slice_max(order_by = as_path_len, n = 1) |>
+    pluck('as_path', 1) |>
+    paste(collapse = ' ')
 ```
 
-# IP Address Space
-
-```{r}
-bgpv4 <- bgp |> filter(ip_version == 'v4')
-```
-
-
-## Prefix Length Distribution
-
-```{r}
-bgpv4 |>
-    filter(initial_send) |>
-    unnest(nlri) |>
-    # Remove default
-    filter(nlri != '0.0.0.0/0') |> 
-    separate(nlri, into = c('prefix', 'prefix_len'), sep = '/') |>
-    count(prefix_len) |>
-    mutate(prefix_len = fct_reorder(prefix_len, n)) |> 
-    ggplot() +
-    geom_col(aes(prefix_len, n))
-```
-```{r}
-
-```
+This time we've got what appears to be transit provider asn8772 (NetAssist LLC), prepending to make paths to asn203868 (Rifqi Arief Pamungkas, again out of Indonesia)
 
 # Path Attributes
 
 ```{r}
 bgpv4_attr <-
-    bgpv4 |>
+    bgp |>
+    filter(ip_version == 'v4') |> 
     unnest(path_attributes, names_sep = '.')
 ```
 
 
 ```{r}
 bgpv4_attr |>
-    filter(!path_attributes.type_code %in% c(1,2,3)) |>
+    #filter(!path_attributes.type_code %in% c(1,2,3)) |>
     mutate(pa = glue('{path_attributes.type} ({path_attributes.type_code})')) |>
     count(pa) |>
     mutate(pa = fct_reorder(pa, n)) |> 
@@ -359,10 +344,41 @@ bgpv4_attr |>
 ```
 ```{r}
  bgpv4_attr |>
-    filter(path_attributes.type_code == 21) |>
+    filter(path_attributes.type_code == 255) |>
     distinct(originating_asn) |>
     mutate(organisation = map_df(originating_asn, ~caida_asn_lookup(.x))) |>
-    unnest(organisation)
+    unnest(organisation) |>
+    select(originating_asn, organisation = value, source, country)
 ```
 
+# Flippy-Flappy: Who's Having a Bad Time?
+
+```{r}
+bgp |>
+    unnest(nlri) |>
+    count(nlri) |>
+    slice_max(n, n = 50) |>
+    gt() |> 
+    opt_interactive()
+```
+
+
+```{r}
+bind_rows(
+    bgp |> unnest(withdrawn_routes) |> filter(withdrawn_routes == '140.99.244.0/23') |> select(-nlri),
+    bgp |> unnest(nlri) |> filter(nlri == '140.99.244.0/23') |> select(-withdrawn_routes)
+) |> select(id, recv_time, withdrawn_routes, nlri) |>
+    mutate(type = if_else(is.na(withdrawn_routes), 'UPDATE', 'WITHDRAW')) |>
+    select(id, recv_time, type) |>
+    group_by(type) |>
+    mutate(n = row_number()) |>
+    ungroup() |>
+    ggplot() +
+    geom_point(aes(recv_time, n, colour = type), size = .5) +
+    facet_grid(vars(type), scales = 'free_y')
+```
+
+```{r}
+bgp |> unnest(withdrawn_routes) |> filter(withdrawn_routes == '140.99.244.0/23')
+```
 
