@@ -6,9 +6,9 @@ slug: []
 categories: [C BGP Networking]
 ---
 
-Much has been writted and a lot of analysis performed on the BGP table over the years, a significant portion by the inimitable [Geoff Huston](https://bgp.potaroo.net/). However this often focuses on is long term trends, like the growth of the routing table or the the adoption of IPv6 over the span of months or years.
+Much has been written and a lot of analysis performed on the global BGP table over the years, a significant portion by the inimitable [Geoff Huston](https://bgp.potaroo.net/). However this often focuses on is long term trends, like the growth of the routing table or the adoption of IPv6 , dealing with timeframes of of months or years.
 
-I was interested in what was happening in the short term: what does it look like for a router connected to the churning, foamy chaos of the interenet during a single day? In this article we'll investigate the intra-day shenanigans of the global routing table with an eye to finding some of the ridiculous things that go on out there.
+I was interested in what was happening in the short term: what does it look like on the front line for those poor routers connected to the churning, foamy chaos of the interenet, trying their best to adhere to [Postel's Law](https://en.wikipedia.org/wiki/Robustness_principle)? In this article we'll take a look at a day in the life of the global BGP tabale, investigating the intra-day shenanigans with an eye to finding some of the ridiculous things that go on out there.
 
 
 ```{r include=FALSE}
@@ -79,8 +79,11 @@ caida_asn_lookup <- function(asn) {
 ```
 # Let the Yak SHaving Begin
 
-The first step, as always, is to get some data to work with. Thanks to my colleague Andrew Vinton
+The first step, as always, is to get some data to work with. Because I was interested in pure BGP UPDATEs not the resulting routing table itself, and didn't want to have to parse debug output from a virtual router like bird or frr, I decided to write something myself.
 
+More specifically I went back to a half-finished project and got it into a much more polished, working state. The result is **[bgpsee](https://github.com/gregfoletta/bgpsee)**, a multi-threaded BGP peering tool for the CLI. Once peered with another router, the BGP messages are converted into JSON so you can quickly view their contents, or in the case of this article, analyse what's going on.
+
+Here's a single BGP update from the dataset I collected, with some of the irrelevant fields removed. 
 
 ```json
 {
@@ -124,6 +127,8 @@ The first step, as always, is to get some data to work with. Thanks to my collea
 }
 ```
 
+The dataset was collected between the 6/1/2024 tot he 7/1/2024, and consists of 464,673 BGP UPDATE messages received from a peer (thanks [Andrew Vinton](https://www.linkedin.com/in/andrew-vinton/)) with a full BGP table.
+
 
 ```{r eval=FALSE, include=FALSE}
 # We read from the RDS file now
@@ -165,6 +170,8 @@ bgp <-
     ungroup()
 ```
 
+The JSON has been transformed into a semi-rectangular format, with one row for each UPDATE:
+
 ```{r echo=FALSE}
 # This creates a table which shows each message and the NLRI (adv/withdrawn)
 bgp |>
@@ -178,6 +185,8 @@ bgp |>
     gt() |>
     opt_interactive()
 ```
+
+The path attributes are nested within each row, and they look like this:
 
 ```{r echo=FALSE}
 # Here we take a sample of some of of the updates and show the path attributes associated with them.
@@ -233,7 +242,13 @@ bgp |>
     )
 ```
 
+With a better understanding of the source and the structure of the data, let's take a look at what actually goes on.
+
 # Initial Send, Number of v4 and v6 Paths
+
+When you first bring up a BGP peering with a router you get a large amount of UPDATEs consisting of all paths and associated network layer reachability information (NLRI, or more simply 'routes') in the router's BGP table. From this point onwards you will only receive UPDATEs for paths that have changed, or withdrawn routes which no longer have any paths. There's no structural difference between the batch and the ongoing UPDATEs, except for the fact you received the first batch in the first 10 or so seconds of the peering coming up.
+
+Here's a breakdown of the number of distinct paths received in that first batch, separated into IPv4 vs IPv6:
 
 ```{r echo=FALSE}
 bgp |> 
@@ -252,10 +267,11 @@ bgp |>
     ) +
     scale_y_continuous(labels = scales::comma)
 ```
+It's important to highlight that this is a count of BP paths, **not** routes. Each path is a unique comvbination of path attributes with associated NLRI information attached, and each one sent in a distinct BGP UPDATE message. Each one could have one or one-thousand routes associated with it. Doing the math on this dataset, the total number of routes across all of these paths is `r bgp |> filter(initial_send & ip_version == 'v4') |> select(id, n_routes) |> summarise(routes = sum(n_routes))`. Cross referencing across  [Geoff's data](https://bgp.potaroo.net/as2.0/bgp-active.txt) for the same period, his shows 942,594. We're in the same ballpark.
 
-Number of routes is `r bgp |> filter(initial_send & ip_version == 'v4') |> select(id, n_routes) |> summarise(routes = sum(n_routes))`. [Geoff's data](https://bgp.potaroo.net/as2.0/bgp-active.txt) shows 942,594
+# A Garden Host or a Fire Hose?
 
-# Updates Over Time
+That's all we'll look at in the first tranche, now let's see what this thing looks like over the course of a day. Here's an animation showing the number of updates received over the course of the day, aggregated into 5 minute blocks:
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -274,7 +290,7 @@ Number of routes is `r bgp |> filter(initial_send & ip_version == 'v4') |> selec
       subtitle = "Dashed Line: Mean, Time: {floor_date(frame_along, '1 minute')}",
       x = "Time",
       y = "Number of Paths Advertised"
-    ) } |> animate(renderer = gifski_renderer()) 
+    ) } |> animate(renderer = gifski_renderer(), nframes = 279) 
 ```
 ```{r echo=FALSE}
 bgp |> 
@@ -349,7 +365,7 @@ This time we've got what appears to be transit provider asn8772 (NetAssist LLC),
 
 # Path Attributes
 
-```{r}
+```{r include=FALSE}
 bgpv4_attr <-
     bgp |>
     filter(ip_version == 'v4') |> 
@@ -357,7 +373,7 @@ bgpv4_attr <-
 ```
 
 
-```{r}
+```{r echo=FALSE}
 bgpv4_attr |>
     #filter(!path_attributes.type_code %in% c(1,2,3)) |>
     mutate(pa = glue('{path_attributes.type} ({path_attributes.type_code})')) |>
@@ -372,18 +388,19 @@ bgpv4_attr |>
         title = 'Foo'
     )
 ```
-```{r}
+```{r echo=FALSE}
  bgpv4_attr |>
     filter(path_attributes.type_code == 255) |>
     distinct(originating_asn) |>
     mutate(organisation = map_df(originating_asn, ~caida_asn_lookup(.x))) |>
     unnest(organisation) |>
-    select(originating_asn, organisation = value, source, country)
+    select(originating_asn, organisation = value, source, country) |> 
+    gt() 
 ```
 
 # Flippy-Flappy: Who's Having a Bad Time?
 
-```{r}
+```{r echo=FALSE}
 bgp |>
     unnest(nlri) |>
     count(nlri) |>
@@ -393,7 +410,7 @@ bgp |>
 ```
 
 
-```{r}
+```{r echo=FALSE}
 bind_rows(
     bgp |> unnest(withdrawn_routes) |> filter(withdrawn_routes == '140.99.244.0/23') |> select(-nlri),
     bgp |> unnest(nlri) |> filter(nlri == '140.99.244.0/23') |> select(-withdrawn_routes)
@@ -408,7 +425,42 @@ bind_rows(
     facet_grid(vars(type), scales = 'free_y')
 ```
 
-```{r}
-bgp |> unnest(withdrawn_routes) |> filter(withdrawn_routes == '140.99.244.0/23')
+```{r include=FALSE}
+as_path_graph <- function(as_path) {
+    g <- tibble(from = NA, to = NA)
+    path_length <- length(as_path)
+    if (path_length < 2) {
+        return(NA)
+    }
+    
+    for (x in length(as_path):2) {
+        g <- g |> add_row(from = as_path[[x]], to = as_path[[x - 1]]) 
+    }
+    
+    return(g |> filter(!is.na(from)))
+}
+
+as_path_edges <- bgp |> 
+    unnest(nlri) |> 
+    filter(nlri == '140.99.244.0/23') |>
+    select(id, as_path) |>
+    mutate(graph = map(as_path, ~as_path_graph(.x))) |>
+    select(-c(as_path, id)) |> 
+    unnest(graph) |>
+    count(from, to) |>
+    mutate(
+        from = as.character(from),
+        to = as.character(to)
+    )
+```
+
+```{r message=FALSE, warning=FALSE}
+as_tbl_graph(as_path_edges, directed = TRUE) |>
+    ggraph(layout = 'igraph', algorithm = 'fr') +
+    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, 'mm')), end_cap = circle(7, 'mm')) +
+    geom_node_point(size = 17) +
+    geom_node_text(aes(label = name), colour = 'white') +
+    guides(edge_width = FALSE) +
+    theme_graph()
 ```
 
