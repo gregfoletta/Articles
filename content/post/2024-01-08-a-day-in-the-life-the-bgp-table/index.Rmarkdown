@@ -10,6 +10,13 @@ Much has been written and a lot of analysis performed on the global BGP table ov
 
 I was interested in what was happening in the short term: what does it look like on the front line for those poor routers connected to the churning, foamy chaos of the interenet, trying their best to adhere to [Postel's Law](https://en.wikipedia.org/wiki/Robustness_principle)? In this article we'll take a look at a day in the life of the global BGP tabale, investigating the intra-day shenanigans with an eye to finding some of the ridiculous things that go on out there.
 
+There's a problem with this: the data set it really interesting. I could go on for hours looking at different aspects of it. That doesn't make for the most compelling of articles, so I've focuesed on three areas:
+
+- The behaviour over the course of the day
+- Outlier path attributes
+- Noisy neighbours
+
+Let's dive in.
 
 ```{r include=FALSE}
 library(tidyverse)
@@ -21,6 +28,8 @@ library(gt)
 library(tidygraph)
 library(ggraph)
 library(gganimate)
+library(forecast)
+library(patchwork)
 
 knitr::opts_chunk$set(
     comment = ''
@@ -267,37 +276,117 @@ bgp |>
     ) +
     scale_y_continuous(labels = scales::comma)
 ```
-It's important to highlight that this is a count of BP paths, **not** routes. Each path is a unique comvbination of path attributes with associated NLRI information attached, and each one sent in a distinct BGP UPDATE message. Each one could have one or one-thousand routes associated with it. Doing the math on this dataset, the total number of routes across all of these paths is `r bgp |> filter(initial_send & ip_version == 'v4') |> select(id, n_routes) |> summarise(routes = sum(n_routes))`. Cross referencing across  [Geoff's data](https://bgp.potaroo.net/as2.0/bgp-active.txt) for the same period, his shows 942,594. We're in the same ballpark.
+It's important to highlight that this is a count of BGP paths, **not** routes. Each path is a unique comvbination of path attributes with associated NLRI information attached, and each one sent in a distinct BGP UPDATE message. Each one could have one or one-thousand routes associated with it. Doing the math on this dataset, the total number of routes across all of these paths is `r bgp |> filter(initial_send & ip_version == 'v4') |> select(id, n_routes) |> summarise(routes = sum(n_routes))`. Cross referencing across  [Geoff's data](https://bgp.potaroo.net/as2.0/bgp-active.txt) for the same period, his shows 942,594. We're in the same ballpark.
 
 # A Garden Host or a Fire Hose?
 
-That's all we'll look at in the first tranche, now let's see what this thing looks like over the course of a day. Here's an animation showing the number of updates received over the course of the day, aggregated into 5 minute blocks:
+That's enough of the first tranche, let's see how much change there is across the day. The animation below shows the number of BGP UPDATEs received every 30 seconds, along with the mean and median statistics:
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE}
 
 { bgp |> 
-    filter(!initial_send & ip_version == 'v4') |> 
-    count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
-    mutate(mean_n = mean(n)) |> 
+    filter(!initial_send) |> 
+    group_by(ip_version) |> 
+    count(recv_time = floor_date(recv_time, unit = '30 seconds')) |>
+    mutate(
+        mean_n = mean(n),
+        median_n = median(n)
+    ) |> 
+    ungroup() |> 
     ggplot(aes(recv_time, n)) +
     geom_line(size = .3) +
-    geom_hline(aes(yintercept = mean_n), linetype = 2) +
+    facet_grid(vars(ip_version)) +
     transition_reveal(recv_time) +  
     scale_x_datetime() +
     coord_cartesian(clip = 'off') +
     labs(
       title = "BGP v4 Path Advertisements Over Time",
-      subtitle = "Dashed Line: Mean, Time: {floor_date(frame_along, '1 minute')}",
+      subtitle = "Time: {floor_date(frame_along, '30 seconds')}",
       x = "Time",
-      y = "Number of Paths Advertised"
-    ) } |> animate(renderer = gifski_renderer(), nframes = 279) 
+      y = "Number of Paths Advertised",
+      colour = "Statistic"
+    ) } |> animate(renderer = gifski_renderer(), nframes = 2869, fps = 80) 
 ```
+So on average you're looking at around ~50 path changes on the internet every 30 seconds. This isn't a great representaton of global routing table change, as each one of those UPDATEs could have any number of routes,
+
+
+```{r echo=FALSE}
+ip_space_time <-
+    bgp |> 
+    filter(!initial_send & ip_version == 'v4') |> 
+    unnest(nlri) |>
+    separate(nlri, into = c('network', 'subnet'), sep = '/') |>
+    select(id, recv_time, subnet) |>
+    mutate(subnet = as.integer(subnet)) |>
+    group_by(recv_time = floor_date(recv_time, unit = '30 seconds')) |>
+    summarise( ip_space = 2^(32 - subnet) |> sum() |> log2() ) |> 
+    ggplot() +
+    geom_line(aes(recv_time, ip_space), size = .1) +
+    labs(
+        x = "Time",
+        y = "Log2(IP Space)"
+    )
+
+ip_space_distribution <-
+    bgp |> 
+    filter(!initial_send & ip_version == 'v4') |> 
+    unnest(nlri) |>
+    separate(nlri, into = c('network', 'subnet'), sep = '/') |>
+    select(id, recv_time, subnet) |>
+    mutate(subnet = as.integer(subnet)) |>
+    group_by(recv_time = floor_date(recv_time, unit = '30 seconds')) |>
+    summarise( ip_space = 2^(32 - subnet) |> sum() |> log2() ) |> 
+    ggplot() +
+    geom_histogram(aes(ip_space), binwidth = .1) +
+    labs(
+        x = "Log2(IP Space)",
+        y = "Count"
+    )
+
+# Combine with patchwork
+(ip_space_time / ip_space_distribution) +
+    plot_annotation(
+        title = 'Log2(IPSpace) - Aggregate Updates over Time and Distribution'
+    )
+```
+
+
+```{r echo=FALSE}
+bgp |>
+    filter(!initial_send) |> 
+    group_by(ip_version) |> 
+    count(recv_time = floor_date(recv_time, unit = '1 minutes')) |>
+    ungroup() |>
+    filter(ip_version == 'v4') |>
+    as_tsibble(index = recv_time, key = ip_version) |>
+    ggAcf(lag.max = 60) +
+    labs(
+        title = 'BGP UPDATE Counts - ACF Plot (Correlogram)',
+        subtitle = 'One Minute Lags'
+    )
+```
+
+```{r echo=FALSE}
+bgp |>
+    filter(!initial_send) |> 
+    group_by(ip_version) |> 
+    count(recv_time = floor_date(recv_time, unit = '1 minutes')) |>
+    ungroup() |>
+    pivot_wider(names_from = ip_version, values_from = n) |>
+    as_tsibble(index = recv_time) |>
+    gg_lag(v4, geom = 'point', period = 1, lags = 38:43)
+```
+
+
+
 ```{r echo=FALSE}
 bgp |> 
-    filter(!initial_send & ip_version == 'v4') |> 
+    filter(!initial_send) |> 
+    group_by(ip_version) |> 
     count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
+    ungroup() |> 
     ggplot() +
-    geom_histogram(aes(n, colour = 'foo'), binwidth = 5) +
+    geom_histogram(aes(n, fill = ip_version), binwidth = 20) +
     labs(
         title = 'Foo'
     ) +
@@ -320,6 +409,9 @@ bgp |>
 ```
 
 # Prepending Madness
+
+There's a couple of path attributes you can use to modify how traffic flows within an autonomous system: MED for neighbours, 
+
 
 ```{r echo=FALSE}
 bgp |>
