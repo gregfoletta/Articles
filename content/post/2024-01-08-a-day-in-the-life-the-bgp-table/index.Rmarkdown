@@ -58,7 +58,11 @@ caida_asn_lookup <- function(asn) {
     request("https://api.asrank.caida.org") |>
     req_url_path(glue("/v2/restful/asns/{asn}")) |>
     req_perform() |>
-    resp_body_json(simplifyVector = TRUE) 
+    resp_body_json(simplifyVector = TRUE)
+    
+    if (is.null(asn_info$data$asn)) {
+        return( tibble() )
+    }
   
     asn_tbl <- 
     asn_info |> 
@@ -181,45 +185,6 @@ bgp <-
 
 The JSON has been transformed into a semi-rectangular format, with one row for each UPDATE:
 
-```{r echo=FALSE}
-# This creates a table which shows each message and the NLRI (adv/withdrawn)
-bgp |>
-    filter(!initial_send) |> 
-    head() |> 
-    select(-c(ip_version, pure_withdraw, n_routes, address_space, initial_send)) |> 
-    mutate(
-        nlri = map_chr(nlri, ~paste0(.x, collapse = "\n")),
-        withdrawn_routes = map_chr(withdrawn_routes, ~paste0(.x, collapse = ", "))
-    ) |>
-    gt() |>
-    opt_interactive()
-```
-
-The path attributes are nested within each row, and they look like this:
-
-```{r echo=FALSE}
-# Here we take a sample of some of of the updates and show the path attributes associated with them.
-bgp |>
-    # Found an ID with lots of attributes
-    filter(id == 695) |> 
-    select(id, path_attributes) |>
-    unnest(path_attributes) |>
-    mutate(
-        flags = map_chr(flags, ~paste(.x, collapse = ', '))
-    ) |> 
-    select(-c(flags_low_nibble, n_as_segments, n_total_as)) |> 
-    mutate(
-        path_segments = map_chr(path_segments, ~{ paste( c(.x$type, .x$asns), collapse = ' ') })
-    ) |>
-    mutate(aggregator_asn = as.character(aggregator_asn)) |>
-    pivot_longer(c(origin, path_segments, next_hop, aggregator_asn, aggregator_ip)) |> 
-    select(-name) |> 
-    filter(!(is.na(value) | value == "")) |> 
-    gt() |>
-    opt_interactive()
-```
-
-
 ```{r include=FALSE}
 # This pulls the as path up into the top level as a column, and also adds the 'originating_asn' 
 # as a column
@@ -305,31 +270,16 @@ That's all we'll look at of the first tranche, let's see how much change there i
       x = "Time",
       y = "Number of Paths Advertised",
       colour = "Statistic"
-    ) } |> animate(renderer = gifski_renderer(), nframes = 2869, fps = 80) 
+    #) } |> animate(renderer = gifski_renderer(), nframes = 2869, fps = 80) 
+    ) } |> animate(renderer = gifski_renderer(), nframes = 500, fps = 80) 
 ```
 There's a couple of things that stand out straight away, but before we look at that let's take a different perspective. The animation shows how many BGP updates - and therefore path changes - were received. But each of those updates could have one, or could have one-thousand routes of various different prefix lengths.
 
 Instead of looking at the total count of udpates, we can look at the total aggregate IP address change across all updates in each 30 second interval. We do this by calculating the total IP addresses, then taking the log2() of the sum. So for example: a /22, a /23 and a /24 would be $$log_2(2^{32-22} + 2^{32-23} + 2^{32-24})$$ 
 
-Below shows the time series and the density of the log2() of the IP space advertised during the day. The 95% range (in a non-log scale) is between $2^13.85$ and $2^20.75$, or between around 14,766 and 1,763,488 IP addresses changing their paths every 30 seconds.
+Below shows the time series and the density of the log2() of the IP space advertised during the day. So on average, every 30 seconds, around 2^16 IP addresses (i.e a /16) change paths in the global routing table, with 95% falling between is between $$2^{20.75}$ (approx. a /11) and $2^{13.85}$ (approx. a ~/18).
 
 ```{r echo=FALSE}
-ip_space_time <-
-    bgp |> 
-    filter(!initial_send & ip_version == 'v4') |> 
-    unnest(nlri) |>
-    separate(nlri, into = c('network', 'subnet'), sep = '/') |>
-    select(id, recv_time, subnet) |>
-    mutate(subnet = as.integer(subnet)) |>
-    group_by(recv_time = floor_date(recv_time, unit = '30 seconds')) |>
-    summarise( ip_space = 2^(32 - subnet) |> sum() |> log2() ) |> 
-    ggplot() +
-    geom_line(aes(recv_time, ip_space), size = .1) +
-    labs(
-        x = "Time",
-        y = "Log2(IP Space)"
-    )
-
 ip_space_distribution <-
     bgp |> 
     filter(!initial_send & ip_version == 'v4') |> 
@@ -338,18 +288,43 @@ ip_space_distribution <-
     select(id, recv_time, subnet) |>
     mutate(subnet = as.integer(subnet)) |>
     group_by(recv_time = floor_date(recv_time, unit = '30 seconds')) |>
-    summarise( ip_space = 2^(32 - subnet) |> sum() |> log2() ) |> 
+    summarise( ip_space = 2^(32 - subnet) |> sum() |> log2() )
+
+
+ip_space_dist_summary <- 
+    ip_space_distribution |>
+    summarise(
+        mean = mean(ip_space),
+        median = median(ip_space)
+    ) |>
+    pivot_longer(c(mean, median))
+
+gg_ip_space_time <-
+    ip_space_distribution |> 
     ggplot() +
-    geom_density(aes(ip_space)) +
+    geom_line(aes(recv_time, ip_space), size = .1) +
     labs(
-        x = "Log2(IP Space)",
-        y = "Count"
+        x = "Time",
+        y = "Log2(IP Space)"
     )
 
+gg_ip_space_distribution <-
+    ip_space_distribution |> 
+    ggplot() +
+    geom_density(aes(ip_space)) +
+    geom_vline(data = ip_space_dist_summary, aes(xintercept = value, colour = name)) +
+    labs(
+        x = "Log2(IP Space)",
+        y = "Density",
+        colour = 'Statistic'
+    )
+
+
+
 # Combine with patchwork
-(ip_space_time / ip_space_distribution) +
+(gg_ip_space_time / gg_ip_space_distribution) +
     plot_annotation(
-        title = 'Log2(IPSpace) - Aggregate Updates over Time and Distribution'
+        title = 'IPv4 UPDATES - Log2(IPSpace) - Aggregate Updates over Time and Distribution'
     )
 ```
 
@@ -403,30 +378,30 @@ bgp |>
 
 # Prepending Madness
 
-If you're a network admin, there's a couple of different ways you can influence how traffic entering your ASN. You can use longer network prefixes, but this is painful to administer. You can use the MED attribute, but it's non-transitive so it doesn't work if you're peered to multiple AS. Primarily you'll modify the AS path length by prepending your own AS one or more times.
+If you're a network admin, there's a couple of different ways you can influence how traffic entering your ASN. You can use longer network prefixes, but this doesn't scale well and you're not being a polite BGP citizen. You can use the MED attribute, but it's non-transitive so it doesn't work if you're peered to multiple AS. Primarily you'll modify the AS path length by prepending your own AS one or more times.
 
-The problem is some people take this prepending too far, which has historically caused [large, global problems](https://blog.ipspace.net/2009/02/root-cause-analysis-oversized-as-paths/). Let's take a look at the top 50 AS path lengths we've received in updates throughought the day, split by IP version:
+The problem is some people take this prepending too far, which has in the past caused [large, global problems](https://blog.ipspace.net/2009/02/root-cause-analysis-oversized-as-paths/). Let's take a look at the top 50 AS path lengths we've received in updates throughought the day, split by IP version:
 
 ```{r echo=FALSE}
 bgp |>
     group_by(ip_version) |> 
-    slice_max(order_by = as_path_len, n = 50, with_ties = FALSE) |>
+    slice_max(order_by = as_path_len, n = 100, with_ties = FALSE) |>
     mutate(order = row_number()) |>
     ungroup() |> 
     ggplot() +
     geom_col(aes(order, as_path_len, fill = ip_version)) +
     facet_grid(vars(ip_version)) +
     labs(
-        title = "Top 50 ASN Path Lengths",
+        title = "Top 100 ASN Path Lengths",
         subtitle = "IPv4 vs IPv6",
         x = "",
         y = "ASN Path Length",
         fill = "IP Version"
     )
 ```
-What is really interesting here is the difference between IPv4 and IPv6. The largest IPv4 path length is 105, which is still ridiculous given the fact that the largest path in this dataset with unique ASes (i.e. no prepending) has a length of 14. But compared to the IPv6 paths it's outright sensible: top of the table for IPv6 comes in at a whopping 599 ASes! In the BGP UPDATE, the AS path is actually made up of [AS sets or AS sequences](https://datatracker.ietf.org/doc/html/rfc4271#section-5.1.2), each of which have a maximum length of 255. So it's taken thre AS sequences to announce those routes.
+What is really interesting here is the difference between IPv4 and IPv6. The largest IPv4 path length is 105, which is still ridiculous given the fact that the largest non-prepended path in this dataset has a length of 14. But compared to the IPv6 paths it's outright sensible: top of the table for IPv6 comes in at a whopping 599 ASes! An AS path is actually made up of one or more [AS sets or AS sequences](https://datatracker.ietf.org/doc/html/rfc4271#section-5.1.2), each of which have a maximum length of 255. So it's taken three AS sequences to announce those routes.
 
-Here's the longest IPv4 path in all it's glory, which originated from AS149381 "Dinas Komunikasi dan Informatika Kabupaten Tulungagung" in Indonesia.
+Here's the longest IPv4 path in all it's glory with its 105 ASNs. It originated from AS149381 "Dinas Komunikasi dan Informatika Kabupaten Tulungagung" in Indonesia.
 
 ```{r echo=FALSE}
 bgp |>
@@ -436,7 +411,7 @@ bgp |>
     paste(collapse = ' ')
 ```
 
-Around 6 hours and 50 minutes later, they seemed to realise the error in their ways and announce a path with only four ASes, rather than 105:
+Around 6 hours and 50 minutes later, they've realised the error in their ways and announce a path with only four ASes, rather than 105:
 
 ```{r echo=FALSE}
 bgp |>
@@ -452,7 +427,7 @@ bgp |>
     gt()
 ```
 
-Here's the largest IPv6 path, with its 599 prefixes; I'll let you all enjoy scrolling to the right on this one:
+Here's the largest IPv6 path, with its mammoth 599 prefixes; I'll let you all enjoy scrolling to the right on this one:
 
 ```{r echo=FALSE}
 bgp |>
@@ -461,11 +436,34 @@ bgp |>
     pluck('as_path', 1) |>
     paste(collapse = ' ')
 ```
+
 Interestingly it's not the originator that's prepending, but as8772 'NetAssist LLC', an ISP out of Ukraine prepending to make paths to asn203868 (Rifqi Arief Pamungkas, again out of Indonesia).
 
-So the quesion is: why 
+So the question is: why is there such a difference between the largest IPv4 and IPv6 path lengths? If we count the total number of ASNs in all positions in thbe path for those top 50 longest paths, it becomes apparent what's happening:
+
+```{r echo=FALSE}
+bgp |>
+    group_by(ip_version) |> 
+    slice_max(order_by = as_path_len, n = 50, with_ties = FALSE) |>
+    ungroup() |> 
+    filter(ip_version == 'v6') |>
+    unnest(as_path) |> 
+    count(as_path) |>
+    mutate(
+        as = as_path |> as_factor()
+    ) |> 
+    ggplot() +
+    geom_col(aes(fct_reorder(as, n, .desc = TRUE), n)) +
+    labs(
+        
+    ) +
+    labs(
+    )
+```
 
 # Path Attributes
+
+
 
 ```{r include=FALSE}
 bgpv4_attr <-
@@ -502,15 +500,17 @@ bgpv4_attr |>
 
 # Flippy-Flappy: Who's Having a Bad Time?
 
+Finally, let's see who's having a bad time: which routes are shifting paths or being withdrawn completely the most during the day. Here's the top 10 with the number of times the route was included in an UPDATE:
+
 ```{r echo=FALSE}
 bgp |>
     unnest(nlri) |>
     count(nlri) |>
-    slice_max(n, n = 50) |>
-    gt() |> 
-    opt_interactive()
+    slice_max(n, n = 10) |>
+    gt() 
 ```
 
+Drilling down into the route that's beeing update the most, **140.99.244.0/23**, we can graph the points during the day when it's been in an update, or when it's been withdrawn completely. The x-axis below is the ID of the BGP update:
 
 ```{r echo=FALSE}
 bind_rows(
@@ -523,9 +523,17 @@ bind_rows(
     mutate(n = row_number()) |>
     ungroup() |>
     ggplot() +
-    geom_point(aes(recv_time, n, colour = type), size = .5) +
-    facet_grid(vars(type), scales = 'free_y')
+    geom_point(aes(recv_time, n, colour = type), size = .3) +
+    facet_grid(vars(type), scales = 'free_y') +
+    labs(
+        title = 'Route 140.99.244.0/23 - Presence in Updates During the Day',
+        x = 'Time',
+        y = 'Update Number'
+    )
 ```
+The top graph looks like a straight line, but that's because this route is present in almost every single 30 second block of updates. There are 2,879 30-second blocks and it's present as either a different path or a withdrawn route in 2,637 of them, or 92.8%!
+
+We know the routes is flapping, but *how* is it flapping? What are the different paths that it's flapping across, which AS in the path seems to be to blame? The best way to visualise this is a graph, placing all the ASNs that exist in all the paths as on a graph, then colourising the edges by how many updates were seen with each pair of ASes. I've bi
 
 ```{r echo=FALSE}
 as_path_graph <- function(as_path) {
@@ -558,11 +566,18 @@ as_path_edges <- bgp |>
 
 ```{r message=FALSE, warning=FALSE}
 as_tbl_graph(as_path_edges, directed = TRUE) |>
-    ggraph(layout = 'igraph', algorithm = 'fr') +
-    geom_edge_link(arrow = arrow(type = 'closed', length = unit(4, 'mm')), end_cap = circle(7, 'mm')) +
+    activate(edges) |>
+    mutate(n_binned = cut(n, breaks = c(0, cumsum(rep(300, 9))), dig.lab = 20)) |> 
+    ggraph(layout = 'igraph', algorithm = 'kk') +
+    geom_edge_link(aes(colour = n_binned), arrow = arrow(type = 'closed', length = unit(4, 'mm')), end_cap = circle(7, 'mm')) +
     geom_node_point(size = 17) +
     geom_node_text(aes(label = name), colour = 'white') +
     guides(edge_width = FALSE) +
-    theme_graph()
+    scale_x_continuous(expand = expand_scale(c(.10, .10))) +
+    scale_y_continuous(expand = expand_scale(c(.13, .13))) +
+    labs(
+        title = 'Route 140.99.244.0/23 - Intra-Day AS Path Changes',
+        subtitle = 'Graph of unqiue ASNs present in all AS paths seen'
+    )
 ```
-
+It's a bit messy, but the take
