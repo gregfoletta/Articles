@@ -275,9 +275,9 @@ That's all we'll look at of the first tranche, let's see how much change there i
 ```
 There's a couple of things that stand out straight away, but before we look at that let's take a different perspective. The animation shows how many BGP updates - and therefore path changes - were received. But each of those updates could have one, or could have one-thousand routes of various different prefix lengths.
 
-Instead of looking at the total count of udpates, we can look at the total aggregate IP address change across all updates in each 30 second interval. We do this by calculating the total IP addresses, then taking the log2() of the sum. So for example: a /22, a /23 and a /24 would be $$log_2(2^{32-22} + 2^{32-23} + 2^{32-24})$$ 
+Instead of looking at the total count of udpates, we can look at the total aggregate IP address change across all updates in each 30 second interval. We do this by calculating the total IP addresses, then taking the log2() of the sum. So for example: a /22, a /23 and a /24 would be \\\\(log_2(2^{32-22} + 2^{32-23} + 2^{32-24})\\\\)
 
-Below shows the time series and the density of the log2() of the IP space advertised during the day. So on average, every 30 seconds, around 2^16 IP addresses (i.e a /16) change paths in the global routing table, with 95% falling between is between $$2^{20.75}$ (approx. a /11) and $2^{13.85}$ (approx. a ~/18).
+Below shows the time series and the density of the log2() of the IP space advertised during the day. So on average, every 30 seconds, around 2^16 IP addresses (i.e a /16) change paths in the global routing table, with 95% falling between is between \\\\(2^{20.75}\\\\) (approx. a /11) and \\\\(2^{13.85}\\\\) (approx. a ~/18).
 
 ```{r echo=FALSE}
 ip_space_distribution <-
@@ -328,7 +328,7 @@ gg_ip_space_distribution <-
     )
 ```
 
-What is apparent in both the path and IP space changes over time is that there is some sort of cycle occuring in the BGPv4 updated. To determine the period of this cycle we can use an [ACF](https://otexts.com/fpp3/acf.html) or autocorrelation plot. We'll calculate the correlation between the number of paths received at time $y_t$ versus the number received at $y_{t-\{1,2,3,...,n\}}$. I've grouped the updates together into 1 minute intervals, so 1 lag = 1 minute.
+What is apparent in both the path and IP space changes over time is that there is some sort of cycle occuring in the BGPv4 updated. To determine the period of this cycle we can use an [ACF](https://otexts.com/fpp3/acf.html) or autocorrelation plot. We'll calculate the correlation between the number of paths received at time \\\\(y_t\\\\) versus the number received at \\\\(y_{t-\{1,2,3,...,n\}}\\\\). I've grouped the updates together into 1 minute intervals, so 1 lag = 1 minute.
 
 ```{r echo=FALSE}
 bgp |>
@@ -344,37 +344,8 @@ bgp |>
         subtitle = 'One Minute Lags'
     )
 ```
-You see there's a correlation in the first 10 lags, which intuitively makes sense to me as path changes are likely to create other path changes as they propagate around the world. But interestingly there's also a very strong correlation at lags 40 and 41.
 
-
-```{r echo=FALSE}
-bgp |> 
-    filter(!initial_send) |> 
-    group_by(ip_version) |> 
-    count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
-    ungroup() |> 
-    ggplot() +
-    geom_histogram(aes(n, fill = ip_version), binwidth = 20) +
-    labs(
-        title = 'Foo'
-    ) +
-    guides(colour = 'none')
-```
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-bgp |> 
-    filter(!initial_send & ip_version == 'v4') |>
-    add_count(recv_time = floor_date(recv_time, unit = '5 minutes')) |>
-    slice_max(order_by = n, n = 1) |>
-    unnest(asn = as_path) |>
-    count(asn, sort = TRUE) |>
-    slice_head(n = 10) |>
-    mutate(as_info = map(asn, ~caida_asn_lookup(.x))) |>
-    select(n, as_info) |>
-    unnest(as_info) |>
-    select(n, organisation = value, asn, source, country) |>  
-    gt() |>  
-    opt_interactive()
-```
+You see there's a correlation in the first 10 lags, which intuitively makes sense to me as path changes are likely to create other path changes as they propagate around the world. But interestingly there's also a very strong correlation at lags 40 and 41. I'll put a pin in that one for the moment, so answering why there's a 40 minute cycle - at least in this dataset - will be left as an exercise for the reader. If you've got a theory, or an answer, [reach out](https://bsky.app/profile/gregfoletta.bsky.social) and let me know.
 
 # Prepending Madness
 
@@ -399,7 +370,7 @@ bgp |>
         fill = "IP Version"
     )
 ```
-What is really interesting here is the difference between IPv4 and IPv6. The largest IPv4 path length is 105, which is still ridiculous given the fact that the largest non-prepended path in this dataset has a length of 14. But compared to the IPv6 paths it's outright sensible: top of the table for IPv6 comes in at a whopping 599 ASes! An AS path is actually made up of one or more [AS sets or AS sequences](https://datatracker.ietf.org/doc/html/rfc4271#section-5.1.2), each of which have a maximum length of 255. So it's taken three AS sequences to announce those routes.
+What stands out is the difference between IPv4 and IPv6. The largest IPv4 path length is 105, which is still ridiculous given the fact that the largest non-prepended path in this dataset has a length of 14. But compared to the IPv6 paths it's outright sensible: top of the table for IPv6 comes in at a whopping 599 ASes! An AS path is actually made up of one or more [AS sets or AS sequences](https://datatracker.ietf.org/doc/html/rfc4271#section-5.1.2), each of which have a maximum length of 255. So it's taken three AS sequences to announce those routes.
 
 Here's the longest IPv4 path in all it's glory with its 105 ASNs. It originated from AS149381 "Dinas Komunikasi dan Informatika Kabupaten Tulungagung" in Indonesia.
 
@@ -463,7 +434,14 @@ bgp |>
 
 # Path Attributes
 
+Each BGP update consist of network layer reachability information (routes) and path attributes. For example AS_PATH, NEXT_HOP, etc. There are four kinds of attributes:
 
+1. Well-known mandatory
+1. Well-known discretionary
+1. Optional transitive
+1. Optional non-transitive
+
+[Section 5](https://datatracker.ietf.org/doc/html/rfc4271#section-5) of RFC4271 has a good description of all of these.
 
 ```{r include=FALSE}
 bgpv4_attr <-
@@ -472,6 +450,7 @@ bgpv4_attr <-
     unnest(path_attributes, names_sep = '.')
 ```
 
+Here's a breakdown of the number of attributes we've seen on all of our IPv4 paths, on a log scale to make it easier to view:
 
 ```{r echo=FALSE}
 bgpv4_attr |>
@@ -485,18 +464,22 @@ bgpv4_attr |>
     coord_flip() +
     scale_fill_discrete(guide = 'none') + 
     labs(
-        title = 'Foo'
-    )
+        title = 'Log(Count) of IPv4 Path Attributes',
+        y = 'Log(Count)',
+        x = 'Path Attribute (Code)'
+        )
 ```
-```{r echo=FALSE}
- bgpv4_attr |>
-    filter(path_attributes.type_code == 255) |>
-    distinct(originating_asn) |>
-    mutate(organisation = map_df(originating_asn, ~caida_asn_lookup(.x))) |>
-    unnest(organisation) |>
-    select(originating_asn, organisation = value, source, country) |> 
-    gt() 
-```
+
+The well-known mandatory attributes, ORIGIN, NEXT_HOP, and AS_PATH, are present in all updates, and have the same counts. There's a few other common attributes (e.g. AGGREGATOR), and some less common ones (AS_PATHLIMIT and ATTR_SET). Interestingly some ASes have attached attribute 255, which is the [reserved for development](https://www.rfc-editor.org/rfc/rfc2042.html) attribute.
+
+At the time of receiving the updates bgpsee didn't parse the value of attribute, but using [routeviews.org](https://routeviews.org) I can see that some ASes are still announcing paths with this attribute and what the raw values are:
+
+- AS265999 announcing a path with attribute 255 value: 0000 07DB 0000 0001 0001 000A FF08 0000 0000 0C49 75B3
+- AS10429 announcing a path with attribute 255 value: 0000 07DB 0000 0001 0001 000A FF08 0000 0003 43DC 75C3
+- AS52564 announcing a path with attribute 255 value: 0000 07DB 0000 0001 0001 0012 FF10 0000 0000 0C49 75B3 0000 0000 4003 F1C9
+
+So this is a nice little mystery that I haven't quite been able to crack. Interested to see if anyone has any ideas about this?
+
 
 # Flippy-Flappy: Who's Having a Bad Time?
 
@@ -580,4 +563,8 @@ as_tbl_graph(as_path_edges, directed = TRUE) |>
         subtitle = 'Graph of unqiue ASNs present in all AS paths seen'
     )
 ```
-It's a bit messy, but the take
+
+
+# Summary
+
+Some sort of summary
