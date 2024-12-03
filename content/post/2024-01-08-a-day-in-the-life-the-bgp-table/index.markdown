@@ -83,7 +83,7 @@ That’s all we’ll look at in the first tranche, we’ll focus our attention f
 ![](index_files/figure-html/unnamed-chunk-8-1.gif)<!-- -->
 For IPv4 paths you’re looking on average at around 50 path updates every 30 seconds. For IPv6 it’s slightly lower, at around 47 path updates. While the averages are close, the variance is quite different, a standard deviation of 64.3 and 43 for v4 and v6 respectively.
 
-Instead of looking at the total count of udpates, we can instead look at the total aggregate IP address change. We do this by adding up the total amount of IP addresses across all updates for every 30 second interval, then take the log2() of the sum. So for example: a /22, a /23 and a /24 would be \\(log_2(2^{32-22} + 2^{32-23} + 2^{32-24})\\)
+Instead of looking at the total count of updates, we can instead look at the total aggregate IP address change. We do this by adding up the total amount of IP addresses across all updates for every 30 second interval, then take the log2() of the sum. So for example: a /22, a /23 and a /24 would be \\(log_2(2^{32-22} + 2^{32-23} + 2^{32-24})\\)
 
 Below is the log2() IPv4 address space, viewed as a time series and as a density plot. It shows that on average, every 30 seconds, around 2^16 IP addresses (i.e a /16) change paths in the global routing table, with 95% of time time the change in IP address space is between \\(2^{20.75}\\) (approx. a /11) and \\(2^{13.85}\\) (approx. a /18).
 
